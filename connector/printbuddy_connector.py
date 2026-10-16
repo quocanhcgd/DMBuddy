@@ -16,7 +16,8 @@ from pathlib import Path
 import httpx
 import websockets
 
-from connector.discovery import discover_lan, probe_printer_status, verify_printer_endpoint
+from connector.discovery import discover_lan, probe_printer_status
+from connector.provider_verification import verify_provider
 from connector_protocol import (
     MAX_FRAME_BYTES,
     PROTOCOL_VERSION,
@@ -182,15 +183,16 @@ class ConnectorAgent:
                     )
                 elif message.type == "printer.verify.request":
                     request = ConnectorPrinterVerifyRequest.model_validate(message.payload)
-                    reachable = await verify_printer_endpoint(request)
+                    verification = await verify_provider(request)
                     result = ConnectorPrinterVerifyResult(
                         request_id=request.request_id,
                         status="completed",
-                        reachable=reachable,
+                        reachable=verification.reachable,
                         provider=request.provider,
-                        protocol="tcp",
-                        service="printer-endpoint",
-                        error=None if reachable else "endpoint unreachable",
+                        protocol=verification.protocol,
+                        service=verification.service,
+                        model=verification.model,
+                        error=verification.error,
                     )
                 else:
                     request = ConnectorPrinterStatusRequest.model_validate(message.payload)

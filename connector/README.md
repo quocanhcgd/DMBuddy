@@ -3,8 +3,13 @@
 This standalone agent is the first Phase 1 prototype. It enrolls with a
 Printbuddy server, stores the returned credential in a local state file, opens
 an outbound WSS connection and sends heartbeats. It can perform bounded TCP
-discovery on a private LAN when requested by an authorized Printbuddy user;
-it does not yet control printers.
+discovery and provider verification for Bambu MQTT, Moonraker HTTP, and
+PrusaLink HTTP when requested by an authorized Printbuddy user; it does not yet
+control printers.
+
+Provider verification credentials are used only in memory for the short-lived
+authenticated WSS request. They are not written to the Connector state file,
+logs, or verification result.
 
 ## Run locally
 

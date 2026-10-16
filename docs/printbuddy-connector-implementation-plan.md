@@ -133,9 +133,10 @@ Nếu dùng bảng liên kết printer riêng, cần unique constraint để pri
 
 Mục tiêu là giảm dữ liệu nhạy cảm lưu ở server và luôn mã hóa nếu phải lưu.
 
-- Access code Bambu nên được gửi mã hóa tới Connector và lưu trong kho cục bộ của hệ điều hành nếu có thể: Windows Credential Manager/DPAPI, Linux secret store hoặc file riêng với quyền hệ thống chặt.
+- Access code Bambu nên được gửi bằng credential envelope mã hóa tới Connector và lưu trong kho cục bộ của hệ điều hành nếu có thể: Windows Credential Manager/DPAPI, Linux secret store hoặc file riêng với quyền hệ thống chặt.
 - Khi server cần quản lý credential cho thao tác đăng ký lại, dùng encryption-at-rest dựa trên cơ chế mã hóa secret hiện có của dự án, key ở ngoài DB.
 - Không gửi access code trong telemetry, error message, diagnostics hoặc log.
+- Prototype provider verification hiện gửi secret ngắn hạn trong phiên WSS/TLS đã xác thực, chỉ giữ trong memory và không đưa vào result/log; trước production phải bổ sung application-level credential envelope/public-key encryption.
 - Connector credential nên là token ngẫu nhiên có thể rotate/revoke, lưu hash phía server. Nếu dùng chữ ký public-key, server phát challenge ngắn hạn và Connector ký bằng private key.
 - Enrollment token hiển thị một lần, TTL khuyến nghị 5-10 phút, dùng một lần, gắn với user và quyền enrollment.
 - Tạo rate limit theo user/IP/token; giới hạn số Connector theo policy.

@@ -73,8 +73,20 @@ async def test_agent_answers_verify_request_without_credentials(monkeypatch, tmp
             "timeout_ms": 100,
         },
     )
-    probe = AsyncMock(return_value=True)
-    monkeypatch.setattr("connector.printbuddy_connector.verify_printer_endpoint", probe)
+    probe = AsyncMock(
+        return_value=type(
+            "Verification",
+            (),
+            {
+                "reachable": True,
+                "protocol": "mqtts",
+                "service": "bambu-mqtt",
+                "model": None,
+                "error": None,
+            },
+        )()
+    )
+    monkeypatch.setattr("connector.printbuddy_connector.verify_provider", probe)
     websocket = _WebSocket(request.model_dump_json())
 
     with pytest.raises(RuntimeError, match="stop test"):

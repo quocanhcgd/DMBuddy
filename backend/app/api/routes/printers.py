@@ -294,6 +294,8 @@ async def _verify_connector_printer(
                 "port": _connector_printer_port(printer_data.provider),
                 "provider": printer_data.provider,
                 "serial_number": printer_data.serial_number,
+                "access_code": printer_data.access_code,
+                "auth_token": printer_data.auth_token,
                 "timeout_ms": 1500,
             },
             timeout=8,

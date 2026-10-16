@@ -62,13 +62,17 @@ class ConnectorDiscoveryResult(BaseModel):
 
 
 class ConnectorPrinterVerifyRequest(BaseModel):
-    """Network-level printer verification request; never carries credentials."""
+    """Short-lived provider verification request over authenticated WSS."""
+
+    model_config = ConfigDict(extra="forbid")
 
     request_id: str = Field(min_length=1, max_length=64)
     ip_address: str = Field(min_length=1, max_length=253)
     port: int = Field(ge=1, le=65535)
     provider: str = Field(min_length=1, max_length=32)
     serial_number: str | None = Field(default=None, max_length=64)
+    access_code: str | None = Field(default=None, max_length=256)
+    auth_token: str | None = Field(default=None, max_length=512)
     timeout_ms: int = Field(default=1000, ge=100, le=5000)
 
 
@@ -81,6 +85,7 @@ class ConnectorPrinterVerifyResult(BaseModel):
     provider: str = Field(min_length=1, max_length=32)
     protocol: str = Field(min_length=1, max_length=32)
     service: str = Field(min_length=1, max_length=64)
+    model: str | None = Field(default=None, max_length=128)
     error: str | None = Field(default=None, max_length=200)
 
 
