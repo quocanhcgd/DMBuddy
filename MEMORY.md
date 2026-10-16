@@ -73,3 +73,11 @@ Khi người dùng nói “tiếp tục MakerWorld User Accounts”, tiếp tụ
 - Thứ tự bắt buộc: inventory/protocol/security → enrollment/gateway → discovery/transport → status/control → file transfer → camera/capability → packaging/pilot.
 - Chưa triển khai Connector trong mã nguồn; các task trong backlog đang ở trạng thái `TODO`.
 
+## GitHub và đồng bộ mã nguồn
+
+- Repository riêng tư lưu mã nguồn tùy chỉnh: [quocanhcgd/Printbuddy](https://github.com/quocanhcgd/Printbuddy).
+- Local repository dùng nhánh `main`, remote `origin` qua HTTPS và đã push commit khởi tạo.
+- Quy trình cập nhật: kiểm tra thay đổi và secret → chạy test phù hợp → `git add`/`git commit` → `git push origin main`.
+- Không đưa dữ liệu runtime hoặc thông tin nhạy cảm lên GitHub: `data/`, `archive/`, `logs/`, `*.db`, `.env`, credential/token/key runtime đã được loại bởi `.gitignore`.
+- Repository upstream gốc vẫn được tham chiếu trong tài liệu; không đổi các định danh kỹ thuật của ứng dụng chỉ vì repository tùy chỉnh này.
+
