@@ -1,5 +1,6 @@
 """Unit tests for the in-process Connector session registry."""
 
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -39,3 +40,31 @@ async def test_gateway_replaces_previous_session():
     metrics = gateway.metrics()
     assert metrics["sessions_started_total"] == 2
     assert metrics["session_replacements_total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_gateway_request_resolves_for_matching_connector():
+    gateway = ConnectorGateway()
+    websocket = AsyncMock()
+    await gateway.register("connector-1", websocket)
+
+    pending = asyncio.create_task(
+        gateway.request("connector-1", "discovery.request", {"subnet": "192.168.1.0/24"}, timeout=1)
+    )
+    await asyncio.sleep(0)
+    assert await gateway.resolve_request("connector-2", {"request_id": "wrong"}) is False
+    request_frame = websocket.send_json.await_args.args[0]
+    request_id = request_frame["payload"]["request_id"]
+    assert await gateway.resolve_request("connector-2", {"request_id": request_id}) is False
+    assert await gateway.resolve_request("connector-1", {"request_id": request_id, "status": "completed"}) is True
+    assert await pending == {"request_id": request_id, "status": "completed"}
+
+
+@pytest.mark.asyncio
+async def test_gateway_request_times_out_and_cleans_pending_registry():
+    gateway = ConnectorGateway()
+    websocket = AsyncMock()
+    await gateway.register("connector-1", websocket)
+
+    assert await gateway.request("connector-1", "discovery.request", {}, timeout=0.001) is None
+    assert gateway.metrics()["request_timeouts_total"] == 1

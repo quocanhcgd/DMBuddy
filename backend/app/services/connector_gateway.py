@@ -10,8 +10,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from typing import Any
+from uuid import uuid4
 
 from fastapi import WebSocket
+
+from connector_protocol import PROTOCOL_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +31,7 @@ class ConnectorGateway:
     def __init__(self) -> None:
         self._sessions: dict[str, ConnectorSession] = {}
         self._lock = asyncio.Lock()
+        self._pending: dict[str, tuple[str, asyncio.Future[dict[str, Any]]]] = {}
         self._counters: dict[str, int] = {
             "sessions_started_total": 0,
             "session_replacements_total": 0,
@@ -75,6 +80,61 @@ class ConnectorGateway:
                 self._counters["send_failures_total"] += 1
             logger.info("Connector session send failed: %s", connector_id, exc_info=True)
             return False
+
+    async def request(
+        self,
+        connector_id: str,
+        message_type: str,
+        payload: dict[str, Any],
+        *,
+        timeout: float = 15.0,
+    ) -> dict[str, Any] | None:
+        """Send one request and await its matching response payload."""
+        request_id = str(payload.get("request_id") or uuid4())
+        request_payload = {**payload, "request_id": request_id}
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        async with self._lock:
+            if connector_id not in self._sessions:
+                return None
+            self._pending[request_id] = (connector_id, future)
+        sent = await self.send(
+            connector_id,
+            {
+                "schema_version": PROTOCOL_VERSION,
+                "message_id": request_id,
+                "connector_id": connector_id,
+                "type": message_type,
+                "payload": request_payload,
+            },
+        )
+        if not sent:
+            async with self._lock:
+                self._pending.pop(request_id, None)
+            return None
+        try:
+            return await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError:
+            self.record_event("request_timeouts_total")
+            return None
+        finally:
+            async with self._lock:
+                self._pending.pop(request_id, None)
+
+    async def resolve_request(self, connector_id: str, payload: dict[str, Any]) -> bool:
+        """Resolve a pending request from a Connector response."""
+        request_id = payload.get("request_id")
+        if not isinstance(request_id, str):
+            return False
+        async with self._lock:
+            pending = self._pending.get(request_id)
+        if pending is None:
+            return False
+        expected_connector_id, future = pending
+        if expected_connector_id != connector_id or future.done():
+            return False
+        future.set_result(payload)
+        return True
 
     def is_online(self, connector_id: str) -> bool:
         return connector_id in self._sessions

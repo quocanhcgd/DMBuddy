@@ -60,3 +60,17 @@ class ConnectorCommandResponse(BaseModel):
     command_id: str
     status: str
     detail: str | None = None
+
+
+class ConnectorDiscoveryCreate(BaseModel):
+    subnet: str = Field(min_length=1, max_length=64)
+    ports: list[int] = Field(default_factory=lambda: [80, 7125, 8883, 990], min_length=1, max_length=16)
+    max_hosts: int = Field(default=256, ge=1, le=256)
+    timeout_ms: int = Field(default=500, ge=100, le=2000)
+
+
+class ConnectorDiscoveryResponse(BaseModel):
+    request_id: str
+    status: str
+    results: list[dict]
+    error: str | None = None

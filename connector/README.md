@@ -2,8 +2,9 @@
 
 This standalone agent is the first Phase 1 prototype. It enrolls with a
 Printbuddy server, stores the returned credential in a local state file, opens
-an outbound WSS connection and sends heartbeats. It does not yet discover or
-control printers.
+an outbound WSS connection and sends heartbeats. It can perform bounded TCP
+discovery on a private LAN when requested by an authorized Printbuddy user;
+it does not yet control printers.
 
 ## Run locally
 

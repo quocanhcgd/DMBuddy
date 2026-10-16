@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import ipaddress
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -18,6 +19,8 @@ from backend.app.core.permissions import Permission
 from backend.app.models.connector import Connector, ConnectorEnrollment
 from backend.app.models.user import User
 from backend.app.schemas.connector import (
+    ConnectorDiscoveryCreate,
+    ConnectorDiscoveryResponse,
     ConnectorEnrollmentCreate,
     ConnectorEnrollmentResponse,
     ConnectorEnrollRequest,
@@ -26,7 +29,13 @@ from backend.app.schemas.connector import (
     ConnectorUpdate,
 )
 from backend.app.services.connector_gateway import connector_gateway
-from connector_protocol import PROTOCOL_VERSION, ConnectorAuthFrame, ConnectorHeartbeat, ConnectorMessage
+from connector_protocol import (
+    PROTOCOL_VERSION,
+    ConnectorAuthFrame,
+    ConnectorDiscoveryResult,
+    ConnectorHeartbeat,
+    ConnectorMessage,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/connectors", tags=["connectors"])
@@ -149,6 +158,60 @@ async def list_connectors(
             "revoked" if connector.revoked_at else "offline"
         )
     return connectors
+
+
+@router.post("/{connector_id}/discoveries", response_model=ConnectorDiscoveryResponse)
+async def discover_through_connector(
+    connector_id: str,
+    data: ConnectorDiscoveryCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CONNECTORS_DISCOVER),
+):
+    """Request a bounded private-network discovery from an online Connector."""
+    try:
+        network = ipaddress.ip_network(data.subnet, strict=False)
+    except ValueError as exc:
+        raise HTTPException(400, "subnet must be valid CIDR notation") from exc
+    if (
+        not network.is_private
+        or network.is_loopback
+        or network.is_link_local
+        or network.is_multicast
+        or network.is_unspecified
+    ):
+        raise HTTPException(400, "discovery is limited to private LAN subnets")
+    if network.num_addresses > data.max_hosts or network.num_addresses > 256:
+        raise HTTPException(400, "subnet is larger than the discovery host limit")
+    ports = sorted(set(data.ports))
+    if any(port < 1 or port > 65535 for port in ports):
+        raise HTTPException(400, "ports must be between 1 and 65535")
+
+    result = await db.execute(select(Connector).where(Connector.public_id == connector_id))
+    connector = _owned_connector(_connector_or_404(result.scalar_one_or_none()), current_user)
+    if connector.revoked_at:
+        raise HTTPException(409, "Connector is revoked")
+    if not connector_gateway.is_online(connector.public_id):
+        raise HTTPException(409, "Connector is offline")
+
+    response = await connector_gateway.request(
+        connector.public_id,
+        "discovery.request",
+        {
+            "subnet": str(network),
+            "ports": ports,
+            "max_hosts": data.max_hosts,
+            "timeout_ms": data.timeout_ms,
+        },
+        timeout=max(10.0, data.timeout_ms / 1000 * data.max_hosts / 8 + 5),
+    )
+    if response is None:
+        raise HTTPException(504, "Connector did not return a discovery result")
+    return ConnectorDiscoveryResponse(
+        request_id=str(response.get("request_id", "")),
+        status=str(response.get("status", "failed")),
+        results=response.get("results") if isinstance(response.get("results"), list) else [],
+        error=response.get("error") if isinstance(response.get("error"), str) else None,
+    )
 
 
 @router.get("/{connector_id}", response_model=ConnectorResponse)
@@ -309,24 +372,37 @@ async def connector_websocket(websocket: WebSocket):
                     platform=heartbeat.platform,
                     last_seen_at=_naive_utc(_now()),
                 )
-                await websocket.send_json(
+                await connector_gateway.send(
+                    connector.public_id,
                     {
                         "schema_version": PROTOCOL_VERSION,
                         "message_id": message.message_id,
                         "connector_id": connector.public_id,
                         "type": "heartbeat.ack",
                         "sent_at": _now().isoformat(),
-                    }
+                    },
+                )
+            elif message.type == "discovery.result":
+                try:
+                    result = ConnectorDiscoveryResult.model_validate(message.payload)
+                except Exception:
+                    connector_gateway.record_event("protocol_errors_total")
+                    await websocket.close(code=4002, reason="Invalid discovery result")
+                    return
+                await connector_gateway.resolve_request(
+                    connector.public_id,
+                    result.model_dump(mode="json"),
                 )
             else:
-                await websocket.send_json(
+                await connector_gateway.send(
+                    connector.public_id,
                     {
                         "schema_version": PROTOCOL_VERSION,
                         "message_id": message.message_id,
                         "connector_id": connector.public_id,
                         "type": "error",
                         "payload": {"code": "unsupported_message_type"},
-                    }
+                    },
                 )
     except WebSocketDisconnect:
         pass

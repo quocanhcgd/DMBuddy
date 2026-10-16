@@ -75,7 +75,8 @@ Khi người dùng nói “tiếp tục MakerWorld User Accounts”, tiếp tụ
 - Đã hoàn tất UI Phase 1 tại Settings → Connectors: tạo mã enrollment TTL 10 phút (chỉ hiển thị một lần), danh sách online/offline/revoked, version/platform/last seen, đổi tên và thu hồi theo permission; credential dài hạn không xuất hiện trên frontend.
 - Gateway đã có observability counters và Prometheus metrics cho active sessions, session starts/replacements/disconnects, send/auth/protocol/frame/heartbeat lỗi; metric chỉ là số tổng hợp, không chứa credential hoặc IP nội bộ.
 - Printer đã có `connection_mode` (`direct`/`vpn`/`connector`) và `connector_id`; dữ liệu cũ mặc định `direct`. API và form thêm/sửa máy in kiểm tra Connector còn hoạt động, không probe IP từ backend khi chọn Connector; discovery/RPC vẫn là bước kế tiếp.
-- Các task Phase 0-1 đã triển khai một phần được đánh dấu `DOING`/`DONE` trong task plan; discovery, transport, status/control, file, camera và packaging production vẫn chưa triển khai.
+- Discovery Connector đã có nền tảng v1: `POST /api/v1/connectors/{id}/discoveries` kiểm tra private CIDR/port/timeout, gateway request-response gắn đúng Connector, protocol `discovery.request/result`, và agent scanner TCP giới hạn 256 host/16 port/concurrency 64, không trả credential/banner. Chưa có `PrinterTransport`, command ledger/query bất đồng bộ, hay xác minh MQTT/HTTP/API để thêm máy in.
+- Các task Phase 0-1 đã triển khai một phần được đánh dấu `DOING`/`DONE` trong task plan; transport, status/control, file, camera và packaging production vẫn chưa triển khai hoàn chỉnh.
 
 ## GitHub và đồng bộ mã nguồn
 

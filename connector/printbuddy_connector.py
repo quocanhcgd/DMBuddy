@@ -1,8 +1,4 @@
-"""Minimal standalone Printbuddy Connector agent.
-
-Phase 1 deliberately implements enrollment, authenticated WSS, heartbeat and
-clean reconnect only. It does not scan the LAN or control printers yet.
-"""
+"""Standalone Printbuddy Connector agent."""
 
 from __future__ import annotations
 
@@ -20,7 +16,14 @@ from pathlib import Path
 import httpx
 import websockets
 
-from connector_protocol import MAX_FRAME_BYTES, PROTOCOL_VERSION, ConnectorMessage
+from connector.discovery import discover_lan
+from connector_protocol import (
+    MAX_FRAME_BYTES,
+    PROTOCOL_VERSION,
+    ConnectorDiscoveryRequest,
+    ConnectorDiscoveryResult,
+    ConnectorMessage,
+)
 
 logger = logging.getLogger("printbuddy.connector")
 
@@ -116,26 +119,82 @@ class ConnectorAgent:
                     accepted = await websocket.recv()
                     logger.info("Connector session accepted")
                     _ = accepted  # Do not log server payloads or credentials.
-                    while True:
-                        heartbeat = ConnectorMessage(
-                            connector_id=self.connector_id,
-                            type="heartbeat",
-                            payload={
-                                "version": os.getenv("PRINTBUDDY_CONNECTOR_VERSION", "0.1.0"),
-                                "platform": f"{sys.platform}/{platform.machine()}",
-                                "health": "ok",
-                            },
-                            sent_at=datetime.now(timezone.utc),
-                        )
-                        await websocket.send(heartbeat.model_dump_json())
-                        await asyncio.wait_for(websocket.recv(), timeout=30)
-                        await asyncio.sleep(15)
+                    send_lock = asyncio.Lock()
+                    heartbeat_task = asyncio.create_task(self._heartbeat_loop(websocket, send_lock))
+                    receive_task = asyncio.create_task(self._receive_loop(websocket, send_lock))
+                    done, pending = await asyncio.wait(
+                        {heartbeat_task, receive_task},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    for task in done:
+                        task.result()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.warning("Connector connection unavailable; retrying in %.1fs (%s)", backoff, type(exc).__name__)
                 await asyncio.sleep(backoff + secrets.randbelow(500) / 1000)
                 backoff = min(backoff * 2, 60.0)
+
+    async def _heartbeat_loop(self, websocket: object, send_lock: asyncio.Lock) -> None:
+        assert self.connector_id
+        while True:
+            heartbeat = ConnectorMessage(
+                connector_id=self.connector_id,
+                type="heartbeat",
+                payload={
+                    "version": os.getenv("PRINTBUDDY_CONNECTOR_VERSION", "0.1.0"),
+                    "platform": f"{sys.platform}/{platform.machine()}",
+                    "health": "ok",
+                },
+                sent_at=datetime.now(timezone.utc),
+            )
+            async with send_lock:
+                await websocket.send(heartbeat.model_dump_json())
+            await asyncio.sleep(15)
+
+    async def _receive_loop(self, websocket: object, send_lock: asyncio.Lock) -> None:
+        assert self.connector_id
+        while True:
+            raw = await websocket.recv()
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8")
+            message = ConnectorMessage.model_validate_json(raw)
+            if message.connector_id != self.connector_id:
+                raise RuntimeError("Connector ID mismatch in server message")
+            if message.type != "discovery.request":
+                continue
+            try:
+                request = ConnectorDiscoveryRequest.model_validate(message.payload)
+                entries = await discover_lan(request)
+                result = ConnectorDiscoveryResult(
+                    request_id=request.request_id,
+                    status="completed",
+                    results=entries,
+                )
+            except ValueError as exc:
+                result = ConnectorDiscoveryResult(
+                    request_id=str(message.payload.get("request_id", "")),
+                    status="failed",
+                    error=str(exc),
+                )
+            except Exception:
+                logger.warning("Connector discovery failed", exc_info=True)
+                result = ConnectorDiscoveryResult(
+                    request_id=str(message.payload.get("request_id", "")),
+                    status="failed",
+                    error="discovery failed",
+                )
+            response = ConnectorMessage(
+                connector_id=self.connector_id,
+                type="discovery.result",
+                payload=result.model_dump(mode="json"),
+                sent_at=datetime.now(timezone.utc),
+            )
+            async with send_lock:
+                await websocket.send(response.model_dump_json())
 
 
 def main() -> None:

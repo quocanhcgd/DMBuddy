@@ -21,7 +21,40 @@ MessageType = Literal[
     "heartbeat",
     "heartbeat.ack",
     "error",
+    "discovery.request",
+    "discovery.result",
 ]
+
+
+class ConnectorDiscoveryRequest(BaseModel):
+    """Bounded LAN discovery request sent from server to a Connector."""
+
+    request_id: str = Field(min_length=1, max_length=64)
+    subnet: str = Field(min_length=1, max_length=64)
+    ports: list[int] = Field(min_length=1, max_length=16)
+    max_hosts: int = Field(default=256, ge=1, le=256)
+    timeout_ms: int = Field(default=500, ge=100, le=2000)
+
+
+class ConnectorDiscoveryResultEntry(BaseModel):
+    """A sanitized endpoint discovered on the Connector's private LAN."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ip_address: str = Field(min_length=1, max_length=64)
+    port: int = Field(ge=1, le=65535)
+    protocol: str = Field(min_length=1, max_length=32)
+    service: str = Field(min_length=1, max_length=64)
+    reachable: bool = True
+
+
+class ConnectorDiscoveryResult(BaseModel):
+    """Filtered discovery result returned by a Connector."""
+
+    request_id: str = Field(min_length=1, max_length=64)
+    status: Literal["completed", "failed"]
+    results: list[ConnectorDiscoveryResultEntry] = Field(default_factory=list, max_length=256)
+    error: str | None = Field(default=None, max_length=200)
 
 
 class ConnectorMessage(BaseModel):
@@ -60,6 +93,9 @@ class ConnectorHeartbeat(BaseModel):
 __all__ = [
     "ConnectorAuthFrame",
     "ConnectorHeartbeat",
+    "ConnectorDiscoveryRequest",
+    "ConnectorDiscoveryResult",
+    "ConnectorDiscoveryResultEntry",
     "ConnectorMessage",
     "MAX_FRAME_BYTES",
     "MessageType",

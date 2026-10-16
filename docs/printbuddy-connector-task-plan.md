@@ -144,7 +144,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-106 — Connector prototype độc lập
 
-- **Trạng thái:** `DOING` (prototype enrollment/WSS/heartbeat/reconnect đã triển khai; chưa discovery)
+- **Trạng thái:** `DOING` (prototype enrollment/WSS/heartbeat/reconnect và bounded discovery đã triển khai; còn packaging/service)
 - **Phụ thuộc:** CON-002, CON-003, CON-005
 - **Phạm vi mới:** thư mục `connector/` hoặc package độc lập; không import `backend.app`.
 - **Chức năng v1:** đọc config server URL, enrollment token; enroll; lưu credential/key an toàn; WSS reconnect; heartbeat; log redaction; shutdown sạch.
@@ -188,12 +188,12 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-203 — Discovery command qua Connector
 
-- **Trạng thái:** `TODO`
+- **Trạng thái:** `DOING` (đã có protocol v1, API đồng bộ, gateway request/response và TCP scanner private LAN; còn command ledger/query trạng thái và protocol-specific verification)
 - **Phụ thuộc:** CON-105, CON-201, CON-202
 - **API:** `POST /api/v1/connectors/{id}/discoveries`, query trạng thái/result.
 - **Bảo vệ:** CIDR/port allowlist, timeout, concurrency, max host, không nhận URL tùy ý; chỉ user có `connectors:discover`.
 - **Connector:** scanner Bambu/Moonraker theo protocol hiện có, trả result đã lọc, không lưu access code.
-- **Tiêu chí hoàn thành:** discovery không quét Internet; kết quả phân biệt reachable/protocol/auth/capability.
+- **Tiêu chí hoàn thành:** discovery không quét Internet; kết quả phân biệt reachable/protocol/auth/capability. Nền tảng hiện tại chỉ báo TCP reachable và service suy ra theo port; auth/capability sẽ hoàn thiện trong CON-204.
 
 ### CON-204 — Add printer qua Connector
 

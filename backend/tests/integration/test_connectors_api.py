@@ -2,11 +2,13 @@
 
 import json
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
 
 from backend.app.models.connector import Connector, ConnectorEnrollment
+from backend.app.services.connector_gateway import connector_gateway
 
 
 async def _setup_auth(client):
@@ -150,3 +152,66 @@ async def test_expired_enrollment_is_rejected(async_client, db_session):
         json={"enrollment_code": raw, "version": "0.1.0", "platform": "linux"},
     )
     assert response.status_code == 410
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_discovery_requires_private_bounded_subnet(async_client):
+    token = await _setup_auth(async_client)
+    response = await async_client.post(
+        "/api/v1/connectors/does-not-matter/discoveries",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"subnet": "8.8.8.0/24", "ports": [80]},
+    )
+    assert response.status_code == 400
+
+    response = await async_client.post(
+        "/api/v1/connectors/does-not-matter/discoveries",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"subnet": "192.168.0.0/16", "ports": [80], "max_hosts": 256},
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_discovery_forwards_request_and_returns_sanitized_result(async_client, monkeypatch):
+    token = await _setup_auth(async_client)
+    enrollment = await async_client.post(
+        "/api/v1/connectors/enrollments",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Discovery LAN"},
+    )
+    code = enrollment.json()["enrollment_code"]
+    enrolled = await async_client.post(
+        "/api/v1/connectors/enroll",
+        json={"enrollment_code": code, "version": "0.1.0", "platform": "linux"},
+    )
+    connector_id = enrolled.json()["connector_id"]
+
+    monkeypatch.setattr(connector_gateway, "is_online", lambda value: value == connector_id)
+    request = AsyncMock(
+        return_value={
+            "request_id": "req-1",
+            "status": "completed",
+            "results": [
+                {
+                    "ip_address": "192.168.10.2",
+                    "port": 7125,
+                    "protocol": "http",
+                    "service": "moonraker",
+                    "reachable": True,
+                }
+            ],
+        }
+    )
+    monkeypatch.setattr(connector_gateway, "request", request)
+
+    response = await async_client.post(
+        f"/api/v1/connectors/{connector_id}/discoveries",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"subnet": "192.168.10.0/30", "ports": [7125], "timeout_ms": 100},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["results"][0]["service"] == "moonraker"
+    request.assert_awaited_once()
