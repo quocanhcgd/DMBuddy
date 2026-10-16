@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import secrets
@@ -277,7 +278,11 @@ async def connector_websocket(websocket: WebSocket):
         )
 
         while True:
-            raw = await websocket.receive_text()
+            try:
+                raw = await asyncio.wait_for(websocket.receive_text(), timeout=45)
+            except asyncio.TimeoutError:
+                await websocket.close(code=4008, reason="Connector heartbeat timeout")
+                return
             if len(raw.encode("utf-8")) > _MAX_WS_MESSAGE_BYTES:
                 await websocket.close(code=1009, reason="Frame too large")
                 return
