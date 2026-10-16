@@ -3112,6 +3112,7 @@ export type Permission =
   | 'github:backup' | 'github:restore'
   | 'cloud:auth' | 'orca_cloud:auth'
   | 'makerworld:view' | 'makerworld:import'
+  | 'connectors:read' | 'connectors:create' | 'connectors:update' | 'connectors:revoke' | 'connectors:discover' | 'connectors:control'
   | 'api_keys:read' | 'api_keys:create' | 'api_keys:update' | 'api_keys:delete'
   | 'users:read' | 'users:create' | 'users:update' | 'users:delete'
   | 'groups:read' | 'groups:create' | 'groups:update' | 'groups:delete'
@@ -3158,6 +3159,34 @@ export interface PermissionInfo {
 export interface PermissionCategory {
   name: string;
   permissions: PermissionInfo[];
+}
+
+// Remote Printbuddy Connector management
+export type ConnectorStatus = 'pending' | 'online' | 'offline' | 'revoked';
+
+export interface Connector {
+  id: number;
+  public_id: string;
+  name: string;
+  status: ConnectorStatus | string;
+  version: string | null;
+  platform: string | null;
+  last_seen_at: string | null;
+  last_disconnect_reason: string | null;
+  credential_version: number;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConnectorEnrollmentResponse {
+  enrollment_code: string;
+  expires_at: string;
+  protocol_version: number;
+}
+
+export interface ConnectorUpdate {
+  name?: string;
 }
 
 export interface PermissionsListResponse {
@@ -3634,6 +3663,23 @@ export const api = {
   removeUserFromGroup: (groupId: number, userId: number) =>
     request<void>(`/groups/${groupId}/users/${userId}`, {
       method: 'DELETE',
+    }),
+
+  // Remote Printbuddy Connectors
+  listConnectors: () => request<Connector[]>('/connectors'),
+  createConnectorEnrollment: (data?: { name?: string; ttl_seconds?: number }) =>
+    request<ConnectorEnrollmentResponse>('/connectors/enrollments', {
+      method: 'POST',
+      body: JSON.stringify(data ?? {}),
+    }),
+  updateConnector: (id: string, data: ConnectorUpdate) =>
+    request<Connector>(`/connectors/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  revokeConnector: (id: string) =>
+    request<Connector>(`/connectors/${encodeURIComponent(id)}/revoke`, {
+      method: 'POST',
     }),
 
   // Printers

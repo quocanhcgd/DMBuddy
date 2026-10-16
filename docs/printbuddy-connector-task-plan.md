@@ -152,7 +152,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-107 — UI Settings → Connectors
 
-- **Trạng thái:** `TODO`
+- **Trạng thái:** `DONE` (Settings → Connectors đã có enrollment code một lần, danh sách trạng thái, đổi tên và thu hồi)
 - **Phụ thuộc:** CON-104, CON-105
 - **Phạm vi dự kiến:** `frontend/src/pages/SettingsPage.tsx` hoặc component tab riêng, `frontend/src/api/client.ts`, i18n `vi.ts` và locale khác, settings search/router.
 - **Chức năng:** tạo enrollment, hiển thị mã/QR một lần và TTL, danh sách Connector, online/offline/version/platform, rename, revoke, copy/download hướng dẫn cài.

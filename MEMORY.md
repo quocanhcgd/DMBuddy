@@ -72,6 +72,7 @@ Khi người dùng nói “tiếp tục MakerWorld User Accounts”, tiếp tụ
 - Backlog task có mã, phụ thuộc, file/module dự kiến, tiêu chí nghiệm thu và lệnh kiểm tra nằm ở [`docs/printbuddy-connector-task-plan.md`](docs/printbuddy-connector-task-plan.md).
 - Thứ tự bắt buộc: inventory/protocol/security → enrollment/gateway → discovery/transport → status/control → file transfer → camera/capability → packaging/pilot.
 - Đã bắt đầu Phase 0-1: protocol package, model/migration Connector, enrollment API, permission, WSS gateway và prototype heartbeat nằm trong `connector/`.
+- Đã hoàn tất UI Phase 1 tại Settings → Connectors: tạo mã enrollment TTL 10 phút (chỉ hiển thị một lần), danh sách online/offline/revoked, version/platform/last seen, đổi tên và thu hồi theo permission; credential dài hạn không xuất hiện trên frontend.
 - Các task Phase 0-1 đã triển khai một phần được đánh dấu `DOING`/`DONE` trong task plan; discovery, transport, status/control, file, camera và packaging production vẫn chưa triển khai.
 
 ## GitHub và đồng bộ mã nguồn

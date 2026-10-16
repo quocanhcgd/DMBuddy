@@ -17,6 +17,7 @@ export type SettingsSearchTab =
   | 'network'
   | 'apikeys'
   | 'virtual-printer'
+  | 'connectors'
   | 'users'
   | 'backup'
   | 'failure-detection';
