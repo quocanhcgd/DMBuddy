@@ -188,19 +188,19 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-203 — Discovery command qua Connector
 
-- **Trạng thái:** `DOING` (đã có protocol v1, API đồng bộ, gateway request/response và TCP scanner private LAN; còn command ledger/query trạng thái và protocol-specific verification)
+- **Trạng thái:** `DOING` (đã có protocol v1, API đồng bộ, gateway request/response, TCP scanner private LAN và typed verify/status RPC; còn command ledger/query trạng thái dài hạn và protocol-specific auth)
 - **Phụ thuộc:** CON-105, CON-201, CON-202
 - **API:** `POST /api/v1/connectors/{id}/discoveries`, query trạng thái/result.
 - **Bảo vệ:** CIDR/port allowlist, timeout, concurrency, max host, không nhận URL tùy ý; chỉ user có `connectors:discover`.
-- **Connector:** scanner Bambu/Moonraker theo protocol hiện có, trả result đã lọc, không lưu access code.
-- **Tiêu chí hoàn thành:** discovery không quét Internet; kết quả phân biệt reachable/protocol/auth/capability. Nền tảng hiện tại chỉ báo TCP reachable và service suy ra theo port; auth/capability sẽ hoàn thiện trong CON-204.
+- **Connector:** scanner endpoint và typed `printer.verify/status` theo provider/port, trả result đã lọc, không nhận hoặc lưu access code.
+- **Tiêu chí hoàn thành:** discovery không quét Internet; kết quả phân biệt reachable/protocol/auth/capability. Nền tảng hiện tại báo TCP reachable và status snapshot tối thiểu; xác minh MQTT/HTTP/API có credential sẽ hoàn thiện sau khi có credential-handling contract.
 
 ### CON-204 — Add printer qua Connector
 
-- **Trạng thái:** `TODO`
+- **Trạng thái:** `DOING` (route tạo printer Connector đã bắt buộc typed verify; wizard chọn kết quả discovery và provider-specific verification còn lại)
 - **Phụ thuộc:** CON-201, CON-203
 - **Phạm vi:** route `printers.py`, schema/UI `PrintersPage.tsx`, wizard chọn Connector → discovery result → credential → verify.
-- **Tiêu chí hoàn thành:** verify MQTT/HTTP/API qua Connector trước khi lưu; binding printer-connector atomic; lỗi từng capability hiển thị riêng; test fake printer.
+- **Tiêu chí hoàn thành:** verify qua Connector trước khi lưu; binding printer-connector atomic; lỗi từng capability hiển thị riêng; test fake printer. Hiện đã chặn lưu nếu endpoint private không reachable; xác minh credential/provider chuyên sâu và UI wizard vẫn chưa hoàn tất.
 
 ### CON-205 — Đóng gói discovery Connector
 

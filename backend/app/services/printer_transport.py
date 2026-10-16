@@ -34,6 +34,10 @@ class PrinterTransport(Protocol):
         timeout: float,
     ) -> ConnectorDiscoveryResponse: ...
 
+    async def verify(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]: ...
+
+    async def status(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]: ...
+
 
 class DirectPrinterTransport:
     """Direct mode placeholder until local discovery is routed through a provider."""
@@ -46,6 +50,14 @@ class DirectPrinterTransport:
     ) -> ConnectorDiscoveryResponse:
         del payload, timeout
         raise CapabilityUnavailableError("direct printer discovery is not enabled by this transport")
+
+    async def verify(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]:
+        del payload, timeout
+        raise CapabilityUnavailableError("direct printer verification is not enabled by this transport")
+
+    async def status(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]:
+        del payload, timeout
+        raise CapabilityUnavailableError("direct printer status is not enabled by this transport")
 
 
 class ConnectorPrinterTransport:
@@ -72,6 +84,24 @@ class ConnectorPrinterTransport:
         if response is None:
             raise ConnectorOfflineError("Connector did not return a discovery result")
         return ConnectorDiscoveryResponse.model_validate(response)
+
+    async def verify(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]:
+        return await self._request("printer.verify.request", payload, timeout=timeout)
+
+    async def status(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]:
+        return await self._request("printer.status.request", payload, timeout=timeout)
+
+    async def _request(
+        self,
+        message_type: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout: float,
+    ) -> Mapping[str, Any]:
+        response = await self.gateway.request(self.connector_id, message_type, dict(payload), timeout=timeout)
+        if response is None:
+            raise ConnectorOfflineError("Connector did not return a response")
+        return response
 
 
 def printer_transport_for_mode(

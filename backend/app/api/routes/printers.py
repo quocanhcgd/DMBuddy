@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+import secrets
 import tempfile
 import zipfile
 from pathlib import Path
@@ -49,6 +50,7 @@ from backend.app.services.bambu_ftp import (
     list_files_async,
     upload_file_async,
 )
+from backend.app.services.connector_gateway import connector_gateway
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_manager import (
     get_derived_status_name,
@@ -59,6 +61,7 @@ from backend.app.services.printer_manager import (
 )
 from backend.app.services.printer_providers.factory import create_printer_client, normalize_provider
 from backend.app.services.printer_providers.moonraker import create_moonraker_client
+from backend.app.services.printer_transport import ConnectorOfflineError, ConnectorPrinterTransport
 from backend.app.utils.filament_ids import effective_bambu_material, generic_bambu_filament_id
 from backend.app.utils.http import build_content_disposition
 
@@ -266,6 +269,48 @@ async def _validate_connector_binding(
     return connector
 
 
+def _connector_printer_port(provider: str) -> int:
+    return {
+        "bambu": 8883,
+        "klipper": 7125,
+        "mainsail": 7125,
+        "fluidd": 7125,
+        "prusalink": 80,
+        "prusaconnect": 443,
+        "elegoo_sdcp": 3030,
+    }.get(provider, 8883)
+
+
+async def _verify_connector_printer(
+    printer_data: PrinterCreate,
+    connector: Connector,
+) -> dict:
+    transport = ConnectorPrinterTransport(connector.public_id, connector_gateway)
+    try:
+        result = await transport.verify(
+            {
+                "request_id": secrets.token_urlsafe(16),
+                "ip_address": printer_data.ip_address,
+                "port": _connector_printer_port(printer_data.provider),
+                "provider": printer_data.provider,
+                "serial_number": printer_data.serial_number,
+                "timeout_ms": 1500,
+            },
+            timeout=8,
+        )
+    except ConnectorOfflineError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if not result.get("reachable") or result.get("status") != "completed":
+        raise HTTPException(
+            400,
+            detail={
+                "code": "printer_connection_failed",
+                "message": result.get("error") or "Connector could not reach the printer endpoint",
+            },
+        )
+    return dict(result)
+
+
 @router.get("/", response_model=list[PrinterResponse])
 async def list_printers(
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
@@ -296,10 +341,10 @@ async def create_printer(
         raise HTTPException(400, "Printer with this serial number already exists")
 
     if printer_data.connection_mode == "connector":
-        await _validate_connector_binding(db, printer_data.connector_id, current_user)
-        # The Connector owns the LAN-side verification. Discovery/verification
-        # RPC is introduced in CON-203; do not probe the backend's network.
-        test_result = {"success": True}
+        connector = await _validate_connector_binding(db, printer_data.connector_id, current_user)
+        verification = await _verify_connector_printer(printer_data, connector)
+        test_result = {"success": True, "state": "reachable", "model": printer_data.model}
+        test_result["connector_verification"] = verification
     else:
         test_result = await printer_manager.test_connection(
             ip_address=printer_data.ip_address,

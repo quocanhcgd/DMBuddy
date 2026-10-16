@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from connector.discovery import discover_lan
+from connector.discovery import discover_lan, probe_endpoint
 from connector_protocol import ConnectorDiscoveryRequest
 
 
@@ -73,3 +73,21 @@ async def test_discovery_closes_successful_connections():
     request = ConnectorDiscoveryRequest(request_id="req-3", subnet="10.0.0.1/32", ports=[80], max_hosts=1)
     await discover_lan(request, open_connection=open_connection)
     assert writers[0].closed is True
+
+
+@pytest.mark.asyncio
+async def test_endpoint_probe_requires_private_ip_and_closes_socket():
+    writer = _Writer()
+    calls = []
+
+    async def open_connection(host: str, port: int):
+        calls.append((host, port))
+        return object(), writer
+
+    assert await probe_endpoint("192.168.1.8", 8883, 100, open_connection=open_connection) is True
+    assert writer.closed is True
+    assert calls == [("192.168.1.8", 8883)]
+    with pytest.raises(ValueError, match="private IP"):
+        await probe_endpoint("printer.local", 8883, 100, open_connection=open_connection)
+    with pytest.raises(ValueError, match="private LAN"):
+        await probe_endpoint("8.8.8.8", 443, 100, open_connection=open_connection)

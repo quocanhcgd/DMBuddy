@@ -25,6 +25,10 @@ from backend.app.schemas.connector import (
     ConnectorEnrollmentResponse,
     ConnectorEnrollRequest,
     ConnectorEnrollResponse,
+    ConnectorPrinterStatusCreate,
+    ConnectorPrinterStatusResponse,
+    ConnectorPrinterVerifyCreate,
+    ConnectorPrinterVerifyResponse,
     ConnectorResponse,
     ConnectorUpdate,
 )
@@ -36,6 +40,8 @@ from connector_protocol import (
     ConnectorDiscoveryResult,
     ConnectorHeartbeat,
     ConnectorMessage,
+    ConnectorPrinterStatusResult,
+    ConnectorPrinterVerifyResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,6 +81,21 @@ def _owned_connector(connector: Connector, current_user: User | None) -> Connect
         # Auth-disabled callers have no identity and cannot access an owned row.
         raise HTTPException(status_code=404, detail="Connector not found")
     return connector
+
+
+def _validate_private_printer_endpoint(ip_address: str) -> None:
+    try:
+        address = ipaddress.ip_address(ip_address)
+    except ValueError as exc:
+        raise HTTPException(400, "printer endpoint must be a private IP address") from exc
+    if (
+        not address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_unspecified
+    ):
+        raise HTTPException(400, "printer endpoint must be a private LAN address")
 
 
 @router.post("/enrollments", response_model=ConnectorEnrollmentResponse)
@@ -207,6 +228,71 @@ async def discover_through_connector(
         )
     except ConnectorOfflineError as exc:
         raise HTTPException(504, str(exc)) from exc
+
+
+async def _connector_endpoint_operation(
+    connector_id: str,
+    payload: dict,
+    message: str,
+    response_model,
+    db: AsyncSession,
+    current_user: User | None,
+):
+    _validate_private_printer_endpoint(str(payload.get("ip_address", "")))
+    result = await db.execute(select(Connector).where(Connector.public_id == connector_id))
+    connector = _owned_connector(_connector_or_404(result.scalar_one_or_none()), current_user)
+    if connector.revoked_at:
+        raise HTTPException(409, "Connector is revoked")
+    if not connector_gateway.is_online(connector.public_id):
+        raise HTTPException(409, "Connector is offline")
+    request_timeout = max(5.0, float(payload.get("timeout_ms", 1000)) / 1000 + 2)
+    try:
+        response = await connector_gateway.request(
+            connector.public_id,
+            message,
+            payload,
+            timeout=request_timeout,
+        )
+    except Exception as exc:
+        logger.warning("Connector operation failed: %s", type(exc).__name__)
+        raise HTTPException(504, "Connector operation failed") from exc
+    if response is None:
+        raise HTTPException(504, "Connector did not return a result")
+    return response_model.model_validate(response)
+
+
+@router.post("/{connector_id}/verify-printer", response_model=ConnectorPrinterVerifyResponse)
+async def verify_printer_through_connector(
+    connector_id: str,
+    data: ConnectorPrinterVerifyCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CONNECTORS_DISCOVER),
+):
+    return await _connector_endpoint_operation(
+        connector_id,
+        {**data.model_dump(), "request_id": secrets.token_urlsafe(16)},
+        "printer.verify.request",
+        ConnectorPrinterVerifyResponse,
+        db,
+        current_user,
+    )
+
+
+@router.post("/{connector_id}/printer-status", response_model=ConnectorPrinterStatusResponse)
+async def printer_status_through_connector(
+    connector_id: str,
+    data: ConnectorPrinterStatusCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CONNECTORS_READ),
+):
+    return await _connector_endpoint_operation(
+        connector_id,
+        {**data.model_dump(), "request_id": secrets.token_urlsafe(16)},
+        "printer.status.request",
+        ConnectorPrinterStatusResponse,
+        db,
+        current_user,
+    )
 
 
 @router.get("/{connector_id}", response_model=ConnectorResponse)
@@ -377,9 +463,18 @@ async def connector_websocket(websocket: WebSocket):
                         "sent_at": _now().isoformat(),
                     },
                 )
-            elif message.type == "discovery.result":
+            elif message.type in {
+                "discovery.result",
+                "printer.verify.result",
+                "printer.status.result",
+            }:
                 try:
-                    result = ConnectorDiscoveryResult.model_validate(message.payload)
+                    result_model = {
+                        "discovery.result": ConnectorDiscoveryResult,
+                        "printer.verify.result": ConnectorPrinterVerifyResult,
+                        "printer.status.result": ConnectorPrinterStatusResult,
+                    }[message.type]
+                    result = result_model.model_validate(message.payload)
                 except Exception:
                     connector_gateway.record_event("protocol_errors_total")
                     await websocket.close(code=4002, reason="Invalid discovery result")

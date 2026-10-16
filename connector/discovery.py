@@ -11,7 +11,12 @@ import asyncio
 import ipaddress
 from collections.abc import Awaitable, Callable
 
-from connector_protocol import ConnectorDiscoveryRequest, ConnectorDiscoveryResultEntry
+from connector_protocol import (
+    ConnectorDiscoveryRequest,
+    ConnectorDiscoveryResultEntry,
+    ConnectorPrinterStatusRequest,
+    ConnectorPrinterVerifyRequest,
+)
 
 _MAX_HOSTS = 256
 _MAX_PORTS = 16
@@ -50,6 +55,66 @@ def validate_discovery_request(request: ConnectorDiscoveryRequest) -> ipaddress.
 
 def _service_for_port(port: int) -> tuple[str, str]:
     return _SERVICE_BY_PORT.get(port, ("tcp", "tcp"))
+
+
+def validate_private_endpoint(host: str, port: int) -> None:
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError as exc:
+        raise ValueError("printer endpoint must be a private IP address") from exc
+    if (
+        not address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_unspecified
+    ):
+        raise ValueError("printer endpoint must be a private LAN address")
+    if port < 1 or port > 65535:
+        raise ValueError("port must be between 1 and 65535")
+
+
+async def probe_endpoint(
+    host: str,
+    port: int,
+    timeout_ms: int,
+    *,
+    open_connection: Callable[..., Awaitable[tuple[object, object]]] = asyncio.open_connection,
+) -> bool:
+    """Probe one private endpoint without reading banners or sending credentials."""
+
+    validate_private_endpoint(host, port)
+    writer = None
+    try:
+        _, writer = await asyncio.wait_for(
+            open_connection(host, port),
+            timeout=timeout_ms / 1000,
+        )
+        return True
+    except (OSError, asyncio.TimeoutError):
+        return False
+    finally:
+        if writer is not None:
+            writer.close()
+            wait_closed = getattr(writer, "wait_closed", None)
+            if wait_closed is not None:
+                await wait_closed()
+
+
+async def verify_printer_endpoint(
+    request: ConnectorPrinterVerifyRequest,
+    *,
+    open_connection: Callable[..., Awaitable[tuple[object, object]]] = asyncio.open_connection,
+) -> bool:
+    return await probe_endpoint(request.ip_address, request.port, request.timeout_ms, open_connection=open_connection)
+
+
+async def probe_printer_status(
+    request: ConnectorPrinterStatusRequest,
+    *,
+    open_connection: Callable[..., Awaitable[tuple[object, object]]] = asyncio.open_connection,
+) -> bool:
+    return await probe_endpoint(request.ip_address, request.port, request.timeout_ms, open_connection=open_connection)
 
 
 async def discover_lan(

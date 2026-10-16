@@ -215,3 +215,74 @@ async def test_discovery_forwards_request_and_returns_sanitized_result(async_cli
     assert response.status_code == 200, response.text
     assert response.json()["results"][0]["service"] == "moonraker"
     request.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_printer_verify_and_status_use_typed_connector_rpc(async_client, db_session, monkeypatch):
+    token = await _setup_auth(async_client)
+    connector = Connector(
+        public_id="verify-connector",
+        name="Verify Connector",
+        owner_user_id=None,
+        status="online",
+        credential_prefix="pc_verify",
+        credential_hash="not-used-by-binding",
+    )
+    db_session.add(connector)
+    await db_session.commit()
+    monkeypatch.setattr(connector_gateway, "is_online", lambda value: value == connector.public_id)
+    request = AsyncMock(
+        side_effect=[
+            {
+                "request_id": "verify-1",
+                "status": "completed",
+                "reachable": True,
+                "provider": "bambu",
+                "protocol": "tcp",
+                "service": "printer-endpoint",
+            },
+            {
+                "request_id": "status-1",
+                "status": "completed",
+                "connected": True,
+                "state": "reachable",
+            },
+        ]
+    )
+    monkeypatch.setattr(connector_gateway, "request", request)
+
+    verified = await async_client.post(
+        f"/api/v1/connectors/{connector.public_id}/verify-printer",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"ip_address": "192.168.10.10", "provider": "bambu", "port": 8883},
+    )
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["reachable"] is True
+
+    status = await async_client.post(
+        f"/api/v1/connectors/{connector.public_id}/printer-status",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"ip_address": "192.168.10.10", "provider": "bambu", "port": 8883},
+    )
+    assert status.status_code == 200, status.text
+    assert status.json()["state"] == "reachable"
+    assert [call.args[1] for call in request.await_args_list] == [
+        "printer.verify.request",
+        "printer.status.request",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_printer_verify_rejects_public_ip_before_connector_call(async_client, monkeypatch):
+    token = await _setup_auth(async_client)
+    request = AsyncMock()
+    monkeypatch.setattr(connector_gateway, "request", request)
+    response = await async_client.post(
+        "/api/v1/connectors/unknown/verify-printer",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"ip_address": "8.8.8.8", "provider": "bambu", "port": 8883},
+    )
+    assert response.status_code == 400
+    request.assert_not_awaited()

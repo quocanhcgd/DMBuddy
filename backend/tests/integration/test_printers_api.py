@@ -87,19 +87,37 @@ class TestPrintersAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_create_printer_through_connector_skips_backend_probe(
-        self, async_client: AsyncClient, db_session, _mock_printer_test_connection
+        self, async_client: AsyncClient, db_session, _mock_printer_test_connection, monkeypatch
     ):
-        """A remote printer is persisted without probing from the server LAN."""
+        """A remote printer is verified by its Connector, not the server LAN."""
         db_session.add(
             Connector(
                 public_id="office-connector",
                 name="Office Connector",
-                status="offline",
+                status="online",
                 credential_prefix="pc_test",
                 credential_hash="not-used-by-binding",
             )
         )
         await db_session.commit()
+
+        from backend.app.services.connector_gateway import connector_gateway
+
+        monkeypatch.setattr(connector_gateway, "is_online", lambda value: value == "office-connector")
+        monkeypatch.setattr(
+            connector_gateway,
+            "request",
+            AsyncMock(
+                return_value={
+                    "request_id": "verify-1",
+                    "status": "completed",
+                    "reachable": True,
+                    "provider": "bambu",
+                    "protocol": "tcp",
+                    "service": "printer-endpoint",
+                }
+            ),
+        )
 
         response = await async_client.post(
             "/api/v1/printers/",

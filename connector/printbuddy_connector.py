@@ -16,13 +16,17 @@ from pathlib import Path
 import httpx
 import websockets
 
-from connector.discovery import discover_lan
+from connector.discovery import discover_lan, probe_printer_status, verify_printer_endpoint
 from connector_protocol import (
     MAX_FRAME_BYTES,
     PROTOCOL_VERSION,
     ConnectorDiscoveryRequest,
     ConnectorDiscoveryResult,
     ConnectorMessage,
+    ConnectorPrinterStatusRequest,
+    ConnectorPrinterStatusResult,
+    ConnectorPrinterVerifyRequest,
+    ConnectorPrinterVerifyResult,
 )
 
 logger = logging.getLogger("printbuddy.connector")
@@ -164,32 +168,80 @@ class ConnectorAgent:
             message = ConnectorMessage.model_validate_json(raw)
             if message.connector_id != self.connector_id:
                 raise RuntimeError("Connector ID mismatch in server message")
-            if message.type != "discovery.request":
+            if message.type not in {"discovery.request", "printer.verify.request", "printer.status.request"}:
                 continue
+            request_id = str(message.payload.get("request_id", ""))
             try:
-                request = ConnectorDiscoveryRequest.model_validate(message.payload)
-                entries = await discover_lan(request)
-                result = ConnectorDiscoveryResult(
-                    request_id=request.request_id,
-                    status="completed",
-                    results=entries,
-                )
+                if message.type == "discovery.request":
+                    request = ConnectorDiscoveryRequest.model_validate(message.payload)
+                    entries = await discover_lan(request)
+                    result = ConnectorDiscoveryResult(
+                        request_id=request.request_id,
+                        status="completed",
+                        results=entries,
+                    )
+                elif message.type == "printer.verify.request":
+                    request = ConnectorPrinterVerifyRequest.model_validate(message.payload)
+                    reachable = await verify_printer_endpoint(request)
+                    result = ConnectorPrinterVerifyResult(
+                        request_id=request.request_id,
+                        status="completed",
+                        reachable=reachable,
+                        provider=request.provider,
+                        protocol="tcp",
+                        service="printer-endpoint",
+                        error=None if reachable else "endpoint unreachable",
+                    )
+                else:
+                    request = ConnectorPrinterStatusRequest.model_validate(message.payload)
+                    reachable = await probe_printer_status(request)
+                    result = ConnectorPrinterStatusResult(
+                        request_id=request.request_id,
+                        status="completed",
+                        connected=reachable,
+                        state="reachable" if reachable else "unreachable",
+                    )
             except ValueError as exc:
-                result = ConnectorDiscoveryResult(
-                    request_id=str(message.payload.get("request_id", "")),
-                    status="failed",
-                    error=str(exc),
-                )
+                if message.type == "discovery.request":
+                    result = ConnectorDiscoveryResult(request_id=request_id, status="failed", error=str(exc))
+                elif message.type == "printer.verify.request":
+                    result = ConnectorPrinterVerifyResult(
+                        request_id=request_id,
+                        status="failed",
+                        provider=str(message.payload.get("provider", "unknown")),
+                        protocol="tcp",
+                        service="printer-endpoint",
+                        error=str(exc),
+                    )
+                else:
+                    result = ConnectorPrinterStatusResult(request_id=request_id, status="failed", error=str(exc))
             except Exception:
-                logger.warning("Connector discovery failed", exc_info=True)
-                result = ConnectorDiscoveryResult(
-                    request_id=str(message.payload.get("request_id", "")),
-                    status="failed",
-                    error="discovery failed",
-                )
+                logger.warning("Connector printer operation failed", exc_info=True)
+                if message.type == "discovery.request":
+                    result = ConnectorDiscoveryResult(request_id=request_id, status="failed", error="operation failed")
+                elif message.type == "printer.verify.request":
+                    result = ConnectorPrinterVerifyResult(
+                        request_id=request_id,
+                        status="failed",
+                        provider=str(message.payload.get("provider", "unknown")),
+                        protocol="tcp",
+                        service="printer-endpoint",
+                        error="operation failed",
+                    )
+                else:
+                    result = ConnectorPrinterStatusResult(
+                        request_id=request_id,
+                        status="failed",
+                        error="operation failed",
+                    )
+            response_type = {
+                "discovery.request": "discovery.result",
+                "printer.verify.request": "printer.verify.result",
+                "printer.status.request": "printer.status.result",
+            }[message.type]
             response = ConnectorMessage(
                 connector_id=self.connector_id,
-                type="discovery.result",
+                type=response_type,
                 payload=result.model_dump(mode="json"),
                 sent_at=datetime.now(timezone.utc),
             )

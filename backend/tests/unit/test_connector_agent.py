@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -54,6 +55,36 @@ async def test_agent_answers_discovery_request_without_logging_or_forwarding_sec
     assert response.payload["request_id"] == "req-1"
     assert response.payload["results"][0]["ip_address"] == "192.168.1.2"
     assert "credential" not in json.dumps(response.payload)
+
+
+@pytest.mark.asyncio
+async def test_agent_answers_verify_request_without_credentials(monkeypatch, tmp_path):
+    agent = ConnectorAgent("https://example.invalid", tmp_path / "state.json")
+    agent.connector_id = "connector-1"
+    request = ConnectorMessage(
+        connector_id="connector-1",
+        type="printer.verify.request",
+        payload={
+            "request_id": "verify-1",
+            "ip_address": "192.168.1.10",
+            "port": 8883,
+            "provider": "bambu",
+            "serial_number": "SERIAL-1",
+            "timeout_ms": 100,
+        },
+    )
+    probe = AsyncMock(return_value=True)
+    monkeypatch.setattr("connector.printbuddy_connector.verify_printer_endpoint", probe)
+    websocket = _WebSocket(request.model_dump_json())
+
+    with pytest.raises(RuntimeError, match="stop test"):
+        await agent._receive_loop(websocket, asyncio.Lock())
+
+    response = ConnectorMessage.model_validate_json(websocket.sent[0])
+    assert response.type == "printer.verify.result"
+    assert response.payload["reachable"] is True
+    assert "access_code" not in json.dumps(response.payload)
+    probe.assert_awaited_once()
 
 
 async def _fake_discovery(request):

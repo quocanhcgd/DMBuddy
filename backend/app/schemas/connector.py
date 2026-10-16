@@ -74,3 +74,36 @@ class ConnectorDiscoveryResponse(BaseModel):
     status: str
     results: list[dict]
     error: str | None = None
+
+
+class ConnectorPrinterVerifyCreate(BaseModel):
+    ip_address: str = Field(min_length=1, max_length=253)
+    port: int = Field(default=8883, ge=1, le=65535)
+    provider: str = Field(default="bambu", min_length=1, max_length=32)
+    serial_number: str | None = Field(default=None, max_length=64)
+    timeout_ms: int = Field(default=1000, ge=100, le=5000)
+
+
+class ConnectorPrinterVerifyResponse(BaseModel):
+    request_id: str
+    status: str
+    reachable: bool
+    provider: str
+    protocol: str
+    service: str
+    error: str | None = None
+
+
+class ConnectorPrinterStatusCreate(BaseModel):
+    ip_address: str = Field(min_length=1, max_length=253)
+    port: int = Field(default=8883, ge=1, le=65535)
+    provider: str = Field(default="bambu", min_length=1, max_length=32)
+    timeout_ms: int = Field(default=1000, ge=100, le=5000)
+
+
+class ConnectorPrinterStatusResponse(BaseModel):
+    request_id: str
+    status: str
+    connected: bool
+    state: str
+    error: str | None = None
