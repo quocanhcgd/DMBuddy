@@ -1,0 +1,62 @@
+"""HTTP and response schemas for Connector management."""
+
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from connector_protocol import PROTOCOL_VERSION
+
+
+class ConnectorEnrollmentCreate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    ttl_seconds: int = Field(default=600, ge=60, le=900)
+
+
+class ConnectorEnrollmentResponse(BaseModel):
+    enrollment_code: str
+    expires_at: datetime
+    protocol_version: int = PROTOCOL_VERSION
+
+
+class ConnectorEnrollRequest(BaseModel):
+    enrollment_code: str = Field(min_length=16, max_length=256)
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    version: str = Field(min_length=1, max_length=64)
+    platform: str = Field(min_length=1, max_length=64)
+    public_key: str | None = Field(default=None, max_length=4096)
+    protocol_version: int = Field(default=PROTOCOL_VERSION, ge=1, le=255)
+
+
+class ConnectorEnrollResponse(BaseModel):
+    connector_id: str
+    credential: str
+    name: str
+    protocol_version: int = PROTOCOL_VERSION
+    server_time: datetime
+
+
+class ConnectorUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class ConnectorResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    public_id: str
+    name: str
+    status: str
+    version: str | None
+    platform: str | None
+    last_seen_at: datetime | None
+    last_disconnect_reason: str | None
+    credential_version: int
+    revoked_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConnectorCommandResponse(BaseModel):
+    command_id: str
+    status: str
+    detail: str | None = None

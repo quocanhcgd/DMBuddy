@@ -151,6 +151,14 @@ class Permission(StrEnum):
     MAKERWORLD_VIEW = "makerworld:view"  # Resolve MakerWorld URLs and view model metadata
     MAKERWORLD_IMPORT = "makerworld:import"  # Download 3MFs from MakerWorld into the library
 
+    # Remote Connector management
+    CONNECTORS_READ = "connectors:read"
+    CONNECTORS_CREATE = "connectors:create"
+    CONNECTORS_UPDATE = "connectors:update"
+    CONNECTORS_REVOKE = "connectors:revoke"
+    CONNECTORS_DISCOVER = "connectors:discover"
+    CONNECTORS_CONTROL = "connectors:control"
+
     # API Keys (admin-level)
     API_KEYS_READ = "api_keys:read"
     API_KEYS_CREATE = "api_keys:create"
@@ -305,6 +313,14 @@ PERMISSION_CATEGORIES = {
         Permission.MAKERWORLD_VIEW,
         Permission.MAKERWORLD_IMPORT,
     ],
+    "Connectors": [
+        Permission.CONNECTORS_READ,
+        Permission.CONNECTORS_CREATE,
+        Permission.CONNECTORS_UPDATE,
+        Permission.CONNECTORS_REVOKE,
+        Permission.CONNECTORS_DISCOVER,
+        Permission.CONNECTORS_CONTROL,
+    ],
     "API Keys": [
         Permission.API_KEYS_READ,
         Permission.API_KEYS_CREATE,
@@ -370,6 +386,8 @@ DEFAULT_GROUPS = {
             # MakerWorld integration
             Permission.MAKERWORLD_VIEW.value,
             Permission.MAKERWORLD_IMPORT.value,
+            Permission.CONNECTORS_READ.value,
+            Permission.CONNECTORS_DISCOVER.value,
             # Projects - full access
             Permission.PROJECTS_READ.value,
             Permission.PROJECTS_CREATE.value,
@@ -462,6 +480,7 @@ DEFAULT_GROUPS = {
             Permission.WEBSOCKET_CONNECT.value,
             # MakerWorld browsing only (no import — that writes to library)
             Permission.MAKERWORLD_VIEW.value,
+            Permission.CONNECTORS_READ.value,
         ],
         "is_system": True,
     },

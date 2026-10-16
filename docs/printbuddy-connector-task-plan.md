@@ -2,7 +2,7 @@
 
 Ngày lập: 2026-10-16  
 Tài liệu nguồn: [`printbuddy-connector-implementation-plan.md`](printbuddy-connector-implementation-plan.md)  
-Trạng thái: Backlog triển khai, chưa bắt đầu coding
+Trạng thái: Đang triển khai Phase 0-1; các task chưa hoàn tất vẫn giữ `TODO` hoặc `DOING`.
 
 Tài liệu này chuyển kế hoạch kiến trúc thành các task có thể giao và nghiệm thu. Không thay đổi phạm vi kiến trúc đã chốt: Connector là tiến trình độc lập, kết nối outbound WSS/TLS, không mở cổng Internet vào LAN người dùng, hỗ trợ direct mode song song với connector mode.
 
@@ -60,7 +60,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-002 — Chốt contract protocol v1
 
-- **Trạng thái:** `TODO`
+- **Trạng thái:** `DOING`
 - **Phụ thuộc:** CON-001
 - **Mục tiêu:** định nghĩa envelope dùng chung cho enrollment, handshake, heartbeat, command, result, event, error và file transfer metadata.
 - **Đầu ra dự kiến:** package schema dùng chung hoặc `connector/protocol/`; JSON Schema/Pydantic models có `schema_version`, `message_id`, `connector_id`, `sent_at`, `type`, `payload`.
@@ -69,7 +69,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-003 — Chốt auth handshake và vòng đời credential
 
-- **Trạng thái:** `TODO`
+- **Trạng thái:** `DOING`
 - **Phụ thuộc:** CON-002
 - **Mục tiêu:** quyết định enrollment token một lần, TTL 5-10 phút, token dài hạn sau enrollment, rotate/revoke, nonce/challenge và cách xác thực WSS.
 - **Đầu ra:** sequence diagram; threat model ngắn; quy tắc rate limit, replay protection, phiên đồng thời và revoke hiện tại.
@@ -95,7 +95,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-101 — Model và migration Connector
 
-- **Trạng thái:** `TODO`
+- **Trạng thái:** `DONE` (model/migration cơ bản đã triển khai; cần bổ sung migration upgrade test riêng)
 - **Phụ thuộc:** CON-003
 - **Phạm vi code:** model mới dưới `backend/app/models/`, đăng ký trong `backend/app/models/__init__.py`/`database.py`, migration trong `backend/app/core/database.py`.
 - **Dữ liệu:** `id`, `public_id`, `owner_user_id`, `name`, `status`, `version`, `platform`, `last_seen_at`, `created_at`, `updated_at`, public-key/certificate hash, credential hash/version, `revoked_at`, disconnect reason đã khử secret.
@@ -104,7 +104,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-102 — Model enrollment token và command ledger
 
-- **Trạng thái:** `TODO`
+- **Trạng thái:** `DOING` (enrollment ledger đã triển khai; command ledger để trước khi có command queue)
 - **Phụ thuộc:** CON-101, CON-002
 - **Phạm vi:** `connector_enrollments`, `connector_commands` hoặc tên tương đương theo convention repo.
 - **Quy tắc:** chỉ lưu hash token; one-time/expiry/used-at; command payload đã validate nhưng không có credential/file content; index theo connector/printer/status/deadline.
@@ -112,7 +112,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-103 — Permission và ownership policy
 
-- **Trạng thái:** `TODO`
+- **Trạng thái:** `DOING` (permission và ownership route đã triển khai; còn hoàn thiện audit/rate-limit)
 - **Phụ thuộc:** CON-101
 - **Phạm vi:** `backend/app/core/permissions.py`, group seed, dependency auth/permission, audit log.
 - **Quyền tối thiểu:** `connectors:read`, `connectors:create`, `connectors:update`, `connectors:revoke`, `connectors:discover`, `connectors:control`; quyền printer/file/camera vẫn tách riêng.
@@ -121,7 +121,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-104 — API enrollment và quản lý Connector
 
-- **Trạng thái:** `TODO`
+- **Trạng thái:** `DOING` (enrollment/list/get/rename/revoke đã triển khai; còn hoàn thiện API command/audit)
 - **Phụ thuộc:** CON-101, CON-102, CON-103
 - **Phạm vi:** route/schema/service mới; đăng ký router trong `backend/app/main.py` hoặc router registry hiện hành.
 - **API dự kiến:**
@@ -135,7 +135,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-105 — Connector Gateway WSS
 
-- **Trạng thái:** `TODO`
+- **Trạng thái:** `DOING` (auth/heartbeat/session registry đã triển khai; còn rate-limit/metrics và integration WSS test)
 - **Phụ thuộc:** CON-002, CON-003, CON-104
 - **Phạm vi:** route riêng `/api/v1/connectors/ws`, service session registry, giới hạn frame/connection/rate.
 - **Luồng:** TLS termination theo deployment; auth header hoặc auth frame chống replay; handshake version; heartbeat; close reason; revoke kiểm tra ở mỗi frame quan trọng.
@@ -144,7 +144,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-106 — Connector prototype độc lập
 
-- **Trạng thái:** `TODO`
+- **Trạng thái:** `DOING` (prototype enrollment/WSS/heartbeat/reconnect đã triển khai; chưa discovery)
 - **Phụ thuộc:** CON-002, CON-003, CON-005
 - **Phạm vi mới:** thư mục `connector/` hoặc package độc lập; không import `backend.app`.
 - **Chức năng v1:** đọc config server URL, enrollment token; enroll; lưu credential/key an toàn; WSS reconnect; heartbeat; log redaction; shutdown sạch.

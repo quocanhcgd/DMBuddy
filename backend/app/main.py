@@ -26,6 +26,7 @@ from backend.app.api.routes import (
     bug_report,
     camera,
     cloud,
+    connectors,
     discovery,
     external_links,
     filaments,
@@ -6105,12 +6106,17 @@ PUBLIC_API_ROUTES = {
     "/api/v1/updates/version",
     # Metrics endpoint handles its own prometheus_token authentication
     "/api/v1/metrics",
+    # Connector enrollment authenticates with a short-lived one-time code,
+    # not a browser JWT. The endpoint performs its own token validation.
+    "/api/v1/connectors/enroll",
 }
 
 # Route prefixes that are public (for routes with dynamic segments)
 PUBLIC_API_PREFIXES = [
     # WebSocket connections handle their own auth
     "/api/v1/ws",
+    # Connector gateway authenticates the agent credential after WSS opens.
+    "/api/v1/connectors/ws",
     # OIDC authorize redirects — include provider_id in path
     "/api/v1/auth/oidc/authorize/",
 ]
@@ -6478,6 +6484,7 @@ app.include_router(inventory.router, prefix=app_settings.api_prefix)
 app.include_router(labels.router, prefix=app_settings.api_prefix)
 app.include_router(settings_routes.router, prefix=app_settings.api_prefix)
 app.include_router(cloud.router, prefix=app_settings.api_prefix)
+app.include_router(connectors.router, prefix=app_settings.api_prefix)
 app.include_router(orca_cloud.router, prefix=app_settings.api_prefix)
 app.include_router(local_presets.router, prefix=app_settings.api_prefix)
 app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)

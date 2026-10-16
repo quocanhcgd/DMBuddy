@@ -182,6 +182,7 @@ async def init_db():
         bambu_cloud_account,
         bug_report,
         color_catalog,
+        connector,
         external_link,
         filament,
         filament_sku_settings,
@@ -656,6 +657,13 @@ async def run_migrations(conn):
     swallowed.
     """
     from sqlalchemy import text
+
+    # Connector tables are created here as well as by metadata.create_all so
+    # existing installations receive them on the next normal startup.
+    from backend.app.models.connector import Connector, ConnectorEnrollment
+
+    await conn.run_sync(lambda sync_conn: Connector.__table__.create(sync_conn, checkfirst=True))
+    await conn.run_sync(lambda sync_conn: ConnectorEnrollment.__table__.create(sync_conn, checkfirst=True))
 
     # Migration: Add is_favorite column to print_archives
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN is_favorite BOOLEAN DEFAULT 0")

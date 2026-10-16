@@ -68,6 +68,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Copy backend
 COPY backend/ ./backend/
 
+# Shared versioned Connector protocol package. The standalone Connector does
+# not import backend.app, but the server uses these schemas for gateway frames.
+COPY connector_protocol/ ./connector_protocol/
+
 # Capture the current git branch at build time. `.git/HEAD` is the only
 # .git metadata the build context lets through (see .dockerignore); it
 # contains `ref: refs/heads/<branch>` for runtime version/source reporting.

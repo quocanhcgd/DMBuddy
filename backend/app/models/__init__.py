@@ -1,10 +1,11 @@
 from backend.app.models.ams_history import AMSSensorHistory
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.api_key import APIKey
-from backend.app.models.bambu_cloud_account import BambuCloudAccount
 from backend.app.models.archive import PrintArchive
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
+from backend.app.models.bambu_cloud_account import BambuCloudAccount
 from backend.app.models.color_catalog import ColorCatalogEntry
+from backend.app.models.connector import Connector, ConnectorEnrollment
 from backend.app.models.filament import Filament
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
 from backend.app.models.group import Group, user_groups
@@ -78,6 +79,8 @@ __all__ = [
     "SpoolCatalogEntry",
     "SpoolUsageHistory",
     "ColorCatalogEntry",
+    "Connector",
+    "ConnectorEnrollment",
     "UserEmailPreference",
     "UserOTPCode",
     "UserTOTP",
