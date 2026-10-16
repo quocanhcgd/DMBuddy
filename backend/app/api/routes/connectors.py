@@ -29,6 +29,7 @@ from backend.app.schemas.connector import (
     ConnectorUpdate,
 )
 from backend.app.services.connector_gateway import connector_gateway
+from backend.app.services.printer_transport import ConnectorOfflineError, ConnectorPrinterTransport
 from connector_protocol import (
     PROTOCOL_VERSION,
     ConnectorAuthFrame,
@@ -193,25 +194,19 @@ async def discover_through_connector(
     if not connector_gateway.is_online(connector.public_id):
         raise HTTPException(409, "Connector is offline")
 
-    response = await connector_gateway.request(
-        connector.public_id,
-        "discovery.request",
-        {
-            "subnet": str(network),
-            "ports": ports,
-            "max_hosts": data.max_hosts,
-            "timeout_ms": data.timeout_ms,
-        },
-        timeout=max(10.0, data.timeout_ms / 1000 * data.max_hosts / 8 + 5),
-    )
-    if response is None:
-        raise HTTPException(504, "Connector did not return a discovery result")
-    return ConnectorDiscoveryResponse(
-        request_id=str(response.get("request_id", "")),
-        status=str(response.get("status", "failed")),
-        results=response.get("results") if isinstance(response.get("results"), list) else [],
-        error=response.get("error") if isinstance(response.get("error"), str) else None,
-    )
+    transport = ConnectorPrinterTransport(connector.public_id)
+    try:
+        return await transport.discover(
+            {
+                "subnet": str(network),
+                "ports": ports,
+                "max_hosts": data.max_hosts,
+                "timeout_ms": data.timeout_ms,
+            },
+            timeout=max(10.0, data.timeout_ms / 1000 * data.max_hosts / 8 + 5),
+        )
+    except ConnectorOfflineError as exc:
+        raise HTTPException(504, str(exc)) from exc
 
 
 @router.get("/{connector_id}", response_model=ConnectorResponse)

@@ -180,11 +180,11 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-202 — PrinterTransport abstraction
 
-- **Trạng thái:** `TODO`
+- **Trạng thái:** `DOING` (đã thêm transport boundary và Connector discovery adapter; các capability status/control/file vẫn chưa nối)
 - **Phụ thuộc:** CON-002, CON-201
 - **Phạm vi dự kiến:** `backend/app/services/printer_transport.py`, direct/connector implementation, factory/provider integration.
 - **Interface tối thiểu:** `test_connection`, `connect`, `disconnect`, `request_status`, `send_command`, `list_files`, `upload_file`, `download_file`, `delete_file`, `get_snapshot`, `diagnostic`.
-- **Tiêu chí hoàn thành:** domain routes không tự mở socket bằng `printer.ip_address`; direct adapter gọi code cũ; connector adapter chỉ gửi typed RPC; capability thiếu trả `capability_unavailable`.
+- **Tiêu chí hoàn thành:** domain routes không tự mở socket bằng `printer.ip_address`; direct adapter gọi code cũ; connector adapter chỉ gửi typed RPC; capability thiếu trả `capability_unavailable`. Hiện discovery đã đi qua `ConnectorPrinterTransport`; phần provider operations còn lại tiếp tục ở CON-301+.
 
 ### CON-203 — Discovery command qua Connector
 
