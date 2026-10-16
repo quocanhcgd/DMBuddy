@@ -96,6 +96,8 @@ class TestMetricsAPI:
         assert "printbuddy_filament_used_grams" in content
         assert "printbuddy_print_time_seconds" in content
         assert "printbuddy_queue_pending" in content
+        assert "printbuddy_connector_sessions_active" in content
+        assert "printbuddy_connector_auth_failures_total" in content
 
     @pytest.mark.asyncio
     @pytest.mark.integration

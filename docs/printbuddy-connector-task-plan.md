@@ -161,7 +161,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-108 — Observability gateway
 
-- **Trạng thái:** `TODO`
+- **Trạng thái:** `DONE` (gateway counters và Prometheus metrics đã bổ sung; không xuất credential/IP nội bộ)
 - **Phụ thuộc:** CON-105
 - **Phạm vi:** structured logs, metrics, health fields và redaction filter hiện có.
 - **Metric tối thiểu:** active sessions, heartbeat age, auth failures, reconnects, command latency/failure, frame limit hits.

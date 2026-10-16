@@ -250,15 +250,18 @@ async def connector_websocket(websocket: WebSocket):
         if credential is None:
             first = await websocket.receive_text()
             if len(first.encode("utf-8")) > _MAX_WS_MESSAGE_BYTES:
+                connector_gateway.record_event("frames_too_large_total")
                 await websocket.close(code=1009, reason="Frame too large")
                 return
             auth_frame = ConnectorAuthFrame.model_validate_json(first)
             if auth_frame.protocol_version != PROTOCOL_VERSION:
+                connector_gateway.record_event("protocol_errors_total")
                 await websocket.close(code=4002, reason="Unsupported protocol version")
                 return
             credential = auth_frame.credential
         connector = await _authenticate_connector(credential)
         if connector is None:
+            connector_gateway.record_event("auth_failures_total")
             await websocket.close(code=4003, reason="Invalid Connector credential")
             return
 
@@ -281,16 +284,20 @@ async def connector_websocket(websocket: WebSocket):
             try:
                 raw = await asyncio.wait_for(websocket.receive_text(), timeout=45)
             except asyncio.TimeoutError:
+                connector_gateway.record_event("heartbeat_timeouts_total")
                 await websocket.close(code=4008, reason="Connector heartbeat timeout")
                 return
             if len(raw.encode("utf-8")) > _MAX_WS_MESSAGE_BYTES:
+                connector_gateway.record_event("frames_too_large_total")
                 await websocket.close(code=1009, reason="Frame too large")
                 return
             message = ConnectorMessage.model_validate_json(raw)
             if message.connector_id != connector.public_id:
+                connector_gateway.record_event("protocol_errors_total")
                 await websocket.close(code=4003, reason="Connector ID mismatch")
                 return
             if message.schema_version != PROTOCOL_VERSION:
+                connector_gateway.record_event("protocol_errors_total")
                 await websocket.close(code=4002, reason="Unsupported protocol version")
                 return
             if message.type == "heartbeat":
@@ -324,6 +331,7 @@ async def connector_websocket(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception:
+        connector_gateway.record_event("protocol_errors_total")
         logger.info("Connector WebSocket closed with protocol error", exc_info=True)
     finally:
         if session and await connector_gateway.unregister(session):

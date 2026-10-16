@@ -8,10 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import APP_VERSION
 from backend.app.core.database import get_db
+from backend.app.models.connector import Connector
 from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
+from backend.app.services.connector_gateway import connector_gateway
 from backend.app.services.printer_manager import printer_manager, supports_chamber_temp
 
 router = APIRouter(tags=["metrics"])
@@ -414,6 +416,49 @@ async def get_metrics(
     result = await db.execute(select(func.count(PrintQueueItem.id)).where(PrintQueueItem.status == "printing"))
     printing_count = result.scalar() or 0
     lines.append(f"printbuddy_queue_printing {printing_count}")
+
+    # =========================================================================
+    # Connector gateway metrics
+    # =========================================================================
+
+    connector_metrics = connector_gateway.metrics()
+    lines.append("")
+    lines.append("# HELP printbuddy_connector_sessions_active Active Connector WebSocket sessions")
+    lines.append("# TYPE printbuddy_connector_sessions_active gauge")
+    lines.append(f"printbuddy_connector_sessions_active {connector_metrics['active_sessions']}")
+
+    lines.append("")
+    lines.append("# HELP printbuddy_connector_sessions_started_total Connector sessions accepted")
+    lines.append("# TYPE printbuddy_connector_sessions_started_total counter")
+    lines.append(f"printbuddy_connector_sessions_started_total {connector_metrics['sessions_started_total']}")
+
+    lines.append("")
+    lines.append("# HELP printbuddy_connector_session_replacements_total Connector sessions replaced by a newer session")
+    lines.append("# TYPE printbuddy_connector_session_replacements_total counter")
+    lines.append(f"printbuddy_connector_session_replacements_total {connector_metrics['session_replacements_total']}")
+
+    lines.append("")
+    lines.append("# HELP printbuddy_connector_session_disconnects_total Connector sessions removed from the gateway")
+    lines.append("# TYPE printbuddy_connector_session_disconnects_total counter")
+    lines.append(f"printbuddy_connector_session_disconnects_total {connector_metrics['session_disconnects_total']}")
+
+    for metric_name in (
+        "send_failures_total",
+        "auth_failures_total",
+        "heartbeat_timeouts_total",
+        "protocol_errors_total",
+        "frames_too_large_total",
+    ):
+        lines.append("")
+        lines.append(f"# HELP printbuddy_connector_{metric_name} Connector gateway {metric_name.replace('_total', '').replace('_', ' ')}")
+        lines.append(f"# TYPE printbuddy_connector_{metric_name} counter")
+        lines.append(f"printbuddy_connector_{metric_name} {connector_metrics.get(metric_name, 0)}")
+
+    result = await db.execute(select(func.count(Connector.id)).where(Connector.revoked_at.is_(None)))
+    lines.append("")
+    lines.append("# HELP printbuddy_connectors_configured Number of non-revoked Connectors")
+    lines.append("# TYPE printbuddy_connectors_configured gauge")
+    lines.append(f"printbuddy_connectors_configured {result.scalar() or 0}")
 
     # =========================================================================
     # System metrics

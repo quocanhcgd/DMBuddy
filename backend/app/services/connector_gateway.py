@@ -27,12 +27,21 @@ class ConnectorGateway:
     def __init__(self) -> None:
         self._sessions: dict[str, ConnectorSession] = {}
         self._lock = asyncio.Lock()
+        self._counters: dict[str, int] = {
+            "sessions_started_total": 0,
+            "session_replacements_total": 0,
+            "session_disconnects_total": 0,
+            "send_failures_total": 0,
+        }
 
     async def register(self, connector_id: str, websocket: WebSocket) -> ConnectorSession:
         session = ConnectorSession(connector_id, websocket, asyncio.Lock())
         async with self._lock:
             previous = self._sessions.get(connector_id)
             self._sessions[connector_id] = session
+            self._counters["sessions_started_total"] += 1
+            if previous is not None:
+                self._counters["session_replacements_total"] += 1
         if previous and previous.websocket is not websocket:
             try:
                 await previous.websocket.close(code=4001, reason="Replaced by a newer Connector session")
@@ -49,6 +58,7 @@ class ConnectorGateway:
             if self._sessions.get(session.connector_id) is not session:
                 return False
             del self._sessions[session.connector_id]
+            self._counters["session_disconnects_total"] += 1
             return True
 
     async def send(self, connector_id: str, message: dict) -> bool:
@@ -61,6 +71,8 @@ class ConnectorGateway:
                 await session.websocket.send_json(message)
             return True
         except Exception:
+            async with self._lock:
+                self._counters["send_failures_total"] += 1
             logger.info("Connector session send failed: %s", connector_id, exc_info=True)
             return False
 
@@ -69,6 +81,15 @@ class ConnectorGateway:
 
     def active_count(self) -> int:
         return len(self._sessions)
+
+    def record_event(self, name: str) -> None:
+        """Record a bounded event counter for gateway observability."""
+        if name.endswith("_total"):
+            self._counters[name] = self._counters.get(name, 0) + 1
+
+    def metrics(self) -> dict[str, int]:
+        """Return a copy suitable for metrics exposition and tests."""
+        return {**self._counters, "active_sessions": len(self._sessions)}
 
 
 connector_gateway = ConnectorGateway()
