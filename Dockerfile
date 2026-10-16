@@ -1,0 +1,159 @@
+# Build frontend
+FROM node:22-bookworm-slim AS frontend-builder
+
+WORKDIR /app/frontend
+
+# Copy package files first for better caching
+COPY frontend/package*.json ./
+
+# Use cache mount for npm
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
+
+COPY frontend/ ./
+RUN npm run build
+
+# Production image
+FROM python:3.13-slim-trixie
+
+ARG PRINTBUDDY_REF=""
+ENV PRINTBUDDY_REF=${PRINTBUDDY_REF}
+
+LABEL org.opencontainers.image.title="Printbuddy" \
+      org.opencontainers.image.description="Self-hosted printer management for Bambu Lab, Klipper, and Mainsail/Moonraker printers" \
+      org.opencontainers.image.source="https://github.com/vmhomelab/Printbuddy" \
+      org.opencontainers.image.licenses="AGPL-3.0"
+
+WORKDIR /app
+
+# Install system dependencies
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ffmpeg \
+    gnupg \
+    gosu \
+    iproute2 \
+    libcap2-bin \
+    openssh-client \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install the Tailscale CLI only (no tailscaled — the daemon runs on the host).
+# Printbuddy calls `tailscale status` / `tailscale cert` via the host's socket,
+# which the user mounts in via docker-compose when they want to enable the
+# Tailscale integration for virtual printers. Without the socket mount, the
+# binary is harmless — the code logs a hint and falls back to self-signed.
+RUN curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg \
+        -o /usr/share/keyrings/tailscale-archive-keyring.gpg \
+    && curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.tailscale-keyring.list \
+        -o /etc/apt/sources.list.d/tailscale.list \
+    && apt-get update && apt-get install -y --no-install-recommends tailscale \
+    && rm -rf /var/lib/apt/lists/*
+
+# Allow binding to privileged ports (e.g. 990/FTPS) as non-root user.
+# File capabilities are more reliable than Docker cap_add with user: directive,
+# which depends on ambient capability support in the container runtime.
+RUN setcap cap_net_bind_service=+ep "$(readlink -f /usr/local/bin/python3)"
+
+# Install Python dependencies with cache mount.
+# pip is upgraded to >=26.1 first to close CVE-2026-6357 — the python:3.13-slim
+# base image ships pip 26.0.1, which runs its self-update check after installing
+# wheels (so a hostile wheel could hijack stdlib imports during install).
+COPY requirements.txt ./
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --root-user-action=ignore --upgrade 'pip>=26.1' \
+ && pip install --root-user-action=ignore -r requirements.txt
+
+# Copy backend
+COPY backend/ ./backend/
+
+# Capture the current git branch at build time. `.git/HEAD` is the only
+# .git metadata the build context lets through (see .dockerignore); it
+# contains `ref: refs/heads/<branch>` for runtime version/source reporting.
+# Without this, the production image has no git metadata at all and would
+# always pull `main` on the remote device regardless of which branch
+# Printbuddy itself was built from.
+COPY .git/HEAD ./.git/HEAD
+
+# Copy built frontend from builder stage
+COPY --from=frontend-builder /app/static ./static
+
+# Copy embedded GCode viewer static assets (PrettyGCode + Printbuddy adapter).
+# Served by the explicit @app.get("/gcode-viewer/{...}") routes in main.py,
+# which resolve files under (static_dir.parent / "gcode_viewer") = /app/gcode_viewer/.
+# Without this COPY the routes return a bare 404 at request time and the 3D
+# Preview iframe shows {"detail":"Not Found"} (see #1218). The directory is
+# vendored third-party JS — the Vite build does NOT stage it into static/,
+# the dev server serves it via a configureServer middleware that's dev-only.
+COPY gcode_viewer/ ./gcode_viewer/
+
+# Create data directories. Ownership is normalised at startup by the
+# entrypoint (chowns to PUID:PGID and drops privileges via gosu before
+# exec'ing the app), so we don't need a chmod 777 hack here — that was
+# the workaround for the previous compose `user: "1000:1000"` model and
+# only worked when the volume's perms happened to survive (named volume
+# first-create case; bind-mount-source case bit users in #1211 / #668).
+#
+# The sentinel file is needed so a freshly-created Docker named volume
+# isn't "empty" from Docker's POV. On empty volumes Docker resyncs the
+# directory metadata (incl. ownership) from the image on every mount,
+# which would mean our entrypoint chown gets reverted on every restart
+# and re-fired on every start (slow on multi-GB archive dirs). With a
+# sentinel inside the volume on first mount, Docker considers the
+# volume populated and stops resyncing, so the chown is genuinely
+# one-shot.
+RUN mkdir -p /app/data /app/logs && \
+    : >/app/data/.printbuddy && \
+    : >/app/logs/.printbuddy
+
+# Entrypoint script: handles PUID/PGID + ownership normalisation +
+# privilege drop. See deploy/docker-entrypoint.sh for the full rationale.
+COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV DATA_DIR=/app/data
+ENV LOG_DIR=/app/logs
+ENV PORT=8000
+# Provide a local username + home for tools that call getpass.getuser() /
+# os.path.expanduser() under arbitrary PUIDs. With `user: "1001:1001"` the
+# stock python:3.13-slim image has no /etc/passwd entry for that UID, so
+# pwd.getpwuid() raises and breaks libraries that do host-level user lookups
+# (notably asyncssh, which uses the local username for ~/.ssh/config host
+# matching). Setting LOGNAME/USER
+# makes getpass.getuser() resolve via env vars instead of the passwd db;
+# HOME=/app gives a writable home that is guaranteed to exist.
+ENV HOME=/app
+ENV USER=printbuddy
+ENV LOGNAME=printbuddy
+
+# Matplotlib (imported lazily by the STL thumbnail generator) tries to create
+# its font/style cache at $HOME/.config/matplotlib on first import. /app is
+# root-owned and not writable by the PUID:PGID the entrypoint drops to,
+# which trips an EPERM warning in everyone's logs and forces matplotlib
+# to fall back to a per-restart temp dir (paying the font-scan cost on
+# every container restart). Pinning the cache dir to /tmp/matplotlib
+# silences the warning and keeps the cache alive for the container's
+# lifetime. /tmp is writable by any uid, so this works regardless of PUID.
+ENV MPLCONFIGDIR=/tmp/matplotlib
+
+EXPOSE 322
+EXPOSE 990
+EXPOSE 3000
+EXPOSE 3002
+EXPOSE 6000
+EXPOSE 8000
+EXPOSE 8883
+EXPOSE 50000-50100
+
+# Health check (uses PORT env var via shell)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request, os; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\", \"8000\")}/health')" || exit 1
+
+# Run the application
+# Use standard asyncio loop (uvloop has permission issues in some Docker environments)
+# Port is configurable via PORT environment variable (default: 8000)
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000} --loop asyncio"]

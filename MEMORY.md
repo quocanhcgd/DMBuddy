@@ -1,0 +1,75 @@
+# Printbuddy Working Memory
+
+Đây là điểm vào ngắn cho các phiên điều chỉnh tiếp theo. Bản mô tả đầy đủ nằm ở:
+
+- [`docs/printbuddy-system-memory.md`](docs/printbuddy-system-memory.md): kiến trúc, runtime, dữ liệu, luồng sự kiện, tích hợp, rủi ro và quy trình sửa.
+- [`docs/printbuddy-codebase-index.md`](docs/printbuddy-codebase-index.md): bản đồ thư mục, phạm vi mã nguồn, route/module chính và lệnh kiểm tra.
+
+## Tóm tắt một câu
+
+Printbuddy là ứng dụng self-hosted quản lý nhiều hệ sinh thái máy in 3D: FastAPI/SQLAlchemy async ở backend, React/Vite/TypeScript ở frontend, WebSocket cho trạng thái trực tiếp, provider boundary cho Bambu/Moonraker/Prusa/Elegoo, và Docker là đường triển khai chính.
+
+## Các điểm phải nhớ khi sửa
+
+1. Backend khởi động từ `backend.app.main:app`; API mặc định có prefix `/api/v1`.
+2. SQLite là mặc định (`DATA_DIR/printbuddy.db`), PostgreSQL dùng `DATABASE_URL`; schema và migration được xử lý trong `backend/app/core/database.py`.
+3. `backend/app/main.py` chứa lifespan, callback vòng đời print và wiring dịch vụ; thay đổi tại đây có blast radius lớn.
+4. Printer-specific code phải đi qua `backend/app/services/printer_providers/` và `PrinterManager`; không giả định mọi provider có MQTT/FTP/AMS.
+5. Frontend dùng React Router + TanStack Query; dữ liệu realtime đi qua `/api/v1/ws` và `useWebSocket.ts`, có throttle/debounce để tránh đóng băng UI.
+6. File, archive, thumbnail, timelapse và source 3MF đều gắn với đường dẫn trên filesystem; mọi route nhận path phải giữ path guard và không mở rộng root tùy tiện.
+7. Auth/permission có cả legacy `role=admin` và group permissions; admin được bypass permission, user thường nhận quyền cộng dồn từ group.
+8. Sau thay đổi backend chạy `ruff` và pytest; sau thay đổi frontend chạy lint, typecheck, test và build; thay đổi Docker/deploy cần kiểm tra compose/build.
+
+## Việt hoá
+
+- Locale tiếng Việt nằm ở `frontend/src/i18n/locales/vi.ts`, mã `vi`, tên hiển thị `Tiếng Việt`.
+- Locale được đăng ký trong `frontend/src/i18n/index.ts`; danh sách ngôn ngữ của Settings tự hiển thị entry mới.
+- Script tái sinh: `frontend/scripts/generate-vietnamese-locale.mjs`; hướng dẫn và phạm vi ở `docs/vietnamese-localization.md`.
+- Sau khi sửa catalog chạy `cd frontend; npm run check:i18n; npx tsc --noEmit`.
+- Đây là bản dịch máy cần hiệu đính; text hard-code, backend errors, notification templates và định dạng ngày/số chưa nằm trong catalog này.
+
+## Luồng đọc nhanh
+
+`README.md` -> `docs/printbuddy-system-memory.md` -> `backend/app/main.py` -> `backend/app/core/config.py`/`database.py` -> route liên quan -> service -> model/schema -> page/component frontend -> test tương ứng.
+
+## Kế hoạch: MakerWorld User Accounts
+
+Đây là tên tham chiếu cho kế hoạch sẽ triển khai sau.
+
+- Tài khoản MakerWorld là **tài khoản người dùng được tạo trong Printbuddy**, không phải một loại Bambu Cloud account độc lập.
+- Người dùng MakerWorld đăng nhập vào Printbuddy bằng cơ chế xác thực hệ thống hiện có.
+- WeChat/QQ/access token China chỉ là **connector** gắn với user để truy cập và tải dữ liệu MakerWorld; token không được gửi xuống frontend.
+- Nên tạo bảng `makerworld_connectors` gồm `user_id`, `region`, `provider`, token mã hóa, remote user ID, trạng thái và thời điểm xác thực.
+- Thêm loại user/nhóm quyền MakerWorld, tối thiểu: `makerworld:view`, `makerworld:import`, `makerworld:storage:read`, `makerworld:storage:write`; không cấp quyền quản lý printer/Bambu Cloud/admin.
+- Mỗi user có kho riêng: `data/users/{user_id}/makerworld/{downloads,archives,thumbnails,metadata}`. Không dùng email làm tên thư mục; mọi file/folder phải gắn `owner_user_id` và kiểm tra ownership ở backend.
+- `LibraryFile`/`LibraryFolder` cần bổ sung owner và connector liên quan; migration dữ liệu cũ phải gắn vào owner mặc định/admin.
+- UI cần có quản trị user/quota/khóa tài khoản và khu vực user để liên kết, kiểm tra connector, xem dung lượng và thư viện riêng.
+- Khi resolve/import MakerWorld, request dùng `makerworld_connector_id`; backend tự lấy token, tự chọn endpoint Global/China và lưu file vào kho của user.
+
+Khi người dùng nói “tiếp tục MakerWorld User Accounts”, tiếp tục từ thiết kế này và trước khi code kiểm tra lại model `User`, permission/group, `LibraryFile`, `LibraryFolder` và cơ chế storage hiện tại.
+
+## Quy tắc MakerWorld theo hạng thành viên
+
+- Thành viên cao cấp được cấp `makerworld:import`: có thể lưu 3MF vào thư viện máy chủ, tạo thư mục model và dùng các thao tác Slice/Open in slicer dựa trên file thư viện.
+- Thành viên thường chỉ cần `makerworld:view`: được resolve/xem model và gọi `POST /makerworld/download` để tải trực tiếp về thiết bị; endpoint này không tạo `LibraryFile`, folder, thumbnail hay source archive.
+- Backend là nơi enforce chính; frontend chỉ ẩn/hiện nút theo quyền. Không coi việc ẩn nút là biện pháp bảo mật.
+
+### Tài khoản Cloud dùng chung cho MakerWorld
+
+- `BambuCloudAccount.makerworld_shared` cho phép admin chia sẻ một tài khoản cá nhân chỉ trong MakerWorld; API Cloud thông thường vẫn chỉ trả tài khoản của chủ sở hữu.
+- Tài khoản Cloud global cũ (`user_id IS NULL`, thường sinh ra khi auth disabled) được coi là shared connector cho MakerWorld để các user chỉ có `makerworld:view` vẫn tải được 3MF.
+- MakerWorld ưu tiên token cá nhân của user; nếu không có thì dùng tài khoản global/shared phù hợp vùng. Token không bao giờ gửi xuống frontend.
+
+## Quyết định thương hiệu hiển thị: DMbuddy
+
+- Chỉ đổi phần người dùng nhìn thấy sang **DMbuddy**: tiêu đề trang/PWA, logo, màn hình đăng nhập/thiết lập, nhãn cài đặt, thông báo/email và chuỗi giao diện.
+- Giữ nguyên toàn bộ định danh kỹ thuật để bảo toàn khả năng tương thích: tên repository/URL GitHub, API route và schema, database/volume, biến môi trường, tên service/container, khóa localStorage, topic/metric/event key, tên file cấu hình và tên module.
+- Khi bổ sung giao diện mới, dùng nhãn hiển thị DMbuddy nhưng không đổi các khóa kỹ thuật có tiền tố `printbuddy`.
+
+## Kế hoạch triển khai Printbuddy Connector
+
+- Thiết kế kiến trúc đầy đủ nằm ở [`docs/printbuddy-connector-implementation-plan.md`](docs/printbuddy-connector-implementation-plan.md).
+- Backlog task có mã, phụ thuộc, file/module dự kiến, tiêu chí nghiệm thu và lệnh kiểm tra nằm ở [`docs/printbuddy-connector-task-plan.md`](docs/printbuddy-connector-task-plan.md).
+- Thứ tự bắt buộc: inventory/protocol/security → enrollment/gateway → discovery/transport → status/control → file transfer → camera/capability → packaging/pilot.
+- Chưa triển khai Connector trong mã nguồn; các task trong backlog đang ở trạng thái `TODO`.
+

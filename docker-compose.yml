@@ -1,0 +1,176 @@
+services:
+  printbuddy:
+    image: docker.io/vmhomelabde/printbuddy:latest
+    build: .
+    # Usage:
+    #   docker compose up -d          → pulls pre-built image from Docker Hub
+    #   docker compose up -d --build  → builds locally from source
+    container_name: printbuddy
+    # File ownership inside the data and logs volumes is normalised by the
+    # entrypoint at startup (chowns to PUID:PGID and drops privileges via
+    # gosu before running the app). Override PUID / PGID below to match
+    # your host user if needed — defaults to 1000:1000 to match the
+    # historical compose `user:` directive.
+    #
+    # Allow binding to privileged ports (322, 990) as non-root user — required
+    # for FTPS in every VP mode and for the RTSPS camera proxy in proxy mode +
+    # non-proxy modes that have a target printer configured. Without this, the
+    # FTP and RTSP listeners silently fail.
+    cap_add:
+      - NET_BIND_SERVICE
+    # Give uvicorn time to handle SIGTERM cleanly: checkpoint SQLite WAL,
+    # release DB connections, disconnect MQTT clients, and flush logs before
+    # Docker escalates to SIGKILL during restarts/updates.
+    stop_grace_period: 30s
+    #
+    # LINUX: Use host mode for printer discovery and camera streaming
+    network_mode: host
+    #
+    # macOS/WINDOWS: Docker Desktop doesn't support host mode.
+    # Comment out "network_mode: host" above and uncomment "ports:" below.
+    # Note: Printer discovery won't work - add printers manually by IP.
+    #ports:
+    #  - "${PORT:-8000}:8000"
+    #  - "3000:3000"                  # Virtual printer bind/detect
+    #  - "3002:3002"                  # Virtual printer bind/detect
+    #  - "8883:8883"                  # Virtual printer MQTT
+    #  - "990:990"                    # Virtual printer FTP control
+    #  - "6000:6000"                  # Virtual printer file transfer tunnel
+    #  - "322:322"                    # Virtual printer RTSP camera (X1/H2/P2; proxy mode + non-proxy modes with a target printer)
+    #  - "2024-2026:2024-2026"        # Virtual printer proprietary ports (A1/P1S)
+    #  - "50000-50100:50000-50100"    # Virtual printer FTP passive data
+    volumes:
+      - printbuddy_data:/app/data
+      - printbuddy_logs:/app/logs
+      #
+      # OPTIONAL — only needed if you ALSO run a native install of Printbuddy
+      # on the same host and want both installs to share the same Virtual
+      # Printer CA certificate (so the slicer only has to trust one CA).
+      # Most Docker-only users should leave this commented out — the
+      # entrypoint will keep the VP data inside the named volume above.
+      # If uncommented, the entrypoint chowns the host directory to
+      # PUID:PGID on first start so the container user can write to it.
+      #- ./virtual_printer:/app/data/virtual_printer
+      #
+      # Mount scheduled backup output to NAS or external storage
+      # Backups default to DATA_DIR/backups/ inside the data volume.
+      # Uncomment to store them externally (e.g. on a NAS share).
+      #- /path/to/nas/printbuddy-backups:/app/data/backups
+      #
+      # Tailscale integration (optional): mount the host's tailscaled socket
+      # so Printbuddy can request Let's Encrypt certs for virtual printers via
+      # your tailnet's MagicDNS name. Requires:
+      #   1. Tailscale installed + `tailscale up` completed on the host
+      #   2. `sudo tailscale set --operator=<container-user>` on the host so
+      #      the user running the container can call `tailscale cert`
+      # Without this mount, the Tailscale toggle in the UI is harmless —
+      # Printbuddy falls back to self-signed certs.
+      #- /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
+      #
+      # Using a self signed certificate for Home Assistant
+      # Add your certificate to certs directory and mount it to the container.
+      # The certificate will be added to the system trust store on container startup.
+      # Enable the system trust store with the USE_SYSTEM_TRUST_STORE env var to
+      # have Printbuddy trust the certificate.
+      # - /path/to/certs:/usr/local/share/ca-certificates
+    environment:
+      - TZ=${TZ:-Europe/Berlin}
+      # User/group the container drops to after the entrypoint normalises
+      # ownership on /app/data and /app/logs. Match your host user (run
+      # `id -u` / `id -g`) if you want files written by the container to
+      # show up as your user on the host. Defaults to 1000:1000.
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Port Printbuddy runs on (default: 8000)
+      # Usage: PORT=8080 docker compose up -d
+      - PORT=${PORT:-8000}
+      # Extra CIDRs offered in Add Printer → subnet scan (comma-separated).
+      # Used for both Bambu and Moonraker/Klipper discovery. Use when printers
+      # live on a routed VLAN that is not a local host NIC address — e.g. host
+      # on 10.2.0.0/24, printers on 10.0.0.0/24. Requires network_mode: host
+      # and a working route from the host.
+      #- DISCOVERY_EXTRA_SUBNETS=10.0.0.0/24
+      # Moonraker subnet-scan ports (comma-separated). Default 7125,80 covers
+      # CosmOS / Fluidd reverse-proxies. Hits still require Moonraker JSON.
+      #- DISCOVERY_MOONRAKER_PORTS=7125,80
+      # Virtual printer: Set to the Docker host's IP when using bridge mode (ports:).
+      # Required for FTP passive mode to work behind NAT.
+      # Example: VIRTUAL_PRINTER_PASV_ADDRESS=192.168.1.100
+      #- VIRTUAL_PRINTER_PASV_ADDRESS=
+      #
+      # External PostgreSQL (optional — uses SQLite by default)
+      # Example: DATABASE_URL=postgresql+asyncpg://printbuddy:password@db-host:5432/printbuddy
+      #- DATABASE_URL=
+      # PostgreSQL pool tuning for larger installs. SQLite keeps its own
+      # internal defaults regardless of these values.
+      #- DB_POOL_SIZE=20
+      #- DB_MAX_OVERFLOW=80
+      #- DB_POOL_TIMEOUT=30
+      #- DB_POOL_RECYCLE=1800
+      # External library folders are disabled unless their host paths live
+      # under this colon-separated allowlist. Example:
+      # PRINTBUDDY_EXTERNAL_ROOTS=/mnt/prints:/srv/print-library
+      #- PRINTBUDDY_EXTERNAL_ROOTS=
+      #
+      # Slicer API sidecar (optional — Settings → "Use Slicer API" toggles this on).
+      # Default points at the OrcaSlicer sidecar on the docker host; change if you
+      # run the sidecar on a different host/port. The matching docker-compose.yml
+      # for the sidecars lives under slicer-api/ in this repository.
+      #- SLICER_API_URL=http://localhost:3003
+      #
+      # MFA at-rest encryption key (#1219). Auto-generated to
+      # DATA_DIR/.mfa_encryption_key on first startup if unset. Override here
+      # to manage the key out-of-band (e.g. via a secret manager).
+      #- MFA_ENCRYPTION_KEY=
+      #
+      # Enable System Trust Store for certificate validation (e.g. for local Home Assistant)
+      # You also need to mount your certificates to the container (see volumes section above).
+      # - USE_SYSTEM_TRUST_STORE=true
+      #
+      # Optional self-update button via printbuddy-updater sidecar. This is
+      # disabled by default because the sidecar needs Docker socket access.
+      # See docs/self-update-sidecar.md before enabling.
+      #- SELF_UPDATE_ENABLED=true
+      #- UPDATER_URL=http://127.0.0.1:8787
+      #- UPDATER_TOKEN=${PRINTBUDDY_UPDATER_TOKEN}
+    restart: unless-stopped
+
+  # Optional self-update sidecar. Uncomment together with the SELF_UPDATE_*
+  # environment variables above. The sidecar is the only container that gets
+  # Docker socket access; Printbuddy talks to it over localhost with a shared
+  # bearer token.
+  #printbuddy-updater:
+  #  image: docker.io/vmhomelabde/printbuddy-updater:latest
+  #  container_name: printbuddy-updater
+  #  network_mode: host
+  #  volumes:
+  #    - /var/run/docker.sock:/var/run/docker.sock
+  #    - ./docker-compose.yml:/host/docker-compose.yml:ro
+  #  environment:
+  #    - PRINTBUDDY_UPDATER_TOKEN=${PRINTBUDDY_UPDATER_TOKEN}
+  #    - PRINTBUDDY_COMPOSE_FILE=/host/docker-compose.yml
+  #    - PRINTBUDDY_COMPOSE_PROJECT=${COMPOSE_PROJECT_NAME:-printbuddy}
+  #    - PRINTBUDDY_SERVICE_NAME=printbuddy
+  #    - PRINTBUDDY_ALLOWED_IMAGE=docker.io/vmhomelabde/printbuddy
+  #    - PRINTBUDDY_UPDATER_PORT=8787
+  #  restart: unless-stopped
+
+  # Optional: External PostgreSQL database
+  # Uncomment to run Postgres alongside Printbuddy (or use an external Postgres host)
+  #postgres:
+  #  image: postgres:16-alpine
+  #  container_name: printbuddy-db
+  #  restart: unless-stopped
+  #  environment:
+  #    POSTGRES_USER: printbuddy
+  #    POSTGRES_PASSWORD: changeme
+  #    POSTGRES_DB: printbuddy
+  #  volumes:
+  #    - printbuddy_pgdata:/var/lib/postgresql/data
+  #  ports:
+  #    - "5432:5432"
+
+volumes:
+  printbuddy_data:
+  printbuddy_logs:
+  #printbuddy_pgdata:

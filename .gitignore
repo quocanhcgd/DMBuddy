@@ -1,0 +1,92 @@
+# Claude
+.claude/
+CLAUDE.md
+
+# macOS
+.DS_Store
+**/.DS_Store
+**/._.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+env/
+.env
+docker-compose.override.yml
+*.egg-info/
+dist/
+build/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Node
+frontend/node_modules/
+frontend/coverage/
+frontend/.vi-translation-cache.json
+npm-debug.log*
+
+# Database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Archive files (user data)
+archive/
+
+# Firmware cache (downloaded firmware files)
+firmware/
+
+# Virtual printer (auto-generated certs and uploads at repo root)
+/virtual_printer/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Screenshots (development - root folder only)
+/screenshots/
+
+# Logs
+*.log
+logs/
+*.log*
+bambutrack.log.*
+firmware/
+
+# Node modules
+node_modules/
+
+data/
+
+# JWT secret file (should be in data dir, but protect project root too)
+.jwt_secret
+
+# MFA encryption key file (#1219) — same protection as .jwt_secret
+.mfa_encryption_key
+
+# SpoolBuddy SSH keys (generated at runtime for remote updates)
+spoolbuddy/ssh/
+
+# Security scan output
+*.sarif
+
+debug_logs/
+db_backup/
+support-packages/
+backups/
+bin/
+advertisements/
+
+# gitleaks reports
+gitleaks-report.json
+
+scripts/pip-audit.sh

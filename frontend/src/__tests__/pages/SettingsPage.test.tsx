@@ -1,0 +1,1120 @@
+/**
+ * Tests for the SettingsPage component.
+ */
+
+import { describe, it, expect, beforeEach } from 'vitest';
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { render } from '../utils';
+import { SettingsPage } from '../../pages/SettingsPage';
+import { http, HttpResponse } from 'msw';
+import { server } from '../mocks/server';
+
+const mockSettings = {
+  auto_archive: true,
+  save_thumbnails: true,
+  capture_finish_photo: true,
+  default_filament_cost: 25.0,
+  currency: 'USD',
+  ams_humidity_good: 40,
+  ams_humidity_fair: 60,
+  ams_temp_good: 30,
+  ams_temp_fair: 35,
+  time_format: 'system',
+  date_format: 'system',
+  mqtt_enabled: false,
+  mqtt_broker: '',
+  mqtt_host: '',
+  mqtt_port: 1883,
+  panda_breath_enabled: false,
+  panda_breath_topic_prefix: 'panda_breath',
+  panda_breath_printer_assignments: '{}',
+  spoolman_enabled: false,
+  spoolman_url: '',
+  warn_on_missing_spool_assignment: true,
+  ha_enabled: false,
+  ha_url: '',
+  ha_token: '',
+  check_updates: false,
+  check_printer_firmware: false,
+  bed_cooled_threshold: 35,
+};
+
+describe('SettingsPage', () => {
+  beforeEach(() => {
+    // BrowserRouter shares window.location across tests; reset it so a tab
+    // switch in one test (e.g. clicking "Workflow") doesn't carry into
+    // sibling tests that expect to land on the default General tab.
+    window.history.replaceState({}, '', '/');
+
+    server.use(
+      http.get('/api/v1/settings/', () => {
+        return HttpResponse.json(mockSettings);
+      }),
+      http.patch('/api/v1/settings/', async ({ request }) => {
+        const body = await request.json();
+        return HttpResponse.json({ ...mockSettings, ...body });
+      }),
+      http.get('/api/v1/printers/', () => {
+        return HttpResponse.json([]);
+      }),
+      http.get('/api/v1/smart-plugs/', () => {
+        return HttpResponse.json([]);
+      }),
+      http.get('/api/v1/notifications/', () => {
+        return HttpResponse.json([]);
+      }),
+      http.get('/api/v1/api-keys/', () => {
+        return HttpResponse.json([]);
+      }),
+      http.get('/api/v1/mqtt/status', () => {
+        return HttpResponse.json({ enabled: false });
+      }),
+      http.get('/api/v1/settings/panda-breath/status', () => {
+        return HttpResponse.json({
+          enabled: false,
+          connected: false,
+          topic_prefix: 'panda_breath',
+          state: {},
+        });
+      }),
+      http.get('/api/v1/virtual-printer/status', () => {
+        return HttpResponse.json({ running: false });
+      }),
+      http.get('/api/v1/auth/status', () => {
+        return HttpResponse.json({ auth_enabled: false, requires_setup: false });
+      }),
+      http.get('/api/v1/updates/version', () => {
+        return HttpResponse.json({
+          version: '0.2.4.7',
+          display_version: '0.2.4.7 (abc1234)',
+          source_ref: 'abc1234567890abc1234567890abc1234567890ab',
+          source_ref_short: 'abc1234',
+          repo: 'vmhomelab/Printbuddy',
+        });
+      })
+    );
+  });
+
+  describe('rendering', () => {
+    it('renders the page title', async () => {
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        // Use role-based query to avoid conflicts with dropdown options
+        expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+      });
+    });
+
+    it('shows settings tabs', async () => {
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        // Use getAllByText since "General" appears both as tab and section heading
+        expect(screen.getAllByText('General').length).toBeGreaterThan(0);
+        expect(screen.getByText('Smart Plugs')).toBeInTheDocument();
+        expect(screen.getAllByText('Notifications').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Filament').length).toBeGreaterThan(0);
+        expect(screen.getByText('Network')).toBeInTheDocument();
+        expect(screen.getByText('API Keys')).toBeInTheDocument();
+      });
+    });
+
+    it('does not expose unsupported external-project settings', async () => {
+      const unsupportedTab = ['spool', 'buddy'].join('');
+      window.history.replaceState({}, '', `/settings?tab=${unsupportedTab}`);
+
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+      });
+      expect(screen.queryByText(new RegExp(unsupportedTab, 'i'))).not.toBeInTheDocument();
+      expect(window.location.search).toBe('?tab=general');
+    });
+  });
+
+  describe('general settings', () => {
+    it('shows date format setting', async () => {
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Date Format')).toBeInTheDocument();
+      });
+    });
+
+    it('shows time format setting', async () => {
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Time Format')).toBeInTheDocument();
+      });
+    });
+
+    it('shows default printer setting', async () => {
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Default Printer')).toBeInTheDocument();
+      });
+    });
+
+    it('offers the printer-card camera view mode in the Camera settings', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      const option = await screen.findByRole('option', { name: 'Inside Printer Card' });
+      expect(option).toBeInTheDocument();
+
+      const cameraModeSelect = option.closest('select');
+      expect(cameraModeSelect).not.toBeNull();
+      await user.selectOptions(cameraModeSelect as HTMLSelectElement, 'card');
+
+      await waitFor(() => {
+        expect(screen.getByText('Camera expands inside each printer card')).toBeInTheDocument();
+      });
+    });
+
+    it('shows preferred slicer setting on Workflow tab', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Workflow')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Workflow'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Preferred Slicer')).toBeInTheDocument();
+      });
+    });
+
+    it('shows slicer dropdown with both options on Workflow tab', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Workflow')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Workflow'));
+
+      await waitFor(() => {
+        const slicerSelect = screen.getAllByDisplayValue('Bambu Studio');
+        expect(slicerSelect.length).toBeGreaterThan(0);
+      });
+    });
+
+    it('marks default print options as Bambu Lab only with a provider warning', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Workflow')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Workflow'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Bambu Lab print-start options')).toBeInTheDocument();
+      });
+
+      expect(screen.getAllByText('Bambu Lab only')).toHaveLength(7);
+      expect(screen.getByText(/These options map to Bambu LAN\/MQTT print-start flags/i)).toBeInTheDocument();
+      expect(screen.getByText(/non-Bambu queue and print payloads are sanitized to false/i)).toBeInTheDocument();
+    });
+
+    it('shows appearance section', async () => {
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Appearance')).toBeInTheDocument();
+      });
+    });
+
+    it('shows updates section with firmware toggle', async () => {
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Updates')).toBeInTheDocument();
+        expect(screen.getByText('Check for updates')).toBeInTheDocument();
+        expect(screen.getByText('Check printer firmware')).toBeInTheDocument();
+      });
+    });
+
+    it('marks Bambu firmware checks as Bambu Lab only', async () => {
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Check printer firmware')).toBeInTheDocument();
+      });
+
+      const firmwareRow = screen.getByText('Check printer firmware').closest('.flex.items-center.justify-between');
+      expect(firmwareRow).not.toBeNull();
+      expect(firmwareRow!.textContent).toContain('Bambu Lab only');
+      expect(firmwareRow!.textContent).toContain('Bambu firmware metadata');
+    });
+
+    it('shows the source revision in the current version field', async () => {
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('v0.2.4.7 (abc1234)')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('update CTA per deployment shape', () => {
+    // The update card branches on the deployment shape returned by
+    // /updates/check. Each branch is mutually exclusive — verify the right
+    // one wins so HA addon users never see the docker-compose snippet
+    // (which they can't run from inside an HA addon container) and Docker
+    // users never see the in-app Install button (which would no-op).
+    const renderWithUpdateCheck = async (
+      checkBody: Record<string, unknown>,
+    ) => {
+      server.use(
+        http.get('/api/v1/settings/', () =>
+          HttpResponse.json({ ...mockSettings, check_updates: true }),
+        ),
+        http.get('/api/v1/updates/check', () => HttpResponse.json(checkBody)),
+      );
+      render(<SettingsPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Updates')).toBeInTheDocument();
+      });
+    };
+
+    it('shows the HA Supervisor message when running as an HA addon', async () => {
+      await renderWithUpdateCheck({
+        update_available: true,
+        current_version: '0.2.4',
+        latest_version: '0.2.5',
+        release_name: '0.2.5',
+        release_notes: '',
+        release_url: 'https://example.invalid/r',
+        published_at: '2099-01-01T00:00:00Z',
+        is_docker: true,
+        is_ha_addon: true,
+        update_method: 'ha_addon',
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(/Home Assistant Supervisor/i),
+        ).toBeInTheDocument();
+      });
+      // Docker hint must NOT render — HA branch wins.
+      expect(screen.queryByText('docker compose pull && docker compose up -d')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /install update/i })).not.toBeInTheDocument();
+    });
+
+    it('shows the docker-compose snippet for Docker (non-HA) deployments', async () => {
+      await renderWithUpdateCheck({
+        update_available: true,
+        current_version: '0.2.4',
+        latest_version: '0.2.5',
+        release_name: '0.2.5',
+        release_notes: '',
+        release_url: 'https://example.invalid/r',
+        published_at: '2099-01-01T00:00:00Z',
+        is_docker: true,
+        is_ha_addon: false,
+        update_method: 'docker',
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('docker compose pull && docker compose up -d')).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/Home Assistant Supervisor/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /install update/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('tabs navigation', () => {
+    it('can switch to Network tab', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      // Wait for settings to load first
+      await waitFor(() => {
+        expect(screen.getByText('Date Format')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Network'));
+
+      await waitFor(() => {
+        // Network tab contains MQTT Publishing section
+        expect(screen.getByText('MQTT Publishing')).toBeInTheDocument();
+      });
+    });
+
+    it('shows native Panda Breath as the default topic with bridge guidance', async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({
+            ...mockSettings,
+            mqtt_broker: 'homeassistant.local',
+            panda_breath_enabled: true,
+            panda_breath_topic_prefix: 'panda_breath',
+          });
+        }),
+        http.get('/api/v1/settings/panda-breath/status', () => {
+          return HttpResponse.json({
+            enabled: true,
+            connected: false,
+            topic_prefix: 'panda_breath',
+            state: {},
+          });
+        })
+      );
+
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Network')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Network'));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Panda Breath topic prefix')).toHaveValue('panda_breath');
+      });
+      expect(screen.getByText(/connects directly to an MQTT broker such as Home Assistant/i)).toBeInTheDocument();
+      const pandaBreathCard = document.querySelector('#card-panda-breath');
+      expect(pandaBreathCard?.textContent).not.toContain('Bambu Lab only');
+      expect(screen.getByText('panda_breath_mod')).toBeInTheDocument();
+      expect(screen.getByText(/community bridge used by the/i)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /ha-panda-breath integration by mikigua/i })).toHaveAttribute(
+        'href',
+        'https://github.com/mikigua/ha-panda-breath'
+      );
+    });
+
+    it('lets users assign detected Panda Breath device ids to Printbuddy printers', async () => {
+      const user = userEvent.setup();
+      const savedBodies: unknown[] = [];
+      server.use(
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({
+            ...mockSettings,
+            mqtt_broker: 'homeassistant.local',
+            panda_breath_enabled: true,
+            panda_breath_topic_prefix: 'panda_breath',
+            panda_breath_printer_assignments: '{}',
+          });
+        }),
+        http.patch('/api/v1/settings/', async ({ request }) => {
+          const body = await request.json();
+          savedBodies.push(body);
+          return HttpResponse.json({ ...mockSettings, ...(body as Record<string, unknown>) });
+        }),
+        http.put('/api/v1/settings/', async ({ request }) => {
+          const body = await request.json();
+          savedBodies.push(body);
+          return HttpResponse.json({ ...mockSettings, ...(body as Record<string, unknown>) });
+        }),
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([
+            { id: 1, name: 'X1 Carbon' },
+            { id: 2, name: 'P1S Backup' },
+          ]);
+        }),
+        http.get('/api/v1/settings/panda-breath/status', () => {
+          return HttpResponse.json({
+            enabled: true,
+            connected: true,
+            topic_prefix: 'panda_breath',
+            state: {},
+            devices: {
+              DEVICE_A: { device_id: 'DEVICE_A', chamber_actual: 31.2, chamber_target: 45, printer_name: 'Breath A' },
+              DEVICE_B: { device_id: 'DEVICE_B', chamber_actual: 42.8, chamber_target: 55, printer_name: 'Breath B' },
+            },
+          });
+        })
+      );
+
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Network')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText('Network'));
+
+      const assignmentSelect = await screen.findByLabelText('Assign Panda Breath DEVICE_B to printer');
+      await user.selectOptions(assignmentSelect, '2');
+
+      await waitFor(() => {
+        expect(savedBodies.some((body) => (
+          body as { panda_breath_printer_assignments?: string }
+        ).panda_breath_printer_assignments === '{"DEVICE_B":2}')).toBe(true);
+      });
+    });
+
+    it('can switch to Smart Plugs tab', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Smart Plugs')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Smart Plugs'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Add Smart Plug')).toBeInTheDocument();
+      });
+    });
+
+    it('can switch to Notifications tab', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Notifications').length).toBeGreaterThan(0);
+      });
+
+      // Click the tab button (not the mobile dropdown option)
+      const notificationButtons = screen.getAllByText('Notifications');
+      const tabButton = notificationButtons.find(el => el.tagName === 'BUTTON') || notificationButtons[0];
+      await user.click(tabButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Add Provider')).toBeInTheDocument();
+      });
+    });
+
+    it('can switch to Filament tab', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Filament').length).toBeGreaterThan(0);
+      });
+
+      await user.click(screen.getAllByText('Filament')[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText('AMS Display Thresholds')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Workflow tab', () => {
+    it('can switch to Workflow tab', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Workflow')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Workflow'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Staggered Start')).toBeInTheDocument();
+      });
+    });
+
+    it('shows stagger settings on Workflow tab', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Workflow')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Workflow'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Staggered Start')).toBeInTheDocument();
+        expect(screen.getByText('Group size')).toBeInTheDocument();
+        expect(screen.getByText('Interval (minutes)')).toBeInTheDocument();
+      });
+    });
+
+    it('shows auto-drying settings on Workflow tab', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Workflow')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Workflow'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Queue Auto-Drying')).toBeInTheDocument();
+      });
+    });
+
+    it('shows default print options on Workflow tab', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Workflow')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Workflow'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Default Print Options')).toBeInTheDocument();
+        expect(screen.getByText('Bed Levelling')).toBeInTheDocument();
+        expect(screen.getByText('Flow Calibration')).toBeInTheDocument();
+        expect(screen.getByText('Vibration Calibration')).toBeInTheDocument();
+        expect(screen.getByText('First Layer Inspection')).toBeInTheDocument();
+        expect(screen.getByText('Timelapse')).toBeInTheDocument();
+      });
+    });
+
+    it('shows default print options description', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Workflow')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Workflow'));
+
+      await waitFor(() => {
+        expect(screen.getByText(/overridden per print in the print dialog/)).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('API Keys tab', () => {
+    it('can switch to API Keys tab', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('API Keys')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('API Keys'));
+
+      await waitFor(() => {
+        // Button text is "Create Key"
+        expect(screen.getByText('Create Key')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('API Keys tab — delete flow', () => {
+    // Without setQueryData on success the deleted row stayed visible until a
+    // manual reload — invalidateQueries didn't reliably trigger a UI swap on
+    // every browser. Pin the synchronous-removal contract here.
+    it('removes a deleted key from the list without a page reload', async () => {
+      const initialKeys = [
+        {
+          id: 42,
+          name: 'CI deploy key',
+          key_prefix: 'bk_abcd1234',
+          can_queue: true,
+          can_control_printer: false,
+          can_read_status: true,
+          printer_ids: null,
+          enabled: true,
+          last_used: null,
+          created_at: '2026-01-01T00:00:00Z',
+          expires_at: null,
+        },
+      ];
+
+      let deleteCallCount = 0;
+      server.use(
+        http.get('/api/v1/api-keys/', () => HttpResponse.json(initialKeys)),
+        http.delete('/api/v1/api-keys/:id', ({ params }) => {
+          deleteCallCount += 1;
+          expect(params.id).toBe('42');
+          return HttpResponse.json({ message: 'API key deleted' });
+        })
+      );
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      // Switch to API Keys tab. Both desktop tab + mobile dropdown render
+      // the label, so just grab the button form.
+      await waitFor(() => {
+        expect(screen.getAllByText('API Keys').length).toBeGreaterThan(0);
+      });
+      const tabButton = screen.getAllByText('API Keys').find((el) => el.tagName === 'BUTTON');
+      expect(tabButton).toBeDefined();
+      await user.click(tabButton!);
+
+      // Key is listed
+      await waitFor(() => {
+        expect(screen.getByText('CI deploy key')).toBeInTheDocument();
+      });
+
+      // Click the trash button on the row
+      const cards = screen.getByText('CI deploy key').closest('.flex.items-center.justify-between');
+      expect(cards).not.toBeNull();
+      const trashButton = cards!.querySelectorAll('button');
+      await user.click(trashButton[trashButton.length - 1]);
+
+      // Confirm the deletion in the modal
+      const confirmButton = await screen.findByRole('button', { name: /delete/i });
+      await user.click(confirmButton);
+
+      // The deleted key disappears from the list immediately — no manual
+      // reload required. setQueryData drops it before any refetch could fire.
+      await waitFor(() => {
+        expect(screen.queryByText('CI deploy key')).not.toBeInTheDocument();
+      });
+
+      expect(deleteCallCount).toBe(1);
+    });
+  });
+
+  describe('API Keys tab — #1182 cloud access + ownership UI', () => {
+    // The list now exposes two new bits of information per row:
+    //   - "Cloud" badge when can_access_cloud=true
+    //   - "Legacy" badge when user_id IS NULL (created before per-user ownership)
+    // These tell the operator at a glance which keys can read /cloud/* data
+    // and which keys need to be recreated to gain that capability.
+    it('renders the Cloud badge for keys with can_access_cloud=true and the Legacy badge for ownerless keys', async () => {
+      const keys = [
+        {
+          id: 1,
+          name: 'cloud-reader',
+          key_prefix: 'bk_cloud123',
+          user_id: 7,
+          can_queue: false,
+          can_control_printer: false,
+          can_read_status: true,
+          can_access_cloud: true,
+          printer_ids: null,
+          enabled: true,
+          last_used: null,
+          created_at: '2026-04-30T00:00:00Z',
+          expires_at: null,
+        },
+        {
+          id: 2,
+          name: 'legacy-key',
+          key_prefix: 'bk_legacy01',
+          user_id: null,
+          can_queue: true,
+          can_control_printer: false,
+          can_read_status: true,
+          can_access_cloud: false,
+          printer_ids: null,
+          enabled: true,
+          last_used: null,
+          created_at: '2025-01-01T00:00:00Z',
+          expires_at: null,
+        },
+      ];
+
+      server.use(http.get('/api/v1/api-keys/', () => HttpResponse.json(keys)));
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('API Keys').length).toBeGreaterThan(0);
+      });
+      const tabButton = screen.getAllByText('API Keys').find((el) => el.tagName === 'BUTTON');
+      await user.click(tabButton!);
+
+      await waitFor(() => {
+        expect(screen.getByText('cloud-reader')).toBeInTheDocument();
+        expect(screen.getByText('legacy-key')).toBeInTheDocument();
+      });
+
+      // Cloud-enabled key gets the Cloud badge but NOT the Legacy badge.
+      const cloudRow = screen.getByText('cloud-reader').closest('.flex.items-center.justify-between');
+      expect(cloudRow).not.toBeNull();
+      expect(cloudRow!.textContent).toContain('Cloud');
+      expect(cloudRow!.textContent).not.toContain('Legacy');
+
+      // Ownerless key gets Legacy but NOT Cloud (can_access_cloud=false).
+      const legacyRow = screen.getByText('legacy-key').closest('.flex.items-center.justify-between');
+      expect(legacyRow).not.toBeNull();
+      expect(legacyRow!.textContent).toContain('Legacy');
+      // Strip the Cloud-flag check by limiting to badge area — the
+      // "Allow cloud access" text from the create form isn't visible here.
+      expect(legacyRow!.querySelector('.bg-purple-500\\/20')).toBeNull();
+    });
+
+    it('passes can_access_cloud through to the create call when the toggle is checked', async () => {
+      let posted: { name?: string; can_access_cloud?: boolean } | null = null;
+
+      server.use(
+        http.get('/api/v1/api-keys/', () => HttpResponse.json([])),
+        http.post('/api/v1/api-keys/', async ({ request }) => {
+          posted = (await request.json()) as { name?: string; can_access_cloud?: boolean };
+          return HttpResponse.json({
+            id: 99,
+            key: 'bk_returnedkey',
+            name: posted.name,
+            key_prefix: 'bk_returne',
+            user_id: 1,
+            can_queue: true,
+            can_control_printer: false,
+            can_read_status: true,
+            can_access_cloud: posted.can_access_cloud ?? false,
+            printer_ids: null,
+            enabled: true,
+            last_used: null,
+            created_at: '2026-05-01T00:00:00Z',
+            expires_at: null,
+          });
+        })
+      );
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('API Keys').length).toBeGreaterThan(0);
+      });
+      const tabButton = screen.getAllByText('API Keys').find((el) => el.tagName === 'BUTTON');
+      await user.click(tabButton!);
+
+      // Open the create form. With an empty key list the empty-state card
+      // shows "Create Your First Key" — click that to open the form.
+      const openButton = await screen.findByRole('button', { name: /Create Your First Key/i });
+      await user.click(openButton);
+
+      // Tick the new "Allow cloud access" checkbox. The label wraps the
+      // input AND a sibling description div, so getByLabelText doesn't
+      // resolve via implicit-label traversal — locate via text + closest
+      // label, then grab the checkbox from the same scope.
+      const cloudLabelText = await screen.findByText(/Allow cloud access/i);
+      const cloudLabel = cloudLabelText.closest('label');
+      expect(cloudLabel).not.toBeNull();
+      const cloudCheckbox = cloudLabel!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      expect(cloudCheckbox).not.toBeNull();
+      await user.click(cloudCheckbox);
+
+      // Submit. Two "Create Key" buttons exist once the form is open (header
+      // CTA + form footer); the form-footer one is the actual submit and
+      // calls the mutation — find it by walking up from the cloud checkbox
+      // we just clicked, since both share the same form container.
+      const submitButtons = screen.getAllByRole('button', { name: /^Create Key$/i });
+      // Footer submit is the one inside the same form section as the
+      // checkbox. The header CTA is in a separate flex row.
+      const formSubmit = submitButtons.find(
+        (b) => b.closest('div')?.contains(cloudCheckbox) || cloudLabel?.parentElement?.parentElement?.contains(b),
+      );
+      await user.click(formSubmit ?? submitButtons[submitButtons.length - 1]);
+
+      await waitFor(() => {
+        expect(posted).not.toBeNull();
+        expect(posted!.can_access_cloud).toBe(true);
+      });
+    });
+  });
+
+  describe('API Keys tab — #1356 energy-cost write scope', () => {
+    /**
+     * The narrowly-scoped settings-write toggle. We pin two contracts here:
+     *
+     *   1. The "Energy" badge renders for keys that have can_update_energy_cost=true.
+     *      Without a visible signal, an operator can't tell which key in their
+     *      list is the one their HA automation depends on.
+     *   2. The create form sends can_update_energy_cost=true to the backend
+     *      when the toggle is checked. The whole point of #1356 is that the
+     *      flag must actually be persisted — a UI that drops it silently
+     *      would put us right back where the bug started.
+     */
+    it('renders the Energy badge for keys with can_update_energy_cost=true', async () => {
+      const keys = [
+        {
+          id: 1,
+          name: 'tariff-pusher',
+          key_prefix: 'bk_tariff01',
+          user_id: 7,
+          can_queue: false,
+          can_control_printer: false,
+          can_read_status: true,
+          can_access_cloud: false,
+          can_update_energy_cost: true,
+          printer_ids: null,
+          enabled: true,
+          last_used: null,
+          created_at: '2026-05-15T00:00:00Z',
+          expires_at: null,
+        },
+      ];
+
+      server.use(http.get('/api/v1/api-keys/', () => HttpResponse.json(keys)));
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('API Keys').length).toBeGreaterThan(0);
+      });
+      const tabButton = screen.getAllByText('API Keys').find((el) => el.tagName === 'BUTTON');
+      await user.click(tabButton!);
+
+      await waitFor(() => {
+        expect(screen.getByText('tariff-pusher')).toBeInTheDocument();
+      });
+
+      const row = screen.getByText('tariff-pusher').closest('.flex.items-center.justify-between');
+      expect(row).not.toBeNull();
+      expect(row!.textContent).toContain('Energy');
+    });
+
+    it('passes can_update_energy_cost through to the create call when the toggle is checked', async () => {
+      let posted: { name?: string; can_update_energy_cost?: boolean } | null = null;
+
+      server.use(
+        http.get('/api/v1/api-keys/', () => HttpResponse.json([])),
+        http.post('/api/v1/api-keys/', async ({ request }) => {
+          posted = (await request.json()) as { name?: string; can_update_energy_cost?: boolean };
+          return HttpResponse.json({
+            id: 99,
+            key: 'bk_returnedkey',
+            name: posted.name,
+            key_prefix: 'bk_returne',
+            user_id: 1,
+            can_queue: true,
+            can_control_printer: false,
+            can_read_status: true,
+            can_access_cloud: false,
+            can_update_energy_cost: posted.can_update_energy_cost ?? false,
+            printer_ids: null,
+            enabled: true,
+            last_used: null,
+            created_at: '2026-05-15T00:00:00Z',
+            expires_at: null,
+          });
+        })
+      );
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('API Keys').length).toBeGreaterThan(0);
+      });
+      const tabButton = screen.getAllByText('API Keys').find((el) => el.tagName === 'BUTTON');
+      await user.click(tabButton!);
+
+      const openButton = await screen.findByRole('button', { name: /Create Your First Key/i });
+      await user.click(openButton);
+
+      const energyLabelText = await screen.findByText(/Update electricity price/i);
+      const energyLabel = energyLabelText.closest('label');
+      expect(energyLabel).not.toBeNull();
+      const energyCheckbox = energyLabel!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      expect(energyCheckbox).not.toBeNull();
+      await user.click(energyCheckbox);
+
+      const submitButtons = screen.getAllByRole('button', { name: /^Create Key$/i });
+      const formSubmit = submitButtons.find(
+        (b) => b.closest('div')?.contains(energyCheckbox) || energyLabel?.parentElement?.parentElement?.contains(b),
+      );
+      await user.click(formSubmit ?? submitButtons[submitButtons.length - 1]);
+
+      await waitFor(() => {
+        expect(posted).not.toBeNull();
+        expect(posted!.can_update_energy_cost).toBe(true);
+      });
+    });
+  });
+
+  describe('external camera snapshot URL override (#1177)', () => {
+    /**
+     * The snapshot URL input only appears for stream camera types where the
+     * MJPEG warm-up problem can occur (mjpeg / rtsp / usb). Pure HTTP
+     * snapshot sources don't need an override since their stream URL is
+     * already a single-frame endpoint.
+     */
+    const mjpegPrinter = {
+      id: 7,
+      name: 'go2rtc Cam',
+      serial_number: 'TEST123',
+      ip_address: '192.168.1.100',
+      access_code: 'XXXX',
+      model: 'P1S',
+      location: null,
+      nozzle_count: 1,
+      is_active: true,
+      auto_archive: true,
+      external_camera_url: 'http://192.168.1.61:1984/api/stream.mjpeg?src=printer',
+      external_camera_type: 'mjpeg',
+      external_camera_enabled: true,
+      external_camera_snapshot_url: null,
+      camera_rotation: 0,
+      plate_detection_enabled: false,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+
+    it('renders the snapshot URL input when camera_type is mjpeg', async () => {
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json([mjpegPrinter])),
+      );
+
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText(/api\/frame\.jpeg\?src=printer/)).toBeInTheDocument();
+      });
+    });
+
+    it('hides the snapshot URL input when camera_type is snapshot (already a single-frame source)', async () => {
+      server.use(
+        http.get('/api/v1/printers/', () =>
+          HttpResponse.json([{ ...mjpegPrinter, external_camera_type: 'snapshot' }]),
+        ),
+      );
+
+      render(<SettingsPage />);
+
+      // Wait for the live-stream URL placeholder to render so we know the
+      // camera section finished mounting before asserting absence of the
+      // snapshot input below.
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText(/Camera URL/i)).toBeInTheDocument();
+      });
+      expect(screen.queryByPlaceholderText(/api\/frame\.jpeg\?src=printer/)).not.toBeInTheDocument();
+    });
+
+    it(
+      'PATCHes external_camera_url together with enabled=true and inferred type when the user enters a camera URL',
+      async () => {
+        let receivedBody: Record<string, unknown> | null = null;
+        server.use(
+          http.get('/api/v1/printers/', () =>
+            HttpResponse.json([{ ...mjpegPrinter, external_camera_url: null, external_camera_type: null }]),
+          ),
+          http.patch('/api/v1/printers/7', async ({ request }) => {
+            receivedBody = (await request.json()) as Record<string, unknown>;
+            return HttpResponse.json({ ...mjpegPrinter, ...receivedBody });
+          }),
+        );
+
+        render(<SettingsPage />);
+
+        const input = await waitFor(() => screen.getByPlaceholderText(/Camera URL/i));
+
+        const user = userEvent.setup();
+        await user.type(input, 'rtsp://neptune.local/stream');
+
+        await waitFor(
+          () => {
+            expect(receivedBody).not.toBeNull();
+            expect(receivedBody).toMatchObject({
+              external_camera_url: 'rtsp://neptune.local/stream',
+              external_camera_enabled: true,
+              external_camera_type: 'rtsp',
+            });
+          },
+          { timeout: 5000 },
+        );
+      },
+      15_000,
+    );
+
+    it(
+      'persists a successful live camera test immediately so the camera window can use the saved stream fields',
+      async () => {
+        let testUrl: string | null = null;
+        let receivedBody: Record<string, unknown> | null = null;
+        server.use(
+          http.get('/api/v1/printers/', () => HttpResponse.json([mjpegPrinter])),
+          http.post('/api/v1/printers/7/camera/external/test', ({ request }) => {
+            testUrl = new URL(request.url).searchParams.get('url');
+            return HttpResponse.json({ success: true, resolution: '640x480' });
+          }),
+          http.patch('/api/v1/printers/7', async ({ request }) => {
+            receivedBody = (await request.json()) as Record<string, unknown>;
+            return HttpResponse.json({ ...mjpegPrinter, ...receivedBody });
+          }),
+        );
+
+        render(<SettingsPage />);
+
+        const testButtons = await waitFor(() => screen.getAllByRole('button', { name: 'Test' }));
+        const user = userEvent.setup();
+        await user.click(testButtons[0]);
+
+        await waitFor(() => {
+          expect(testUrl).toBe('http://192.168.1.61:1984/api/stream.mjpeg?src=printer');
+          expect(receivedBody).toMatchObject({
+            external_camera_url: 'http://192.168.1.61:1984/api/stream.mjpeg?src=printer',
+            external_camera_enabled: true,
+            external_camera_type: 'mjpeg',
+          });
+        });
+      },
+      15_000,
+    );
+
+    it(
+      'PATCHes the printer with external_camera_snapshot_url when the user types into the input',
+      async () => {
+        let receivedBody: Record<string, unknown> | null = null;
+        server.use(
+          http.get('/api/v1/printers/', () => HttpResponse.json([mjpegPrinter])),
+          http.patch('/api/v1/printers/7', async ({ request }) => {
+            receivedBody = (await request.json()) as Record<string, unknown>;
+            return HttpResponse.json({ ...mjpegPrinter, ...receivedBody });
+          }),
+        );
+
+        render(<SettingsPage />);
+
+        const input = await waitFor(() =>
+          screen.getByPlaceholderText(/api\/frame\.jpeg\?src=printer/),
+        );
+
+        const user = userEvent.setup();
+        await user.type(input, 'http://192.168.1.61:1984/api/frame.jpeg?src=printer');
+
+        // Save is debounced by 800ms; assert the PATCH eventually fires with
+        // the typed snapshot URL.
+        await waitFor(
+          () => {
+            expect(receivedBody).not.toBeNull();
+            expect(receivedBody!.external_camera_snapshot_url).toBe(
+              'http://192.168.1.61:1984/api/frame.jpeg?src=printer',
+            );
+          },
+          { timeout: 5000 },
+        );
+      },
+      // Per-test timeout raised to 15s — `user.type()` of a 49-char URL plus
+      // the 800ms save debounce fits in 5s locally (~2.3s typical) but blows
+      // past it on slow GitHub Actions runners (5000ms timeout was the failure
+      // mode on PR #1263).
+      15_000,
+    );
+  });
+
+  describe('filament settings', () => {
+    it('lets the user disable the missing spool assignment confirmation', async () => {
+      let updatePayload: Record<string, unknown> | null = null;
+      server.use(
+        http.put('/api/v1/settings/', async ({ request }) => {
+          updatePayload = await request.json() as Record<string, unknown>;
+          return HttpResponse.json({ ...mockSettings, ...updatePayload });
+        })
+      );
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await user.click(await screen.findByRole('button', { name: 'Filament' }));
+      const toggle = await screen.findByRole('checkbox', { name: /warn before starting without an assigned spool/i });
+      expect(toggle).toBeChecked();
+
+      await user.click(toggle);
+      await waitFor(() => {
+        expect(updatePayload).toMatchObject({ warn_on_missing_spool_assignment: false });
+      });
+    });
+  });
+});
