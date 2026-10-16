@@ -1,0 +1,21 @@
+services:
+  printbuddy-connector:
+    build:
+      context: ..
+      dockerfile: connector/Dockerfile
+    container_name: printbuddy-connector
+    # Linux host networking reaches routed private LANs without publishing a
+    # listener. The Connector only creates outbound WSS connections.
+    network_mode: host
+    environment:
+      PRINTBUDDY_SERVER_URL: ${PRINTBUDDY_SERVER_URL:?Set the Printbuddy HTTPS URL}
+      PRINTBUDDY_ENROLLMENT_CODE: ${PRINTBUDDY_ENROLLMENT_CODE:-}
+      PRINTBUDDY_CONNECTOR_STATE: /var/lib/printbuddy-connector/state.json
+      PRINTBUDDY_CONNECTOR_VERSION: ${PRINTBUDDY_CONNECTOR_VERSION:-0.1.0}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - printbuddy_connector_state:/var/lib/printbuddy-connector
+    restart: unless-stopped
+
+volumes:
+  printbuddy_connector_state:
