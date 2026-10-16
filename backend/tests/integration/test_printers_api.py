@@ -490,6 +490,53 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_get_connector_printer_status_uses_connector_rpc(
+        self, async_client: AsyncClient, printer_factory, db_session, monkeypatch
+    ):
+        """Connector-mode status must not read the server-local PrinterManager."""
+        connector = Connector(
+            public_id="status-connector",
+            name="Status Connector",
+            owner_user_id=None,
+            status="online",
+            credential_prefix="pc_status",
+            credential_hash="not-used-by-binding",
+        )
+        db_session.add(connector)
+        await db_session.commit()
+        printer = await printer_factory(
+            connection_mode="connector",
+            connector_id=connector.public_id,
+            serial_number="REMOTE-STATUS-PRINTER",
+            ip_address="192.168.50.20",
+        )
+
+        from backend.app.services.connector_gateway import connector_gateway
+
+        monkeypatch.setattr(connector_gateway, "is_online", lambda value: value == connector.public_id)
+        request = AsyncMock(
+            return_value={
+                "request_id": "status-remote-1",
+                "status": "completed",
+                "connected": True,
+                "state": "reachable",
+            }
+        )
+        monkeypatch.setattr(connector_gateway, "request", request)
+        with patch("backend.app.api.routes.printers.printer_manager.get_status", side_effect=AssertionError("local probe")):
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert response.status_code == 200, response.text
+        result = response.json()
+        assert result["connected"] is True
+        assert result["connection_mode"] == "connector"
+        assert result["connector_status"] == "online"
+        assert result["state"] == "REACHABLE"
+        request.assert_awaited_once()
+        assert request.await_args.args[1] == "printer.status.request"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_get_moonraker_printer_status_returns_basic_values(self, async_client: AsyncClient, printer_factory):
         """Fluidd/Moonraker status must not assume Bambu-only HMS/AMS fields exist."""
         from backend.app.services.printer_providers.moonraker import MoonrakerPrinterState

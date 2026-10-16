@@ -338,6 +338,7 @@ export default {
     },
     // Connection status
     connection: {
+      connectorOffline: 'Connector 離線', connectorOnline: 'Connector 線上',
       connected: '已連線',
       offline: '離線',
     },

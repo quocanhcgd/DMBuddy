@@ -3493,17 +3493,25 @@ function PrinterCard({
               {/* Connection status badge */}
               <span
                 className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${
-                  status?.connected
+                  status?.connector_status === 'offline'
+                    ? 'bg-yellow-500/20 text-yellow-300'
+                    : status?.connected
                     ? 'bg-status-ok/20 text-status-ok'
                     : 'bg-status-error/20 text-status-error'
                 }`}
               >
-                {status?.connected ? (
+                {status?.connector_status === 'offline' ? (
+                  <Unlink className="w-3 h-3" />
+                ) : status?.connected ? (
                   <Link className="w-3 h-3" />
                 ) : (
                   <Unlink className="w-3 h-3" />
                 )}
-                {status?.connected ? t('printers.connection.connected') : t('printers.connection.offline')}
+                {status?.connector_status === 'offline'
+                  ? t('printers.connection.connectorOffline')
+                  : status?.connector_status === 'online' && !status?.connected
+                    ? t('printers.connection.connectorOnline')
+                    : status?.connected ? t('printers.connection.connected') : t('printers.connection.offline')}
               </span>
               {/* Run connection diagnostic — offered when the printer is offline */}
               {!status?.connected && (

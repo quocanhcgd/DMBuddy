@@ -722,6 +722,63 @@ async def get_printer_status(
     if not printer:
         raise HTTPException(404, "Printer not found")
 
+    # Connector-mode printers must never be probed from the server process.
+    # Return a small, honest transport snapshot until the Connector grows a
+    # richer telemetry stream in the status/control phase.
+    if printer.connection_mode == "connector":
+        connector_online = bool(printer.connector_id and connector_gateway.is_online(printer.connector_id))
+        if not connector_online:
+            return PrinterStatus(
+                id=printer_id,
+                name=printer.name,
+                connected=False,
+                connection_mode="connector",
+                connector_status="offline",
+                connector_last_seen_at=printer.connector_last_seen_at,
+                connector_last_error=printer.connector_last_error,
+                connection_details={"transport": "connector", "connector_status": "offline"},
+            )
+        transport = ConnectorPrinterTransport(printer.connector_id or "", connector_gateway)
+        try:
+            result = await transport.status(
+                {
+                    "request_id": secrets.token_urlsafe(16),
+                    "ip_address": printer.ip_address,
+                    "port": _connector_printer_port(printer.provider),
+                    "provider": printer.provider,
+                    "timeout_ms": 1000,
+                },
+                timeout=4,
+            )
+        except ConnectorOfflineError:
+            return PrinterStatus(
+                id=printer_id,
+                name=printer.name,
+                connected=False,
+                connection_mode="connector",
+                connector_status="offline",
+                connector_last_seen_at=printer.connector_last_seen_at,
+                connector_last_error="Connector did not return a status",
+                connection_details={"transport": "connector", "connector_status": "offline"},
+            )
+        connected = bool(result.get("connected")) and result.get("status") == "completed"
+        state = str(result.get("state") or "unknown").upper()
+        return PrinterStatus(
+            id=printer_id,
+            name=printer.name,
+            connected=connected,
+            state=state,
+            connection_mode="connector",
+            connector_status="online",
+            connector_last_seen_at=printer.connector_last_seen_at,
+            connector_last_error=None if connected else (str(result.get("error")) if result.get("error") else None),
+            connection_details={
+                "transport": "connector",
+                "connector_status": "online",
+                "remote_state": str(result.get("state") or "unknown"),
+            },
+        )
+
     state = printer_manager.get_status(printer_id)
     if not state:
         return PrinterStatus(

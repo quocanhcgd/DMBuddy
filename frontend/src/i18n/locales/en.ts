@@ -340,6 +340,8 @@ export default {
     connection: {
       connected: 'Connected',
       offline: 'Offline',
+      connectorOffline: 'Connector offline',
+      connectorOnline: 'Connector online',
     },
     plateStatus: {
       markCleared: 'Mark plate as cleared',

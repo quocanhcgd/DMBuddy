@@ -400,6 +400,12 @@ class PrinterStatus(BaseModel):
     id: int
     name: str
     connected: bool
+    # Transport health for printers reached through a remote Connector.
+    # These fields are also safe for direct/VPN responses (null).
+    connection_mode: str | None = None
+    connector_status: str | None = None
+    connector_last_seen_at: datetime | None = None
+    connector_last_error: str | None = None
     state: str | None = None
     current_print: str | None = None
     subtask_name: str | None = None

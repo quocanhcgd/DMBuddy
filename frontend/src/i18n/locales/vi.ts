@@ -340,6 +340,8 @@ export default {
     connection: {
       connected: 'Đã kết nối',
       offline: 'Ngoại tuyến',
+      connectorOffline: 'Connector ngoại tuyến',
+      connectorOnline: 'Connector trực tuyến',
     },
     plateStatus: {
       markCleared: 'Đánh dấu biển số là đã xóa',

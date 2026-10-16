@@ -338,6 +338,7 @@ export default {
     },
     // Connection status
     connection: {
+      connectorOffline: 'Connector desconectado', connectorOnline: 'Connector conectado',
       connected: 'Conectado',
       offline: 'Offline',
     },

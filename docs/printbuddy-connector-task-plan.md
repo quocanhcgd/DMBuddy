@@ -180,7 +180,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-202 — PrinterTransport abstraction
 
-- **Trạng thái:** `DOING` (đã thêm transport boundary và Connector discovery adapter; các capability status/control/file vẫn chưa nối)
+- **Trạng thái:** `DOING` (đã thêm transport boundary, Connector discovery adapter và status adapter cho REST status; các capability control/file vẫn chưa nối)
 - **Phụ thuộc:** CON-002, CON-201
 - **Phạm vi dự kiến:** `backend/app/services/printer_transport.py`, direct/connector implementation, factory/provider integration.
 - **Interface tối thiểu:** `test_connection`, `connect`, `disconnect`, `request_status`, `send_command`, `list_files`, `upload_file`, `download_file`, `delete_file`, `get_snapshot`, `diagnostic`.

@@ -409,6 +409,10 @@ export interface PrinterStatus {
   id: number;
   name: string;
   connected: boolean;
+  connection_mode?: PrinterConnectionMode | null;
+  connector_status?: 'online' | 'offline' | 'unknown' | string | null;
+  connector_last_seen_at?: string | null;
+  connector_last_error?: string | null;
   state: string | null;
   current_print: string | null;
   subtask_name: string | null;
