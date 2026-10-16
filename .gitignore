@@ -20,6 +20,7 @@ docker-compose.override.yml
 *.egg-info/
 dist/
 build/
+connector/windows/spec/
 .coverage
 .coverage.*
 coverage.xml

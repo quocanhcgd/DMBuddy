@@ -7,11 +7,13 @@ param(
 
     [string] $TaskName = 'Printbuddy Connector',
 
-    [string] $PythonPath = 'python'
+    [string] $PythonPath = 'python',
+
+    [string] $ExecutablePath = ''
 )
 
 $ErrorActionPreference = 'Stop'
-$windowsRoot = Split-Path -Parent $PSScriptRoot
+$windowsRoot = $PSScriptRoot
 $connectorRoot = Split-Path -Parent $windowsRoot
 $repositoryRoot = Split-Path -Parent $connectorRoot
 $runScript = Join-Path $PSScriptRoot 'run-connector.ps1'
@@ -19,17 +21,22 @@ $statePath = Join-Path $env:LOCALAPPDATA 'Printbuddy\Connector\connector-state.j
 $stateDirectory = Split-Path -Parent $statePath
 New-Item -ItemType Directory -Force -Path $stateDirectory | Out-Null
 
-$python = (Get-Command $PythonPath -ErrorAction Stop).Source
-Push-Location $repositoryRoot
-try {
-    & $python -c 'import httpx, pydantic, websockets, paho.mqtt.client' 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        & $python -m pip install -r (Join-Path $connectorRoot 'requirements.txt')
-        if ($LASTEXITCODE -ne 0) { throw 'Could not install Connector Python dependencies.' }
+$python = $null
+if ($ExecutablePath) {
+    $ExecutablePath = (Resolve-Path -LiteralPath $ExecutablePath -ErrorAction Stop).Path
+} else {
+    $python = (Get-Command $PythonPath -ErrorAction Stop).Source
+    Push-Location $repositoryRoot
+    try {
+        & $python -c 'import httpx, pydantic, websockets, paho.mqtt.client' 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            & $python -m pip install -r (Join-Path $connectorRoot 'requirements.txt')
+            if ($LASTEXITCODE -ne 0) { throw 'Could not install Connector Python dependencies.' }
+        }
     }
-}
-finally {
-    Pop-Location
+    finally {
+        Pop-Location
+    }
 }
 
 # Enrollment is performed once in a short-lived child process. The code is
@@ -44,7 +51,11 @@ if (-not (Test-Path $statePath)) {
     $env:PRINTBUDDY_SERVER_URL = $ServerUrl.TrimEnd('/')
     $env:PRINTBUDDY_ENROLLMENT_CODE = $EnrollmentCode
     $env:PRINTBUDDY_CONNECTOR_STATE = $statePath
-    $bootstrap = Start-Process -FilePath $python -ArgumentList '-m', 'connector.printbuddy_connector' -WorkingDirectory $repositoryRoot -WindowStyle Hidden -PassThru
+    if ($ExecutablePath) {
+        $bootstrap = Start-Process -FilePath $ExecutablePath -WorkingDirectory (Split-Path -Parent $ExecutablePath) -WindowStyle Hidden -PassThru
+    } else {
+        $bootstrap = Start-Process -FilePath $python -ArgumentList '-m', 'connector.printbuddy_connector' -WorkingDirectory $repositoryRoot -WindowStyle Hidden -PassThru
+    }
     try {
         $deadline = (Get-Date).AddSeconds(60)
         while (-not (Test-Path $statePath) -and (Get-Date) -lt $deadline) {
@@ -65,7 +76,13 @@ if (-not (Test-Path $statePath)) {
 $escapedRunScript = $runScript.Replace('"', '\"')
 $escapedServerUrl = $ServerUrl.Replace('"', '\"')
 $escapedStatePath = $statePath.Replace('"', '\"')
-$arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$escapedRunScript`" -ServerUrl `"$escapedServerUrl`" -StatePath `"$escapedStatePath`" -PythonPath `"$python`""
+$escapedExecutablePath = if ($ExecutablePath) { $ExecutablePath.Replace('"', '\"') } else { '' }
+$runtimeArgument = if ($ExecutablePath) {
+    "-ExecutablePath `"$escapedExecutablePath`""
+} else {
+    "-PythonPath `"$python`""
+}
+$arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$escapedRunScript`" -ServerUrl `"$escapedServerUrl`" -StatePath `"$escapedStatePath`" $runtimeArgument"
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments -WorkingDirectory $repositoryRoot
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType InteractiveToken -RunLevel Limited

@@ -68,6 +68,33 @@ Remove it from your shell after installation. To remove the task:
 .\connector\windows\uninstall-connector-task.ps1
 ```
 
+### Windows executable
+
+To create a self-contained Windows executable, run this from the repository
+root on a Windows machine with Python installed:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\connector\windows\build-exe.ps1
+```
+
+The output is `connector\windows\dist\PrintbuddyConnector.exe`. Install it
+with the same one-time enrollment flow:
+
+```powershell
+.\connector\windows\install-connector-task.ps1 `
+  -ServerUrl "https://printbuddy.example.com" `
+  -ExecutablePath ".\connector\windows\dist\PrintbuddyConnector.exe"
+```
+
+The executable reads `PRINTBUDDY_SERVER_URL`,
+`PRINTBUDDY_CONNECTOR_STATE`, and the one-time enrollment code from its
+process environment. The enrollment code is never put in the scheduled task
+arguments or written to disk. One-file PyInstaller startup can be slower and
+some antivirus products may inspect or quarantine unsigned builds; publish a
+signed release executable for production use. Python mode remains available
+by omitting `-ExecutablePath`.
+
 Docker Desktop does not provide Linux host networking with the same semantics.
 If Docker Desktop is used instead, remove `network_mode: host` and define a
 reachable bridge network. Verify from inside the container that each private

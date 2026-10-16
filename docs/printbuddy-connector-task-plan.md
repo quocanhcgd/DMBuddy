@@ -207,6 +207,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 - **Trạng thái:** `DOING` (đã có Dockerfile/compose độc lập, state volume non-root, Windows PowerShell/Task Scheduler installer và hướng dẫn Linux/Windows; còn CI image scan, ký image và installer native)
 - **Phụ thuộc:** CON-106, CON-203
 - **Phạm vi:** dependency connector, config file/env, Windows/Linux service, Docker image cơ bản.
+- **Windows executable:** `connector/windows/build-exe.ps1` tạo bản PyInstaller one-file; `install-connector-task.ps1 -ExecutablePath` đăng ký Scheduled Task chạy executable. Python fallback vẫn được hỗ trợ.
 - **Tiêu chí hoàn thành:** chạy từ mạng khác chỉ cần outbound HTTPS/WSS; tài liệu firewall nêu rõ các kết nối Connector → printer trong LAN và passive FTP caveat.
 
 ## 6. Giai đoạn G3 — trạng thái và điều khiển
