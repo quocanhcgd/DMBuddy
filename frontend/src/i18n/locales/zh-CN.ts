@@ -127,6 +127,7 @@ export default {
 
   // Printers page
   printers: {
+    connector: { subnet: '要扫描的专用子网', scan: '通过 Connector 扫描', scanning: '正在扫描…', scanHint: '仅扫描专用 LAN 地址。', offline: '所选 Connector 已离线。', selectFirst: '请先选择 Connector。', discoveryFailed: 'Connector 扫描失败。', noResults: '未找到可访问的打印机服务。', verificationFailed: 'Connector 无法验证此打印机。', verified: '已通过 Connector 验证打印机。' },
     addPreflight: {
       checking: '正在检查连接...',
       warning: '部分连接检查未通过。此打印机可能显示为离线。请查看下方的检查项，尽量修复，或仍然保存。',

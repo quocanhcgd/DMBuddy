@@ -273,9 +273,9 @@ Không đưa token Connector vào query string vì URL có thể xuất hiện t
 ### Giai đoạn 2 — discovery và transport nền
 
 - Đóng gói Connector cho Windows/Linux/Docker.
-- Thêm yêu cầu discovery qua Connector, kiểm tra subnet và port. Nền tảng hiện tại dùng request/response đồng bộ, chỉ cho private CIDR tối đa 256 host, tối đa 16 port, timeout giới hạn và trả tối đa 256 endpoint đã lọc; scanner chỉ TCP reachability, không nhận URL/banner/credential.
+- Thêm yêu cầu discovery qua Connector, kiểm tra subnet và port. Nền tảng hiện tại dùng request/response đồng bộ, chỉ cho private CIDR tối đa 256 host, tối đa 16 port, timeout giới hạn và trả tối đa 256 endpoint đã lọc; scanner chỉ TCP reachability, không nhận URL/banner/credential. Add Printer UI đã có nhập subnet riêng, chọn Connector online, hiển thị kết quả và điền endpoint.
 - Thêm printer `connection_mode=connector`, `connector_id`, migration/backfill `direct`.
-- Thêm `PrinterTransport` và route direct giữ behavior hiện tại. Discovery route hiện dùng `ConnectorPrinterTransport`; các adapter status/control/file sẽ bổ sung theo capability ở các giai đoạn sau.
+- Thêm `PrinterTransport` và route direct giữ behavior hiện tại. Discovery route hiện dùng `ConnectorPrinterTransport`; Add Printer gọi provider verification qua typed RPC trước khi create. Các adapter status/control/file sẽ bổ sung theo capability ở các giai đoạn sau.
 - Test add printer qua Connector bằng máy giả lập/protocol fixture. Hiện route tạo máy in đã gọi typed `printer.verify.request` trước khi lưu; verify hiện chỉ là TCP endpoint reachability, chưa gửi credential/provider handshake.
 
 Điều kiện hoàn tất: máy in có thể thêm qua Connector và diagnostic phản ánh chính xác MQTT/HTTP reachability.

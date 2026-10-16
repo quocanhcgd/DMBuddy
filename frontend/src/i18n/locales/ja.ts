@@ -126,6 +126,7 @@ export default {
   },
   // Printers page
   printers: {
+    connector: { subnet: 'スキャンするプライベートサブネット', scan: 'Connector 経由でスキャン', scanning: 'スキャン中…', scanHint: 'プライベート LAN アドレスのみをスキャンします。', offline: '選択した Connector はオフラインです。', selectFirst: '先に Connector を選択してください。', discoveryFailed: 'Connector の検出に失敗しました。', noResults: '到達可能なプリンターサービスが見つかりません。', verificationFailed: 'Connector はこのプリンターを検証できませんでした。', verified: 'Connector 経由でプリンターを検証しました。' },
     addPreflight: {
       checking: '接続を確認しています...',
       warning: '一部の接続チェックに失敗しました。このプリンターはオフラインと表示される可能性があります。下のチェックを確認し、可能な範囲で修正するか、そのまま保存してください。',

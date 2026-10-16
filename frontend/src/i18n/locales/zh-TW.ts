@@ -127,6 +127,7 @@ export default {
 
   // Printers page
   printers: {
+    connector: { subnet: '要掃描的私人子網路', scan: '透過 Connector 掃描', scanning: '掃描中…', scanHint: '只會掃描私人 LAN 位址。', offline: '選取的 Connector 已離線。', selectFirst: '請先選取 Connector。', discoveryFailed: 'Connector 探索失敗。', noResults: '找不到可連線的印表機服務。', verificationFailed: 'Connector 無法驗證此印表機。', verified: '已透過 Connector 驗證印表機。' },
     addPreflight: {
       checking: '正在檢查連線...',
       warning: '部分連線檢查未通過。此印表機可能顯示為離線。請查看下方的檢查項目，盡量修復，或仍然儲存。',

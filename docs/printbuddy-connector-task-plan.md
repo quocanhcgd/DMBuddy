@@ -188,7 +188,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-203 — Discovery command qua Connector
 
-- **Trạng thái:** `DOING` (đã có protocol v1, API đồng bộ, gateway request/response, TCP scanner private LAN và typed verify/status RPC; đã có verify Bambu MQTT/Moonraker HTTP/PrusaLink HTTP; còn command ledger/query trạng thái dài hạn và application-level credential envelope)
+- **Trạng thái:** `DOING` (đã có protocol v1, API đồng bộ, gateway request/response, TCP scanner private LAN và typed verify/status RPC; đã có verify Bambu MQTT/Moonraker HTTP/PrusaLink HTTP; frontend Add Printer đã có chọn Connector, quét subnet và chọn endpoint; còn command ledger/query trạng thái dài hạn và application-level credential envelope)
 - **Phụ thuộc:** CON-105, CON-201, CON-202
 - **API:** `POST /api/v1/connectors/{id}/discoveries`, query trạng thái/result.
 - **Bảo vệ:** CIDR/port allowlist, timeout, concurrency, max host, không nhận URL tùy ý; chỉ user có `connectors:discover`.
@@ -197,7 +197,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-204 — Add printer qua Connector
 
-- **Trạng thái:** `DOING` (route tạo printer Connector đã bắt buộc typed verify provider; wizard chọn kết quả discovery và credential envelope còn lại)
+- **Trạng thái:** `DOING` (route tạo printer Connector đã bắt buộc typed verify provider; frontend wizard đã chọn Connector → discovery result → điền endpoint → verify trước khi gọi create; credential envelope và test UI chuyên biệt còn lại)
 - **Phụ thuộc:** CON-201, CON-203
 - **Phạm vi:** route `printers.py`, schema/UI `PrintersPage.tsx`, wizard chọn Connector → discovery result → credential → verify.
 - **Tiêu chí hoàn thành:** verify qua Connector trước khi lưu; binding printer-connector atomic; lỗi từng capability hiển thị riêng; test fake printer. Hiện đã chặn lưu nếu provider handshake thất bại; UI wizard và application-level credential protection vẫn chưa hoàn tất.

@@ -3196,6 +3196,64 @@ export interface ConnectorUpdate {
   name?: string;
 }
 
+export interface ConnectorDiscoveryRequest {
+  subnet: string;
+  ports?: number[];
+  max_hosts?: number;
+  timeout_ms?: number;
+}
+
+export interface ConnectorDiscoveryResultEntry {
+  ip_address: string;
+  port: number;
+  protocol: string;
+  service: string;
+  reachable: boolean;
+}
+
+export interface ConnectorDiscoveryResponse {
+  request_id: string;
+  status: 'completed' | 'failed' | string;
+  results: ConnectorDiscoveryResultEntry[];
+  error: string | null;
+}
+
+export interface ConnectorPrinterVerifyRequest {
+  ip_address: string;
+  port?: number;
+  provider: string;
+  serial_number?: string;
+  access_code?: string;
+  auth_token?: string;
+  timeout_ms?: number;
+}
+
+export interface ConnectorPrinterVerifyResponse {
+  request_id: string;
+  status: 'completed' | 'failed' | string;
+  reachable: boolean;
+  provider: string;
+  protocol: string;
+  service: string;
+  model: string | null;
+  error: string | null;
+}
+
+export interface ConnectorPrinterStatusRequest {
+  ip_address: string;
+  port?: number;
+  provider: string;
+  timeout_ms?: number;
+}
+
+export interface ConnectorPrinterStatusResponse {
+  request_id: string;
+  status: 'completed' | 'failed' | 'unavailable' | string;
+  connected: boolean;
+  state: 'reachable' | 'unreachable' | 'unknown' | string;
+  error: string | null;
+}
+
 export interface PermissionsListResponse {
   categories: PermissionCategory[];
   all_permissions: Permission[];
@@ -3687,6 +3745,21 @@ export const api = {
   revokeConnector: (id: string) =>
     request<Connector>(`/connectors/${encodeURIComponent(id)}/revoke`, {
       method: 'POST',
+    }),
+  discoverThroughConnector: (id: string, data: ConnectorDiscoveryRequest) =>
+    request<ConnectorDiscoveryResponse>(`/connectors/${encodeURIComponent(id)}/discoveries`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  verifyPrinterThroughConnector: (id: string, data: ConnectorPrinterVerifyRequest) =>
+    request<ConnectorPrinterVerifyResponse>(`/connectors/${encodeURIComponent(id)}/verify-printer`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getConnectorPrinterStatus: (id: string, data: ConnectorPrinterStatusRequest) =>
+    request<ConnectorPrinterStatusResponse>(`/connectors/${encodeURIComponent(id)}/printer-status`, {
+      method: 'POST',
+      body: JSON.stringify(data),
     }),
 
   // Printers

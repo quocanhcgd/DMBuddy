@@ -127,6 +127,7 @@ export default {
 
   // Printers page
   printers: {
+    connector: { subnet: 'Sub-rede privada', scan: 'Escanear pelo Connector', scanning: 'Escaneando…', scanHint: 'Somente endereços LAN privados são escaneados.', offline: 'O Connector selecionado está offline.', selectFirst: 'Selecione um Connector primeiro.', discoveryFailed: 'Falha na descoberta pelo Connector.', noResults: 'Nenhum serviço de impressora encontrado.', verificationFailed: 'O Connector não pôde verificar esta impressora.', verified: 'Impressora verificada pelo Connector.' },
     addPreflight: {
       checking: 'Verificando a conexão...',
       warning: 'Algumas verificações de conexão falharam. Esta impressora pode aparecer como offline. Revise as verificações abaixo, corrija o que puder ou salve mesmo assim.',

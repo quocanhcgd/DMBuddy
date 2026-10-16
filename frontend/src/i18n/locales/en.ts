@@ -127,6 +127,7 @@ export default {
 
   // Printers page
   printers: {
+    connector: { subnet: 'Private subnet to scan', scan: 'Scan through Connector', scanning: 'Scanning…', scanHint: 'Only private LAN addresses are scanned. Select a result to fill the printer endpoint.', offline: 'The selected Connector is offline. Start it and try again.', selectFirst: 'Select a Connector first.', discoveryFailed: 'Connector discovery failed.', noResults: 'No reachable printer services found in this subnet.', verificationFailed: 'Connector could not verify this printer.', verified: 'Printer verified through Connector.' },
     title: 'Printers',
     addPrinter: 'Add Printer',
     addPreflight: {

@@ -98,7 +98,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withStreamToken, ApiError, getAuthToken } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult, PandaBreathStatus, AppSettings, PrinterConnectionMode } from '../api/client';
+import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult, PandaBreathStatus, AppSettings, PrinterConnectionMode, ConnectorDiscoveryResultEntry, ConnectorPrinterVerifyResponse } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -6629,6 +6629,10 @@ function PrinterCard({
   );
 }
 
+function selectedConnectorStatus(connectors: Array<{ public_id: string; status: string }>, connectorId: string | null | undefined) {
+  return connectors.find((connector) => connector.public_id === connectorId)?.status || null;
+}
+
 function AddPrinterModal({
   onClose,
   onAdd,
@@ -6679,6 +6683,10 @@ function AddPrinterModal({
   const [prusaLinkApiAuthMode, setPrusaLinkApiAuthMode] = useState<PrusaLinkApiAuthMode>('auto');
   const [detectingMoonrakerCamera, setDetectingMoonrakerCamera] = useState(false);
   const [moonrakerCameraMessage, setMoonrakerCameraMessage] = useState('');
+  const [connectorSubnet, setConnectorSubnet] = useState('192.168.1.0/24');
+  const [connectorDiscovering, setConnectorDiscovering] = useState(false);
+  const [connectorDiscovered, setConnectorDiscovered] = useState<ConnectorDiscoveryResultEntry[]>([]);
+  const [connectorVerification, setConnectorVerification] = useState<ConnectorPrinterVerifyResponse | null>(null);
 
   // Setup-time pre-flight: run the connection diagnostic on save and warn
   // (not block) when checks fail, so the user doesn't add a printer that
@@ -6782,7 +6790,40 @@ function AddPrinterModal({
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const payload = buildSubmitPayload();
-    if (isHttpProvider || isConnectorMode) {
+    if (isConnectorMode) {
+      const selectedConnector = connectors.find((connector) => connector.public_id === payload.connector_id);
+      if (!selectedConnector || selectedConnector.status !== 'online') {
+        setDiscoveryError(t('printers.connector.offline'));
+        return;
+      }
+      setCheckingSave(true);
+      setDiscoveryError('');
+      setConnectorVerification(null);
+      try {
+        const verification = await api.verifyPrinterThroughConnector(selectedConnector.public_id, {
+          ip_address: payload.ip_address,
+          provider: payload.provider || 'bambu',
+          serial_number: payload.serial_number || undefined,
+          access_code: payload.access_code || undefined,
+          auth_token: payload.auth_token || undefined,
+        });
+        setConnectorVerification(verification);
+        if (!verification.reachable || verification.status !== 'completed') {
+          setDiscoveryError(verification.error || t('printers.connector.verificationFailed'));
+          return;
+        }
+        if (verification.model && !payload.model) {
+          setForm((current) => ({ ...current, model: verification.model || '' }));
+        }
+        onAdd(payload);
+      } catch (error) {
+        setDiscoveryError(error instanceof Error ? error.message : t('printers.connector.verificationFailed'));
+      } finally {
+        setCheckingSave(false);
+      }
+      return;
+    }
+    if (isHttpProvider) {
       onAdd(payload);
       return;
     }
@@ -6803,6 +6844,56 @@ function AddPrinterModal({
       setCheckingSave(false);
     }
     onAdd(payload);
+  };
+
+  const startConnectorDiscovery = async () => {
+    if (!form.connector_id) {
+      setDiscoveryError(t('printers.connector.selectFirst'));
+      return;
+    }
+    const selectedConnector = connectors.find((connector) => connector.public_id === form.connector_id);
+    if (!selectedConnector || selectedConnector.status !== 'online') {
+      setDiscoveryError(t('printers.connector.offline'));
+      return;
+    }
+    setConnectorDiscovering(true);
+    setConnectorDiscovered([]);
+    setDiscoveryError('');
+    try {
+      const response = await api.discoverThroughConnector(form.connector_id, {
+        subnet: connectorSubnet.trim(),
+        ports: [80, 443, 7125, 8883, 990, 3030],
+        max_hosts: 256,
+        timeout_ms: 500,
+      });
+      if (response.status !== 'completed') {
+        throw new Error(response.error || t('printers.connector.discoveryFailed'));
+      }
+      setConnectorDiscovered(response.results);
+      if (response.results.length === 0) setDiscoveryError(t('printers.connector.noResults'));
+    } catch (error) {
+      setDiscoveryError(error instanceof Error ? error.message : t('printers.connector.discoveryFailed'));
+    } finally {
+      setConnectorDiscovering(false);
+    }
+  };
+
+  const selectConnectorEndpoint = (endpoint: ConnectorDiscoveryResultEntry) => {
+    const provider = endpoint.service === 'bambu-mqtt'
+      ? 'bambu'
+      : endpoint.service === 'prusalink-api'
+        ? 'prusalink'
+        : endpoint.service === 'moonraker' || endpoint.port === 7125
+          ? 'klipper'
+          : form.provider;
+    setForm((current) => ({
+      ...current,
+      ip_address: endpoint.ip_address,
+      provider: provider as PrinterCreate['provider'],
+      api_url: provider === 'klipper' ? `http://${endpoint.ip_address}:${endpoint.port}` : current.api_url,
+    }));
+    setConnectorDiscovered([]);
+    setDiscoveryError('');
   };
 
   const startDiscovery = async () => {
@@ -7085,6 +7176,50 @@ function AddPrinterModal({
                 {connectors.length === 0 && (
                   <p className="text-xs text-yellow-300">No available Connector. Register one in Settings → Connectors first.</p>
                 )}
+                {connectors.length > 0 && (
+                  <div className="pt-2 border-t border-bambu-dark-tertiary space-y-2">
+                    <label htmlFor="connector_subnet" className="block text-sm text-bambu-gray">
+                      {t('printers.connector.subnet')}
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        id="connector_subnet"
+                        type="text"
+                        className="min-w-0 flex-1 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none text-sm"
+                        value={connectorSubnet}
+                        onChange={(e) => setConnectorSubnet(e.target.value)}
+                        placeholder="192.168.1.0/24"
+                        disabled={connectorDiscovering}
+                      />
+                      <Button type="button" variant="secondary" onClick={startConnectorDiscovery} disabled={connectorDiscovering || selectedConnectorStatus(connectors, form.connector_id) !== 'online'}>
+                        {connectorDiscovering ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                        {connectorDiscovering ? t('printers.connector.scanning') : t('printers.connector.scan')}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-bambu-gray">{t('printers.connector.scanHint')}</p>
+                    {connectorDiscovered.length > 0 && (
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {connectorDiscovered.map((endpoint) => (
+                          <button
+                            key={`${endpoint.ip_address}:${endpoint.port}`}
+                            type="button"
+                            className="w-full text-left p-2 bg-bambu-dark rounded-lg hover:bg-bambu-dark-secondary transition-colors"
+                            onClick={() => selectConnectorEndpoint(endpoint)}
+                          >
+                            <span className="text-sm text-white">{endpoint.ip_address}:{endpoint.port}</span>
+                            <span className="ml-2 text-xs text-bambu-gray">{endpoint.service} ({endpoint.protocol})</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {isConnectorMode && discoveryError && (
+                  <div className="text-sm text-red-400">{discoveryError}</div>
+                )}
+                {isConnectorMode && connectorVerification?.reachable && (
+                  <div className="text-sm text-bambu-green">{t('printers.connector.verified')}</div>
+                )}
               </>
             )}
           </div>
@@ -7196,7 +7331,6 @@ function AddPrinterModal({
             {discoveryError && (
               <div className="mt-2 text-sm text-red-400">{discoveryError}</div>
             )}
-
             {newPrinters.length > 0 && (
               <div className="mt-3 space-y-2 max-h-40 overflow-y-auto">
                 {newPrinters.map((printer) => (

@@ -127,6 +127,7 @@ export default {
 
   // Printers page
   printers: {
+    connector: { subnet: 'Subred privada', scan: 'Escanear mediante Connector', scanning: 'Escaneando…', scanHint: 'Solo se escanean direcciones LAN privadas.', offline: 'El Connector seleccionado está desconectado.', selectFirst: 'Selecciona primero un Connector.', discoveryFailed: 'Falló el descubrimiento.', noResults: 'No se encontraron servicios de impresora.', verificationFailed: 'El Connector no pudo verificar la impresora.', verified: 'Impresora verificada mediante Connector.' },
     addPreflight: {
       checking: 'Comprobando la conexión...',
       warning: 'Algunas comprobaciones de conexión fallaron. Esta impresora podría aparecer como desconectada. Revisa las comprobaciones de abajo, soluciona lo que puedas o guárdala de todos modos.',

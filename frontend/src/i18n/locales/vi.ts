@@ -127,6 +127,7 @@ export default {
 
   // Printers page
   printers: {
+    connector: { subnet: 'Mạng con riêng cần quét', scan: 'Quét qua Connector', scanning: 'Đang quét…', scanHint: 'Chỉ quét các địa chỉ mạng LAN riêng. Chọn kết quả để điền máy in.', offline: 'Connector đã chọn đang ngoại tuyến. Hãy khởi động rồi thử lại.', selectFirst: 'Hãy chọn Connector trước.', discoveryFailed: 'Quét qua Connector thất bại.', noResults: 'Không tìm thấy dịch vụ máy in nào trong mạng con này.', verificationFailed: 'Connector không thể xác minh máy in này.', verified: 'Đã xác minh máy in qua Connector.' },
     title: 'Máy in',
     addPrinter: 'Thêm Máy In ',
     addPreflight: {
