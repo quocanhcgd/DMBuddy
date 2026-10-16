@@ -48,10 +48,30 @@ shell environment and compose override. The credential remains in the named
 ## Windows and Docker Desktop
 
 Docker Desktop does not provide Linux host networking with the same semantics.
-Use the native Python command above on the Windows host, or remove
-`network_mode: host` and define a reachable bridge network. In bridge mode,
-verify from inside the container that each private printer IP and provider port
-is reachable before using discovery.
+Use the native Windows scripts in `connector/windows` on the Windows host:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\connector\windows\install-connector-task.ps1 `
+  -ServerUrl "https://printbuddy.example.com"
+```
+
+The installer installs Python dependencies, performs one enrollment in a
+short-lived process, then registers the Connector to start at the current
+user's logon. It prompts for the one-time enrollment code instead of placing
+it in the PowerShell command line. The state file is stored under the current user's
+`%LOCALAPPDATA%\Printbuddy\Connector`; the enrollment code is not written into
+the scheduled task.
+Remove it from your shell after installation. To remove the task:
+
+```powershell
+.\connector\windows\uninstall-connector-task.ps1
+```
+
+Docker Desktop does not provide Linux host networking with the same semantics.
+If Docker Desktop is used instead, remove `network_mode: host` and define a
+reachable bridge network. Verify from inside the container that each private
+printer IP and provider port is reachable before using discovery.
 
 ## Operating rules
 

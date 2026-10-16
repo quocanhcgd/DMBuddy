@@ -342,6 +342,8 @@ export default {
       offline: 'Offline',
       connectorOffline: 'Connector offline',
       connectorOnline: 'Connector online',
+      connector: 'Connector',
+      connectorRoute: 'Remote Connector route',
     },
     plateStatus: {
       markCleared: 'Mark plate as cleared',

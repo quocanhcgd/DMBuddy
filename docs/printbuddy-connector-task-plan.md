@@ -204,7 +204,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-205 — Đóng gói discovery Connector
 
-- **Trạng thái:** `DOING` (đã có Dockerfile/compose độc lập, state volume non-root và hướng dẫn Linux/Windows; còn CI image scan, ký image và installer native)
+- **Trạng thái:** `DOING` (đã có Dockerfile/compose độc lập, state volume non-root, Windows PowerShell/Task Scheduler installer và hướng dẫn Linux/Windows; còn CI image scan, ký image và installer native)
 - **Phụ thuộc:** CON-106, CON-203
 - **Phạm vi:** dependency connector, config file/env, Windows/Linux service, Docker image cơ bản.
 - **Tiêu chí hoàn thành:** chạy từ mạng khác chỉ cần outbound HTTPS/WSS; tài liệu firewall nêu rõ các kết nối Connector → printer trong LAN và passive FTP caveat.

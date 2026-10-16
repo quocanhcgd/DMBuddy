@@ -1889,6 +1889,7 @@ function PrinterCard({
   pandaBreathState,
   obicoSettings,
   allPrinterIds = [],
+  connectorName,
   layoutEditing = false,
   selectionMode = false,
   isSelected = false,
@@ -1928,6 +1929,7 @@ function PrinterCard({
   pandaBreathState?: PandaBreathStatus['state'] | null;
   obicoSettings?: Pick<AppSettings, 'obico_enabled' | 'obico_ml_url' | 'obico_enabled_printers' | 'external_url'>;
   allPrinterIds?: number[];
+  connectorName?: string | null;
   layoutEditing?: boolean;
   selectionMode?: boolean;
   isSelected?: boolean;
@@ -3368,6 +3370,12 @@ function PrinterCard({
                     );
                   })()}
                 </div>
+                {printer.connection_mode === 'connector' && viewMode === 'compact' && (
+                  <p className="mt-0.5 flex items-center gap-1 text-[10px] text-cyan-300 truncate" title={t('printers.connection.connectorRoute')}>
+                    <Cable className="w-2.5 h-2.5 flex-shrink-0" />
+                    <span className="truncate">{connectorName || printer.connector_id || t('printers.connection.connector')} → {printer.ip_address}</span>
+                  </p>
+                )}
                 <p className="text-sm text-bambu-gray">
                   {printer.model || 'Unknown Model'}
                   {/* Nozzle Info - only in expanded */}
@@ -3513,6 +3521,16 @@ function PrinterCard({
                     ? t('printers.connection.connectorOnline')
                     : status?.connected ? t('printers.connection.connected') : t('printers.connection.offline')}
               </span>
+              {printer.connection_mode === 'connector' && (
+                <span
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs bg-cyan-500/10 text-cyan-200 border border-cyan-500/20"
+                  title={t('printers.connection.connectorRoute')}
+                >
+                  <Cable className="w-3 h-3" />
+                  {connectorName || printer.connector_id || t('printers.connection.connector')}
+                  <span className="text-cyan-300/70">→ {printer.ip_address}</span>
+                </span>
+              )}
               {/* Run connection diagnostic — offered when the printer is offline */}
               {!status?.connected && (
                 <button
@@ -8430,6 +8448,12 @@ export function PrintersPage() {
     queryKey: ['printers'],
     queryFn: api.getPrinters,
   });
+  const { data: connectors = [] } = useQuery({
+    queryKey: ['connectors'],
+    queryFn: api.listConnectors,
+    enabled: hasPermission('connectors:read'),
+    staleTime: 15000,
+  });
 
   const allPrinterIds = useMemo(() => printers?.map(printer => printer.id) ?? [], [printers]);
   const hasLoadedPrinterCardOrder = useRef(false);
@@ -9333,6 +9357,7 @@ export function PrintersPage() {
         pandaBreathState={getAssignedPandaBreathState(printer.id, settings?.panda_breath_printer_assignments, pandaBreathStatus)}
         obicoSettings={obicoSettings}
         allPrinterIds={allPrinterIds}
+        connectorName={connectors.find((connector) => connector.public_id === printer.connector_id)?.name || null}
         layoutEditing={layoutEditing}
         selectionMode={selectionMode}
         isSelected={selectedPrinterIds.has(printer.id)}

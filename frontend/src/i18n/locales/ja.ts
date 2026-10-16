@@ -337,7 +337,7 @@ export default {
     },
     // Connection status
     connection: {
-      connectorOffline: 'Connector オフライン', connectorOnline: 'Connector オンライン',
+      connectorOffline: 'Connector オフライン', connectorOnline: 'Connector オンライン', connector: '接続', connectorRoute: 'リモート Connector 経由',
       connected: '接続中',
       offline: 'オフライン',
     },

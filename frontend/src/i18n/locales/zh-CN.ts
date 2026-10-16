@@ -338,7 +338,7 @@ export default {
     },
     // Connection status
     connection: {
-      connectorOffline: 'Connector 离线', connectorOnline: 'Connector 在线',
+      connectorOffline: 'Connector 离线', connectorOnline: 'Connector 在线', connector: '连接器', connectorRoute: '远程 Connector 路由',
       connected: '已连接',
       offline: '离线',
     },
