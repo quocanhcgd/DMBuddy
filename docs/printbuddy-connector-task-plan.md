@@ -171,7 +171,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 
 ### CON-201 — Bổ sung connection mode cho Printer
 
-- **Trạng thái:** `TODO`
+- **Trạng thái:** `DONE` (model/schema/migration/API và form thêm/sửa máy in đã hỗ trợ `direct`/`vpn`/`connector`; mode connector không probe từ backend)
 - **Phụ thuộc:** CON-101
 - **Phạm vi:** `backend/app/models/printer.py`, `schemas/printer.py`, routes/printer tests, migration.
 - **Field:** `connection_mode` (`direct`/`vpn`/`connector`), `connector_id`, host/IP LAN chỉ Connector dùng, health timestamp/last agent status.

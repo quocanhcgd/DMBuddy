@@ -98,7 +98,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withStreamToken, ApiError, getAuthToken } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult, PandaBreathStatus, AppSettings } from '../api/client';
+import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult, PandaBreathStatus, AppSettings, PrinterConnectionMode } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -6639,6 +6639,14 @@ function AddPrinterModal({
   existingSerials: string[];
 }) {
   const { t } = useTranslation();
+  const { authEnabled, hasPermission } = useAuth();
+  const canListConnectors = !authEnabled || hasPermission('connectors:read');
+  const { data: connectors = [] } = useQuery({
+    queryKey: ['connectors'],
+    queryFn: api.listConnectors,
+    enabled: canListConnectors,
+    staleTime: 15000,
+  });
   const [form, setForm] = useState<PrinterCreate>({
     name: '',
     serial_number: '',
@@ -6652,6 +6660,8 @@ function AddPrinterModal({
     auto_archive: true,
     reconnect_interval_seconds: 30,
     external_camera_url: '',
+    connection_mode: 'direct',
+    connector_id: null,
   });
 
   // Discovery state
@@ -6699,6 +6709,7 @@ function AddPrinterModal({
   const isPrusaProvider = isPrusaLinkProvider || isPrusaConnectProvider;
   const isElegooSDCPProvider = form.provider === 'elegoo_sdcp';
   const isHttpProvider = isMoonrakerProvider || isPrusaProvider || isElegooSDCPProvider;
+  const isConnectorMode = form.connection_mode === 'connector';
 
   const buildSubmitPayload = (): PrinterCreate => {
     const ipAddress = form.ip_address.trim();
@@ -6726,6 +6737,7 @@ function AddPrinterModal({
       provider_options: isPrusaLinkProvider
         ? buildPrusaLinkProviderOptions(prusaLinkApiAuthMode, form.provider_options)
         : form.provider_options,
+      connector_id: isConnectorMode ? form.connector_id : null,
     };
   };
 
@@ -6770,7 +6782,7 @@ function AddPrinterModal({
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const payload = buildSubmitPayload();
-    if (isHttpProvider) {
+    if (isHttpProvider || isConnectorMode) {
       onAdd(payload);
       return;
     }
@@ -7029,8 +7041,56 @@ function AddPrinterModal({
             )}
           </div>
 
-          {/* Discovery Section — Bambu (SSDP/subnet) or Moonraker (subnet HTTP) */}
-          {(!isHttpProvider || isMoonrakerProvider) && (
+          <div className="mb-4 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary/40 p-3 space-y-2">
+            <label htmlFor="printer_connection_mode" className="block text-sm text-bambu-gray">
+              Connection mode
+            </label>
+            <select
+              id="printer_connection_mode"
+              className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              value={form.connection_mode || 'direct'}
+              onChange={(e) => {
+                const connectionMode = e.target.value as PrinterConnectionMode;
+                setSaveWarning(null);
+                setForm({
+                  ...form,
+                  connection_mode: connectionMode,
+                  connector_id: connectionMode === 'connector' ? (form.connector_id || connectors[0]?.public_id || null) : null,
+                });
+              }}
+            >
+              <option value="direct">Direct LAN</option>
+              <option value="vpn">VPN / private network</option>
+              <option value="connector">Remote Connector</option>
+            </select>
+            {isConnectorMode && (
+              <>
+                <select
+                  aria-label="Remote Connector"
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  value={form.connector_id || ''}
+                  onChange={(e) => setForm({ ...form, connector_id: e.target.value || null })}
+                  required
+                >
+                  <option value="">Select a Connector</option>
+                  {connectors.filter((connector) => connector.status !== 'revoked').map((connector) => (
+                    <option key={connector.public_id} value={connector.public_id}>
+                      {connector.name} ({connector.status})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-bambu-gray">
+                  The Connector will verify the printer inside its local network. The server will not probe this IP directly.
+                </p>
+                {connectors.length === 0 && (
+                  <p className="text-xs text-yellow-300">No available Connector. Register one in Settings → Connectors first.</p>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Discovery Section — direct/VPN Bambu or Moonraker connections */}
+          {(!isHttpProvider || isMoonrakerProvider) && !isConnectorMode && (
           <div className="mb-4 pb-4 border-b border-bambu-dark-tertiary">
             {(isDocker || isMoonrakerProvider) && (
               <div className="mb-3">
@@ -7768,6 +7828,14 @@ function EditPrinterModal({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { authEnabled, hasPermission } = useAuth();
+  const canListConnectors = !authEnabled || hasPermission('connectors:read');
+  const { data: connectors = [] } = useQuery({
+    queryKey: ['connectors'],
+    queryFn: api.listConnectors,
+    enabled: canListConnectors,
+    staleTime: 15000,
+  });
   const isPrusaLinkProvider = printer.provider === 'prusalink';
   const isElegooSDCPProvider = printer.provider === 'elegoo_sdcp';
   const isBambuProvider = !printer.provider || printer.provider === 'bambu';
@@ -7779,6 +7847,8 @@ function EditPrinterModal({
     location: printer.location || '',
     auto_archive: printer.auto_archive,
     reconnect_interval_seconds: printer.reconnect_interval_seconds ?? 30,
+    connection_mode: printer.connection_mode || 'direct' as PrinterConnectionMode,
+    connector_id: printer.connector_id,
     prusa_link_api_auth_mode: parsePrusaLinkApiAuthMode(printer.provider_options),
   });
 
@@ -7786,6 +7856,7 @@ function EditPrinterModal({
   // edit that breaks connectivity (e.g. a mistyped IP) is caught before save.
   const [checkingSave, setCheckingSave] = useState(false);
   const [saveWarning, setSaveWarning] = useState<PrinterDiagnosticResult | null>(null);
+  const isConnectorMode = form.connection_mode === 'connector';
 
   const updateMutation = useMutation({
     mutationFn: (data: Partial<PrinterCreate>) => api.updatePrinter(printer.id, data),
@@ -7814,6 +7885,8 @@ function EditPrinterModal({
       location: form.location || undefined,
       auto_archive: form.auto_archive,
       reconnect_interval_seconds: form.reconnect_interval_seconds,
+      connection_mode: form.connection_mode,
+      connector_id: isConnectorMode ? form.connector_id : null,
     };
     if (isPrusaLinkProvider) {
       data.provider_options = buildPrusaLinkProviderOptions(form.prusa_link_api_auth_mode, printer.provider_options);
@@ -7828,7 +7901,7 @@ function EditPrinterModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isBambuProvider || isPrusaLinkProvider || isElegooSDCPProvider) {
+    if (isConnectorMode || !isBambuProvider || isPrusaLinkProvider || isElegooSDCPProvider) {
       doSave();
       return;
     }
@@ -7870,6 +7943,51 @@ function EditPrinterModal({
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder={t('printers.modal.myPrinter')}
               />
+            </div>
+            <div className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary/40 p-3 space-y-2">
+              <label htmlFor="edit_printer_connection_mode" className="block text-sm text-bambu-gray">
+                Connection mode
+              </label>
+              <select
+                id="edit_printer_connection_mode"
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                value={form.connection_mode}
+                onChange={(e) => {
+                  const connectionMode = e.target.value as PrinterConnectionMode;
+                  setSaveWarning(null);
+                  setForm({
+                    ...form,
+                    connection_mode: connectionMode,
+                    connector_id: connectionMode === 'connector' ? (form.connector_id || connectors[0]?.public_id || null) : null,
+                  });
+                }}
+              >
+                <option value="direct">Direct LAN</option>
+                <option value="vpn">VPN / private network</option>
+                <option value="connector">Remote Connector</option>
+              </select>
+              {isConnectorMode && (
+                <>
+                  <select
+                    aria-label="Remote Connector"
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    value={form.connector_id || ''}
+                    onChange={(e) => setForm({ ...form, connector_id: e.target.value || null })}
+                    required
+                  >
+                    <option value="">Select a Connector</option>
+                    {connectors.filter((connector) => connector.status !== 'revoked').map((connector) => (
+                      <option key={connector.public_id} value={connector.public_id}>
+                        {connector.name} ({connector.status})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-bambu-gray">The Connector handles the printer inside its local network.</p>
+                  {connectors.length === 0 && (
+                    <p className="text-xs text-yellow-300">No available Connector. Register one in Settings → Connectors first.</p>
+                  )}
+                </>
+              )}
             </div>
             <div>
               <label className="block text-sm text-bambu-gray mb-1">{t('printers.ipAddress')}</label>

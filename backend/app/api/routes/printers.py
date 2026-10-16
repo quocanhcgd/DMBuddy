@@ -18,6 +18,7 @@ from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.ams_label import AmsLabel
+from backend.app.models.connector import Connector
 from backend.app.models.printer import Printer
 from backend.app.models.slot_preset import SlotPresetMapping
 from backend.app.schemas.printer import (
@@ -245,6 +246,26 @@ def _provider_for_printer(printer: Printer):
     return create_printer_client(printer)
 
 
+async def _validate_connector_binding(
+    db: AsyncSession,
+    connector_id: str | None,
+    current_user,
+) -> Connector:
+    """Validate a printer's Connector binding without exposing other owners."""
+    if not connector_id:
+        raise HTTPException(400, "connector_id is required when connection_mode is connector")
+    result = await db.execute(select(Connector).where(Connector.public_id == connector_id))
+    connector = result.scalar_one_or_none()
+    if connector is None or connector.revoked_at is not None:
+        raise HTTPException(400, "Connector is not available")
+    if current_user is None:
+        if connector.owner_user_id is not None:
+            raise HTTPException(404, "Connector not found")
+    elif not current_user.is_admin and connector.owner_user_id != current_user.id:
+        raise HTTPException(404, "Connector not found")
+    return connector
+
+
 @router.get("/", response_model=list[PrinterResponse])
 async def list_printers(
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
@@ -258,7 +279,7 @@ async def list_printers(
 @router.post("/", response_model=PrinterResponse)
 async def create_printer(
     printer_data: PrinterCreate,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CREATE),
+    current_user=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CREATE),
     db: AsyncSession = Depends(get_db),
 ):
     """Add a new printer.
@@ -274,14 +295,20 @@ async def create_printer(
     if result.scalar_one_or_none():
         raise HTTPException(400, "Printer with this serial number already exists")
 
-    test_result = await printer_manager.test_connection(
-        ip_address=printer_data.ip_address,
-        serial_number=printer_data.serial_number,
-        access_code=printer_data.access_code,
-        provider=printer_data.provider,
-        api_url=printer_data.api_url,
-        auth_token=printer_data.auth_token,
-    )
+    if printer_data.connection_mode == "connector":
+        await _validate_connector_binding(db, printer_data.connector_id, current_user)
+        # The Connector owns the LAN-side verification. Discovery/verification
+        # RPC is introduced in CON-203; do not probe the backend's network.
+        test_result = {"success": True}
+    else:
+        test_result = await printer_manager.test_connection(
+            ip_address=printer_data.ip_address,
+            serial_number=printer_data.serial_number,
+            access_code=printer_data.access_code,
+            provider=printer_data.provider,
+            api_url=printer_data.api_url,
+            auth_token=printer_data.auth_token,
+        )
     if not test_result.get("success"):
         if printer_data.provider == "bambu":
             failure_message = (
@@ -328,7 +355,7 @@ async def create_printer(
     await db.refresh(printer)
 
     # Connect to the printer
-    if printer.is_active:
+    if printer.is_active and printer.connection_mode != "connector":
         await printer_manager.connect_printer(printer)
 
     return printer
@@ -519,7 +546,7 @@ async def get_printer(
 async def update_printer(
     printer_id: int,
     printer_data: PrinterUpdate,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+    current_user=RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
     """Update a printer."""
@@ -529,6 +556,16 @@ async def update_printer(
         raise HTTPException(404, "Printer not found")
 
     update_data = normalize_external_camera_update(printer_data.model_dump(exclude_unset=True))
+
+    requested_mode = update_data.get("connection_mode", getattr(printer, "connection_mode", "direct"))
+    requested_connector_id = update_data.get("connector_id", getattr(printer, "connector_id", None))
+    if requested_mode == "connector":
+        await _validate_connector_binding(db, requested_connector_id, current_user)
+    elif "connection_mode" in update_data:
+        # Switching back to direct/VPN clears the stale Connector binding.
+        update_data["connector_id"] = None
+    elif "connector_id" in update_data:
+        raise HTTPException(400, "connection_mode must be connector when connector_id is set")
 
     # Handle nested ROI object - flatten to individual columns
     if "plate_detection_roi" in update_data:
@@ -552,9 +589,9 @@ async def update_printer(
     await db.refresh(printer)
 
     # Reconnect if connection settings changed
-    if any(k in update_data for k in ["ip_address", "access_code", "auth_token", "provider_options", "is_active"]):
+    if any(k in update_data for k in ["ip_address", "access_code", "auth_token", "provider_options", "is_active", "connection_mode", "connector_id"]):
         printer_manager.disconnect_printer(printer_id)
-        if printer.is_active:
+        if printer.is_active and printer.connection_mode != "connector":
             try:
                 await printer_manager.connect_printer(printer)
             except Exception as exc:

@@ -273,6 +273,7 @@ export interface LongLivedCameraToken {
 
 // Printer types
 export type PrinterProvider = 'bambu' | 'klipper' | 'mainsail' | 'fluidd' | 'prusalink' | 'prusaconnect' | 'elegoo_sdcp';
+export type PrinterConnectionMode = 'direct' | 'vpn' | 'connector';
 
 export interface Printer {
   id: number;
@@ -284,6 +285,10 @@ export interface Printer {
   api_url: string | null;
   auth_token: string | null;
   provider_options: string | null;
+  connection_mode: PrinterConnectionMode;
+  connector_id: string | null;
+  connector_last_seen_at?: string | null;
+  connector_last_error?: string | null;
   model: string | null;
   location: string | null;  // Group/location name
   nozzle_count: number;  // 1 or 2, auto-detected from MQTT
@@ -508,6 +513,8 @@ export interface PrinterCreate {
   api_url?: string | null;
   auth_token?: string | null;
   provider_options?: string | null;
+  connection_mode?: PrinterConnectionMode;
+  connector_id?: string | null;
   model?: string;
   location?: string;
   auto_archive?: boolean;

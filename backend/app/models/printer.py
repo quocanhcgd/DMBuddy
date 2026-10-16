@@ -18,6 +18,12 @@ class Printer(Base):
     api_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     auth_token: Mapped[str | None] = mapped_column(String(500), nullable=True)
     provider_options: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # direct = same-network connection, vpn = direct connection over a private
+    # network, connector = routed through a remote Printbuddy Connector.
+    connection_mode: Mapped[str] = mapped_column(String(20), default="direct", nullable=False)
+    connector_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    connector_last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    connector_last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
     model: Mapped[str | None] = mapped_column(String(50))
     location: Mapped[str | None] = mapped_column(String(100))  # Group/location name
     nozzle_count: Mapped[int] = mapped_column(default=1)  # 1 or 2, auto-detected from MQTT

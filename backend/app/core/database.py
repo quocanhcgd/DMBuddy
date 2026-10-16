@@ -696,6 +696,14 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN auth_token VARCHAR(500)")
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN provider_options TEXT")
 
+    # Migration: Add remote Connector routing metadata to printers. Existing
+    # rows remain direct-connected by default; Connector health is populated
+    # when the transport integration is enabled in a later phase.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN connection_mode VARCHAR(20) DEFAULT 'direct' NOT NULL")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN connector_id VARCHAR(64)")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN connector_last_seen_at DATETIME")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN connector_last_error VARCHAR(200)")
+
     # Migration: Add interval_type column to maintenance_types
     await _safe_execute(conn, "ALTER TABLE maintenance_types ADD COLUMN interval_type VARCHAR(20) DEFAULT 'hours'")
 

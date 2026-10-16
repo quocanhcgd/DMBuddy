@@ -9,6 +9,7 @@ from backend.app.services.elegoo_camera import (
 )
 
 PrinterProvider = Literal["bambu", "klipper", "mainsail", "fluidd", "prusalink", "prusaconnect", "elegoo_sdcp"]
+PrinterConnectionMode = Literal["direct", "vpn", "connector"]
 MOONRAKER_PROVIDERS = {"klipper", "mainsail", "fluidd"}
 HTTP_PROVIDERS = MOONRAKER_PROVIDERS | {"prusalink", "prusaconnect", "elegoo_sdcp"}
 PRUSA_CONNECT_MOBILE_BASE_URL = "https://connect-mobile-api.prusa3d.com"
@@ -161,6 +162,8 @@ class PrinterBase(BaseModel):
     api_url: str | None = Field(default=None, max_length=500)
     auth_token: str | None = Field(default=None, max_length=500)
     provider_options: str | None = Field(default=None, max_length=4000)
+    connection_mode: PrinterConnectionMode = "direct"
+    connector_id: str | None = Field(default=None, min_length=1, max_length=64)
     model: str | None = None
     location: str | None = None  # Group/location name
     auto_archive: bool = True
@@ -197,6 +200,8 @@ class PrinterUpdate(BaseModel):
     api_url: str | None = Field(default=None, max_length=500)
     auth_token: str | None = Field(default=None, max_length=500)
     provider_options: str | None = Field(default=None, max_length=4000)
+    connection_mode: PrinterConnectionMode | None = None
+    connector_id: str | None = Field(default=None, min_length=1, max_length=64)
     model: str | None = None
     location: str | None = None
     is_active: bool | None = None
@@ -222,6 +227,8 @@ class PrinterResponse(PrinterBase):
     external_camera_enabled: bool = False
     external_camera_snapshot_url: str | None = None  # #1177
     camera_rotation: int = 0  # 0, 90, 180, 270 degrees
+    connector_last_seen_at: datetime | None = None
+    connector_last_error: str | None = None
     plate_detection_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
     created_at: datetime
@@ -244,6 +251,10 @@ class PrinterResponse(PrinterBase):
             "api_url": getattr(printer, "api_url", None),
             "auth_token": getattr(printer, "auth_token", None),
             "provider_options": getattr(printer, "provider_options", None),
+            "connection_mode": getattr(printer, "connection_mode", "direct") or "direct",
+            "connector_id": getattr(printer, "connector_id", None),
+            "connector_last_seen_at": getattr(printer, "connector_last_seen_at", None),
+            "connector_last_error": getattr(printer, "connector_last_error", None),
             "model": printer.model,
             "location": printer.location,
             "auto_archive": printer.auto_archive,

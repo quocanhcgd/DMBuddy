@@ -10,6 +10,8 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from backend.app.models.connector import Connector
+
 
 @pytest.fixture(autouse=True)
 def _mock_printer_test_connection():
@@ -81,6 +83,43 @@ class TestPrintersAPI:
         assert result["name"] == "New Printer"
         assert result["serial_number"] == "00M09A111111111"
         assert result["model"] == "X1C"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_printer_through_connector_skips_backend_probe(
+        self, async_client: AsyncClient, db_session, _mock_printer_test_connection
+    ):
+        """A remote printer is persisted without probing from the server LAN."""
+        db_session.add(
+            Connector(
+                public_id="office-connector",
+                name="Office Connector",
+                status="offline",
+                credential_prefix="pc_test",
+                credential_hash="not-used-by-binding",
+            )
+        )
+        await db_session.commit()
+
+        response = await async_client.post(
+            "/api/v1/printers/",
+            json={
+                "name": "Remote Printer",
+                "serial_number": "00M09A333333333",
+                "ip_address": "192.168.50.20",
+                "access_code": "12345678",
+                "connection_mode": "connector",
+                "connector_id": "office-connector",
+                "model": "X1C",
+                "is_active": True,
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        result = response.json()
+        assert result["connection_mode"] == "connector"
+        assert result["connector_id"] == "office-connector"
+        _mock_printer_test_connection.assert_not_awaited()
 
     @pytest.mark.asyncio
     @pytest.mark.integration

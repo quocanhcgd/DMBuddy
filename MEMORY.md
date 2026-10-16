@@ -74,6 +74,7 @@ Khi người dùng nói “tiếp tục MakerWorld User Accounts”, tiếp tụ
 - Đã bắt đầu Phase 0-1: protocol package, model/migration Connector, enrollment API, permission, WSS gateway và prototype heartbeat nằm trong `connector/`.
 - Đã hoàn tất UI Phase 1 tại Settings → Connectors: tạo mã enrollment TTL 10 phút (chỉ hiển thị một lần), danh sách online/offline/revoked, version/platform/last seen, đổi tên và thu hồi theo permission; credential dài hạn không xuất hiện trên frontend.
 - Gateway đã có observability counters và Prometheus metrics cho active sessions, session starts/replacements/disconnects, send/auth/protocol/frame/heartbeat lỗi; metric chỉ là số tổng hợp, không chứa credential hoặc IP nội bộ.
+- Printer đã có `connection_mode` (`direct`/`vpn`/`connector`) và `connector_id`; dữ liệu cũ mặc định `direct`. API và form thêm/sửa máy in kiểm tra Connector còn hoạt động, không probe IP từ backend khi chọn Connector; discovery/RPC vẫn là bước kế tiếp.
 - Các task Phase 0-1 đã triển khai một phần được đánh dấu `DOING`/`DONE` trong task plan; discovery, transport, status/control, file, camera và packaging production vẫn chưa triển khai.
 
 ## GitHub và đồng bộ mã nguồn
