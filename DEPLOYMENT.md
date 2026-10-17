@@ -2,6 +2,10 @@
 
 This guide covers a clean Docker Compose deployment of Printbuddy. The default setup is optimized for Linux hosts where host networking is available.
 
+For the customized GitHub repository and a complete new-server walkthrough, see
+[`docs/deploy-new-server.md`](docs/deploy-new-server.md). To update that Git
+checkout safely, use `bash scripts/update-server.sh` from the repository root.
+
 ## Requirements
 
 - Linux server or VM with Docker Engine and Docker Compose v2

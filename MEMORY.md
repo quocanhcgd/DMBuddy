@@ -94,4 +94,5 @@ Khi người dùng nói “tiếp tục MakerWorld User Accounts”, tiếp tụ
 - Quy trình cập nhật: kiểm tra thay đổi và secret → chạy test phù hợp → `git add`/`git commit` → `git push origin main`.
 - Không đưa dữ liệu runtime hoặc thông tin nhạy cảm lên GitHub: `data/`, `archive/`, `logs/`, `*.db`, `.env`, credential/token/key runtime đã được loại bởi `.gitignore`.
 - Repository upstream gốc vẫn được tham chiếu trong tài liệu; không đổi các định danh kỹ thuật của ứng dụng chỉ vì repository tùy chỉnh này.
+- Hướng dẫn cài trên máy chủ Linux mới nằm ở [`docs/deploy-new-server.md`](docs/deploy-new-server.md); script cập nhật GitHub/Docker Compose an toàn là [`scripts/update-server.sh`](scripts/update-server.sh), yêu cầu working tree sạch, fast-forward và backup `/app/data` trước khi restart.
 
