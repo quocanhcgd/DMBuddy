@@ -70,13 +70,21 @@ Remove it from your shell after installation. To remove the task:
 
 ### Windows executable
 
-To create a self-contained Windows executable, run this from the repository
-root on a Windows machine with Python installed:
+The Windows build is a native desktop application. It provides a dark UI for
+server URL, Printbuddy account login, optional 2FA, Connector status and safe
+runtime logs. On first use it logs in, requests a one-time enrollment code and
+starts the outbound WSS agent. It does not store the password, JWT or
+enrollment code. To create a self-contained executable, run this from the
+repository root on a Windows machine with Python installed:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\connector\windows\build-exe.ps1
 ```
+
+In VS Code, use `Terminal > Run Build Task` and choose
+`Printbuddy Connector: build Windows EXE`. Use the `Printbuddy Connector UI`
+launch profile to debug the Python UI before packaging.
 
 The output is `connector\windows\dist\PrintbuddyConnector.exe`. Install it
 with the same one-time enrollment flow:
@@ -94,6 +102,10 @@ arguments or written to disk. One-file PyInstaller startup can be slower and
 some antivirus products may inspect or quarantine unsigned builds; publish a
 signed release executable for production use. Python mode remains available
 by omitting `-ExecutablePath`.
+
+The executable has two modes: opening it normally shows the UI; the internal
+`--agent` mode is used by the installer and Task Scheduler so Windows logon
+starts the Connector without opening a second window.
 
 Docker Desktop does not provide Linux host networking with the same semantics.
 If Docker Desktop is used instead, remove `network_mode: host` and define a

@@ -16,6 +16,7 @@ if (-not $OutputDirectory) {
 }
 $buildDirectory = Join-Path $windowsRoot 'build'
 $specDirectory = Join-Path $windowsRoot 'spec'
+$windowsRequirements = Join-Path $windowsRoot 'requirements.txt'
 New-Item -ItemType Directory -Force -Path $OutputDirectory, $buildDirectory, $specDirectory | Out-Null
 
 Push-Location $repositoryRoot
@@ -31,6 +32,9 @@ finally {
     Pop-Location
 }
 
+& $python -m pip install -r $windowsRequirements
+if ($LASTEXITCODE -ne 0) { throw 'Could not install Windows Connector UI dependencies.' }
+
 & $python -c 'import PyInstaller' 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host 'PyInstaller is not installed. Installing it for the current Python environment...'
@@ -44,13 +48,15 @@ $arguments = @(
     '--noconfirm',
     '--clean',
     '--onefile',
+    '--windowed',
     '--name', 'PrintbuddyConnector',
     '--paths', $repositoryRoot,
     '--hidden-import', 'paho.mqtt.client',
+    '--hidden-import', 'connector_protocol',
     '--distpath', $OutputDirectory,
     '--workpath', $buildDirectory,
     '--specpath', $specDirectory,
-    $entryPoint
+    (Join-Path $windowsRoot 'printbuddy_connector_app.py')
 )
 
 Push-Location $repositoryRoot

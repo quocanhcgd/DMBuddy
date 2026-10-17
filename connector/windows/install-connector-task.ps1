@@ -52,7 +52,7 @@ if (-not (Test-Path $statePath)) {
     $env:PRINTBUDDY_ENROLLMENT_CODE = $EnrollmentCode
     $env:PRINTBUDDY_CONNECTOR_STATE = $statePath
     if ($ExecutablePath) {
-        $bootstrap = Start-Process -FilePath $ExecutablePath -WorkingDirectory (Split-Path -Parent $ExecutablePath) -WindowStyle Hidden -PassThru
+        $bootstrap = Start-Process -FilePath $ExecutablePath -ArgumentList '--agent' -WorkingDirectory (Split-Path -Parent $ExecutablePath) -WindowStyle Hidden -PassThru
     } else {
         $bootstrap = Start-Process -FilePath $python -ArgumentList '-m', 'connector.printbuddy_connector' -WorkingDirectory $repositoryRoot -WindowStyle Hidden -PassThru
     }
@@ -78,7 +78,7 @@ $escapedServerUrl = $ServerUrl.Replace('"', '\"')
 $escapedStatePath = $statePath.Replace('"', '\"')
 $escapedExecutablePath = if ($ExecutablePath) { $ExecutablePath.Replace('"', '\"') } else { '' }
 $runtimeArgument = if ($ExecutablePath) {
-    "-ExecutablePath `"$escapedExecutablePath`""
+    "-ExecutablePath `"$escapedExecutablePath`" -AgentMode"
 } else {
     "-PythonPath `"$python`""
 }

@@ -208,6 +208,7 @@ Một task chỉ được đánh dấu `DONE` khi:
 - **Phụ thuộc:** CON-106, CON-203
 - **Phạm vi:** dependency connector, config file/env, Windows/Linux service, Docker image cơ bản.
 - **Windows executable:** `connector/windows/build-exe.ps1` tạo bản PyInstaller one-file; `install-connector-task.ps1 -ExecutablePath` đăng ký Scheduled Task chạy executable. Python fallback vẫn được hỗ trợ.
+- **Windows UI:** `connector/windows/printbuddy_connector_app.py` dùng PySide6, hỗ trợ đăng nhập Printbuddy/2FA, enrollment tự động và log trạng thái; executable chạy UI mặc định và `--agent` cho phiên nền.
 - **Tiêu chí hoàn thành:** chạy từ mạng khác chỉ cần outbound HTTPS/WSS; tài liệu firewall nêu rõ các kết nối Connector → printer trong LAN và passive FTP caveat.
 
 ## 6. Giai đoạn G3 — trạng thái và điều khiển

@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Printbuddy Connector UI",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/connector/windows/printbuddy_connector_app.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {"PRINTBUDDY_CONNECTOR_VERSION": "0.1.0"}
+    },
+    {
+      "name": "Printbuddy Connector agent",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "connector.printbuddy_connector",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {
+        "PRINTBUDDY_SERVER_URL": "${env:PRINTBUDDY_SERVER_URL}",
+        "PRINTBUDDY_CONNECTOR_STATE": "${env:LOCALAPPDATA}/Printbuddy/Connector/connector-state.json",
+        "PRINTBUDDY_ENROLLMENT_CODE": "${env:PRINTBUDDY_ENROLLMENT_CODE}"
+      }
+    }
+  ]
+}

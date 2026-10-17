@@ -9,7 +9,9 @@ param(
 
     [string] $PythonPath = 'python',
 
-    [string] $ExecutablePath = ''
+    [string] $ExecutablePath = '',
+
+    [switch] $AgentMode
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,7 +33,11 @@ Push-Location $repositoryRoot
 try {
     if ($ExecutablePath) {
         $resolvedExecutable = (Resolve-Path -LiteralPath $ExecutablePath -ErrorAction Stop).Path
-        & $resolvedExecutable
+        if ($AgentMode) {
+            & $resolvedExecutable '--agent'
+        } else {
+            & $resolvedExecutable
+        }
     } else {
         $python = (Get-Command $PythonPath -ErrorAction Stop).Source
         & $python -m connector.printbuddy_connector

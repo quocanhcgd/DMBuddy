@@ -10,6 +10,7 @@ import os
 import platform
 import secrets
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -52,12 +53,19 @@ def _server_ws_url(server_url: str) -> str:
 
 
 class ConnectorAgent:
-    def __init__(self, server_url: str, state_path: Path, enrollment_code: str | None = None) -> None:
+    def __init__(
+        self,
+        server_url: str,
+        state_path: Path,
+        enrollment_code: str | None = None,
+        stop_event: threading.Event | None = None,
+    ) -> None:
         self.server_url = server_url
         self.state_path = state_path
         self.enrollment_code = enrollment_code
         self.connector_id: str | None = None
         self.credential: str | None = None
+        self.stop_event = stop_event or threading.Event()
         self._load_state()
 
     def _load_state(self) -> None:
@@ -106,7 +114,7 @@ class ConnectorAgent:
         assert self.connector_id and self.credential
         ws_url = f"{_server_ws_url(self.server_url)}/api/v1/connectors/ws"
         backoff = 1.0
-        while True:
+        while not self.stop_event.is_set():
             try:
                 connect_options = {
                     "max_size": MAX_FRAME_BYTES,
@@ -127,25 +135,35 @@ class ConnectorAgent:
                     send_lock = asyncio.Lock()
                     heartbeat_task = asyncio.create_task(self._heartbeat_loop(websocket, send_lock))
                     receive_task = asyncio.create_task(self._receive_loop(websocket, send_lock))
+                    stop_task = asyncio.create_task(asyncio.to_thread(self.stop_event.wait))
                     done, pending = await asyncio.wait(
-                        {heartbeat_task, receive_task},
+                        {heartbeat_task, receive_task, stop_task},
                         return_when=asyncio.FIRST_COMPLETED,
                     )
                     for task in pending:
                         task.cancel()
                     await asyncio.gather(*pending, return_exceptions=True)
                     for task in done:
-                        task.result()
+                        if task is not stop_task:
+                            task.result()
+                    if stop_task in done:
+                        return
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.warning("Connector connection unavailable; retrying in %.1fs (%s)", backoff, type(exc).__name__)
-                await asyncio.sleep(backoff + secrets.randbelow(500) / 1000)
+                try:
+                    await asyncio.wait_for(
+                        asyncio.to_thread(self.stop_event.wait),
+                        timeout=backoff + secrets.randbelow(500) / 1000,
+                    )
+                except asyncio.TimeoutError:
+                    pass
                 backoff = min(backoff * 2, 60.0)
 
     async def _heartbeat_loop(self, websocket: object, send_lock: asyncio.Lock) -> None:
         assert self.connector_id
-        while True:
+        while not self.stop_event.is_set():
             heartbeat = ConnectorMessage(
                 connector_id=self.connector_id,
                 type="heartbeat",
@@ -158,12 +176,18 @@ class ConnectorAgent:
             )
             async with send_lock:
                 await websocket.send(heartbeat.model_dump_json())
-            await asyncio.sleep(15)
+            try:
+                await asyncio.wait_for(asyncio.to_thread(self.stop_event.wait), timeout=15)
+            except asyncio.TimeoutError:
+                pass
 
     async def _receive_loop(self, websocket: object, send_lock: asyncio.Lock) -> None:
         assert self.connector_id
-        while True:
-            raw = await websocket.recv()
+        while not self.stop_event.is_set():
+            try:
+                raw = await asyncio.wait_for(websocket.recv(), timeout=1)
+            except asyncio.TimeoutError:
+                continue
             if isinstance(raw, bytes):
                 raw = raw.decode("utf-8")
             message = ConnectorMessage.model_validate_json(raw)
