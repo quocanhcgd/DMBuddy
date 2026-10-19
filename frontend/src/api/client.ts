@@ -4981,7 +4981,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ url }),
     }),
-  downloadPublicChinaMakerworldInstance: async (model_id: number, profile_id: number): Promise<void> => {
+  fetchPublicChinaMakerworldInstance: async (model_id: number, profile_id: number): Promise<{ blob: Blob; filename: string }> => {
     const response = await fetch(`${API_BASE}/makerworld/public/china/download`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4993,7 +4993,10 @@ export const api = {
     }
     const disposition = response.headers.get('Content-Disposition');
     const filename = parseContentDispositionFilename(disposition) || `makerworld-${model_id}.3mf`;
-    const blob = await response.blob();
+    return { blob: await response.blob(), filename };
+  },
+  downloadPublicChinaMakerworldInstance: async (model_id: number, profile_id: number): Promise<void> => {
+    const { blob, filename } = await api.fetchPublicChinaMakerworldInstance(model_id, profile_id);
     const objectUrl = window.URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = objectUrl;
