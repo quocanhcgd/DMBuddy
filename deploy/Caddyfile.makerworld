@@ -1,0 +1,16 @@
+# HTTP-only ingress for the MakerWorld China page. Put the subdomain behind an
+# existing TLS reverse proxy (NPM, Traefik, etc.) before exposing it publicly.
+
+http://{$MAKERWORLD_DOMAIN:makerworld.example.com} {
+	@root path /
+	redir @root /makerworld-cn 302
+	reverse_proxy {$PRINTBUDDY_UPSTREAM:host.docker.internal:8000}
+}
+
+# Optional second entry point on a dedicated port. Keep this port on a trusted
+# network or put TLS/authentication in front of it before exposing it publicly.
+:8010 {
+	@root path /
+	redir @root /makerworld-cn 302
+	reverse_proxy {$PRINTBUDDY_UPSTREAM:host.docker.internal:8000}
+}

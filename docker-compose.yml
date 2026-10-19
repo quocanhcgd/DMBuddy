@@ -135,6 +135,31 @@ services:
       #- UPDATER_TOKEN=${PRINTBUDDY_UPDATER_TOKEN}
     restart: unless-stopped
 
+  # Optional public ingress for the standalone MakerWorld China page.
+  # Enable with: docker compose --profile makerworld-public up -d makerworld-public
+  # It proxies to the existing Printbuddy process; it does not start another backend.
+  makerworld-public:
+    image: caddy:2-alpine
+    container_name: printbuddy-makerworld-public
+    profiles:
+      - makerworld-public
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      # An existing reverse proxy (NPM, Traefik, etc.) can forward the
+      # MakerWorld subdomain to this HTTP port and provide public TLS.
+      - "${MAKERWORLD_PROXY_PORT:-8088}:80"
+      # Optional direct HTTP entry for a trusted LAN/VPN only.
+      - "${MAKERWORLD_DIRECT_PORT:-8010}:8010"
+    volumes:
+      - ./deploy/Caddyfile.makerworld:/etc/caddy/Caddyfile:ro
+      - makerworld_caddy_data:/data
+      - makerworld_caddy_config:/config
+    environment:
+      - MAKERWORLD_DOMAIN=${MAKERWORLD_DOMAIN:-makerworld.example.com}
+      - PRINTBUDDY_UPSTREAM=${PRINTBUDDY_UPSTREAM:-host.docker.internal:8000}
+    restart: unless-stopped
+
   # Optional self-update sidecar. Uncomment together with the SELF_UPDATE_*
   # environment variables above. The sidecar is the only container that gets
   # Docker socket access; Printbuddy talks to it over localhost with a shared
@@ -173,4 +198,6 @@ services:
 volumes:
   printbuddy_data:
   printbuddy_logs:
+  makerworld_caddy_data:
+  makerworld_caddy_config:
   #printbuddy_pgdata:

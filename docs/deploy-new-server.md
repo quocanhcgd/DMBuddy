@@ -114,6 +114,50 @@ chỉ firewall Docker.
 Khi có DNS và reverse proxy, truy cập bằng URL HTTPS. Connector Windows cần
 địa chỉ này để kết nối outbound WSS.
 
+### Public MakerWorld China trên subdomain hoặc cổng riêng
+
+Trang `/makerworld-cn` có thể chạy song song với Printbuddy mà không cần thêm
+backend thứ hai. Trang dùng API cùng origin của Printbuddy;
+backend tiếp tục dùng tài khoản MakerWorld China đã cấu hình trong Settings.
+Các API công khai chỉ gồm resolve, tải 3MF và ảnh thumbnail. Những API còn lại
+vẫn theo chính sách xác thực của Printbuddy.
+
+Compose có Caddy sidecar tùy chọn trong profile `makerworld-public`. Sidecar
+chỉ chuyển tiếp request tới Printbuddy hiện tại qua host port; không khởi động
+backend thứ hai và không cần mở thêm bản sao DB. Cấu hình nằm ở
+[`../deploy/Caddyfile.makerworld`](../deploy/Caddyfile.makerworld).
+
+1. Trong `.env`, đặt domain và upstream nếu Printbuddy không nghe ở cổng 8000:
+
+   ```env
+   MAKERWORLD_DOMAIN=makerworld.example.com
+   PRINTBUDDY_UPSTREAM=host.docker.internal:8000
+   MAKERWORLD_PROXY_PORT=8088
+   MAKERWORLD_DIRECT_PORT=8010
+   ```
+
+2. Khởi động riêng sidecar:
+
+   ```bash
+   docker compose --profile makerworld-public up -d makerworld-public
+   docker compose ps
+   docker compose logs --tail=100 makerworld-public
+   ```
+
+3. Tạo DNS `A` (và `AAAA` nếu máy chủ có IPv6 hoạt động) cho domain. Trong
+   reverse proxy/TLS đang dùng (ví dụ Nginx Proxy Manager), tạo proxy host cho
+   `makerworld.example.com`, trỏ tới IP máy chủ, cổng `8088`, bật WebSocket
+   support nếu có tùy chọn và bật HTTPS ở reverse proxy đó. Cổng `8088` là
+   HTTP nội bộ giữa proxy và sidecar; không cần mở nó trực tiếp ra Internet.
+4. Truy cập `https://makerworld.example.com`; `/` tự chuyển tới
+   `/makerworld-cn`. Cổng phụ `8010` cũng trỏ tới cùng trang qua HTTP, ví dụ
+   `http://<IP-máy-chủ>:8010/makerworld-cn`.
+
+Cổng `8010` là HTTP, chỉ dùng trong LAN/VPN tin cậy hoặc đặt sau proxy có TLS;
+không đưa trực tiếp ra Internet. Có thể đổi các port trong `.env`, đồng thời
+cập nhật firewall và reverse proxy. Caddy sidecar chỉ là ingress; Printbuddy
+vẫn là nơi phục vụ UI/API và dùng tài khoản MakerWorld China đã cấu hình.
+
 ## 6. Sao lưu và cập nhật
 
 Trước khi đưa vào sử dụng, lập lịch sao lưu thư mục `/app/data` trong volume

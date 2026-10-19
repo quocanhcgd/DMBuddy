@@ -603,6 +603,22 @@ class TestFetchThumbnail:
         assert service._client.get.call_args.kwargs["follow_redirects"] is False
 
     @pytest.mark.asyncio
+    async def test_retries_with_urllib_when_httpx_times_out(self, service):
+        service._client.get.side_effect = httpx.ReadTimeout("body stalled")
+
+        with patch(
+            "backend.app.services.makerworld._fetch_thumbnail_urllib",
+            return_value=(b"\x89PNG\r\n\x1a\n", "application/octet-stream"),
+        ) as fallback:
+            payload, content_type = await service.fetch_thumbnail(
+                "https://makerworld.bblmw.com/makerworld/model/X/design/abc.png"
+            )
+
+        assert payload.startswith(b"\x89PNG")
+        assert content_type == "image/png"
+        fallback.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_rejects_html_content_type_even_with_image_extension(self, service):
         # An upstream error page (HTML) at a .jpg URL must be refused —
         # otherwise we'd forward it to the browser under an image framing.

@@ -89,6 +89,40 @@ _REFUSED_THUMBNAIL_MIMES = ("text/html", "text/plain", "application/json")
 _shared_http_client: httpx.AsyncClient | None = None
 
 
+def _fetch_thumbnail_urllib(url: str) -> tuple[bytes, str]:
+    """Fetch a CDN image with urllib when httpx stalls on the body stream."""
+    from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+    class _NoRedirect(HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+
+    opener = build_opener(_NoRedirect)
+    request = Request(url, headers={"User-Agent": _CLIENT_HEADERS["User-Agent"]})
+    try:
+        with opener.open(request, timeout=40.0) as response:
+            if response.status != 200:
+                raise MakerWorldUnavailableError(f"Thumbnail fetch returned HTTP {response.status}")
+            content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+            chunks: list[bytes] = []
+            total = 0
+            while True:
+                chunk = response.read(64 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _MAX_THUMBNAIL_BYTES:
+                    raise MakerWorldUnavailableError(
+                        f"Thumbnail exceeds {_MAX_THUMBNAIL_BYTES // (1024 * 1024)} MB cap"
+                    )
+                chunks.append(chunk)
+            return b"".join(chunks), content_type
+    except MakerWorldUnavailableError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — urllib raises several transport-specific errors
+        raise MakerWorldUnavailableError(f"Thumbnail request failed: {exc}") from exc
+
+
 def set_shared_http_client(client: httpx.AsyncClient | None) -> None:
     """Register an app-scoped ``httpx.AsyncClient`` for service reuse.
 
@@ -555,13 +589,21 @@ class MakerWorldService:
         # below.
         try:
             response = await self._client.get(url, headers=self._headers(), timeout=20.0, follow_redirects=False)
-        except httpx.TimeoutException as exc:
-            raise MakerWorldUnavailableError(f"Thumbnail request timed out: {exc}") from exc
+            if response.status_code != 200:
+                raise MakerWorldUnavailableError(f"Thumbnail fetch returned HTTP {response.status_code}")
+            upstream_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+            payload = response.content
+        except httpx.TimeoutException:
+            # Some China CDN edges send the headers promptly but stall while
+            # streaming the image body through httpx. urllib uses the native
+            # Windows transport and reliably completes these same downloads.
+            logger.info("MakerWorld thumbnail request timed out via httpx; retrying with urllib")
+            try:
+                payload, upstream_type = await asyncio.to_thread(_fetch_thumbnail_urllib, url)
+            except MakerWorldUnavailableError:
+                raise
         except httpx.HTTPError as exc:
             raise MakerWorldUnavailableError(f"Thumbnail request failed: {exc}") from exc
-
-        if response.status_code != 200:
-            raise MakerWorldUnavailableError(f"Thumbnail fetch returned HTTP {response.status_code}")
 
         # MakerWorld's CDN serves real PNG/JPG files with
         # ``Content-Type: application/octet-stream`` (they use
@@ -570,7 +612,6 @@ class MakerWorldService:
         # file extension and only fall back to the header if the URL doesn't
         # carry one. Reject text/* / json outright regardless of extension
         # so an upstream error page can't slip through as "image/png".
-        upstream_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
         if upstream_type in _REFUSED_THUMBNAIL_MIMES:
             raise MakerWorldUnavailableError(f"Thumbnail upstream returned non-image content-type: {upstream_type!r}")
 
@@ -592,7 +633,6 @@ class MakerWorldService:
                 f"Thumbnail upstream returned {upstream_type!r} and URL has no image extension"
             )
 
-        payload = response.content
         if len(payload) > _MAX_THUMBNAIL_BYTES:
             raise MakerWorldUnavailableError(f"Thumbnail exceeds {_MAX_THUMBNAIL_BYTES // (1024 * 1024)} MB cap")
         return payload, content_type
