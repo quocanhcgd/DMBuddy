@@ -596,6 +596,21 @@ async def resolve_url(
     )
 
 
+@router.post("/public/china/resolve", response_model=MakerWorldResolvedModel)
+async def resolve_public_china_url(
+    body: MakerWorldResolveRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Resolve a China MakerWorld model for the standalone public download page.
+
+    This surface is deliberately read-only and always selects the backend's
+    shared China account; it never accepts an account id from the browser.
+    """
+    china_body = body.model_copy(update={"account_id": None, "region": "china"})
+    result = await resolve_url(china_body, db, None)
+    return result.model_copy(update={"account_id": None, "already_imported_library_ids": []})
+
+
 @router.post("/import", response_model=MakerWorldImportResponse)
 async def import_instance(
     body: MakerWorldImportRequest,
@@ -885,6 +900,8 @@ async def recent_imports(
         .order_by(LibraryFile.created_at.desc())
         .limit(capped)
     )
+
+
     rows = result.scalars().all()
     return [
         MakerWorldRecentImport(
@@ -897,3 +914,18 @@ async def recent_imports(
         )
         for row in rows
     ]
+
+
+@router.post("/public/china/download", response_class=Response)
+async def download_public_china_instance(
+    body: MakerWorldDownloadRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Download a China MakerWorld plate using the configured backend account.
+
+    No library writes occur on this public endpoint. ``account_id`` and
+    ``region`` supplied by callers are ignored so this route cannot select a
+    personal/global account or change the upstream region.
+    """
+    china_body = body.model_copy(update={"account_id": None, "region": "china"})
+    return await download_instance(china_body, db, None)

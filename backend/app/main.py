@@ -106,6 +106,7 @@ from backend.app.services.printer_manager import (
     printer_manager,
     printer_state_to_dict,
 )
+from backend.app.services.printer_reconnect import PrinterReconnectService
 from backend.app.services.smart_plug_manager import smart_plug_manager
 from backend.app.services.spool_assignment_notifications import (
     notify_missing_spool_assignments_on_print_start,
@@ -117,6 +118,8 @@ from backend.app.services.spoolman_tracking import (
     store_print_data as _store_spoolman_print_data,
 )
 from backend.app.services.tasmota import tasmota_service
+
+printer_reconnect_service = PrinterReconnectService(printer_manager, async_session)
 
 
 # =============================================================================
@@ -5920,6 +5923,12 @@ async def lifespan(app: FastAPI):
     async with async_session() as db:
         await init_printer_connections(db)
 
+    # Keep active direct/VPN printers recoverable after a transient startup or
+    # polling failure. The worker is also responsible for printers added while
+    # the application is already running, so the UI does not need to stay open
+    # for a reconnect attempt to happen.
+    printer_reconnect_service.start()
+
     # Auto-connect to Spoolman if enabled
     async with async_session() as db:
         from backend.app.api.routes.settings import get_setting
@@ -6045,6 +6054,7 @@ async def lifespan(app: FastAPI):
         logging.warning("Failed to shut down camera broadcasters: %s", e)
     stop_expected_prints_cleanup()
     stop_auth_cleanup()
+    await printer_reconnect_service.stop()
     printer_manager.disconnect_all()
     await close_spoolman_client()
 
@@ -6102,6 +6112,9 @@ PUBLIC_API_ROUTES = {
     "/api/v1/auth/oidc/providers",  # Public list of enabled providers
     "/api/v1/auth/oidc/callback",  # Redirect target from OIDC provider
     "/api/v1/auth/oidc/exchange",  # Exchange short-lived OIDC token for JWT
+    # Public MakerWorld China download page uses the server's shared China account.
+    "/api/v1/makerworld/public/china/resolve",
+    "/api/v1/makerworld/public/china/download",
     # Version check for updates (no sensitive data)
     "/api/v1/updates/version",
     # Metrics endpoint handles its own prometheus_token authentication

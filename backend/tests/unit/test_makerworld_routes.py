@@ -21,6 +21,7 @@ from sqlalchemy import select
 from backend.app.api.routes.makerworld import _build_service, _canonical_url
 from backend.app.models.bambu_cloud_account import BambuCloudAccount
 from backend.app.models.library import LibraryFile, LibraryFolder
+from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.services.makerworld import MakerWorldUnavailableError
 
@@ -184,6 +185,26 @@ class TestResolve:
         assert body["already_imported_library_ids"] == []
 
     @pytest.mark.asyncio
+    async def test_public_china_resolve_forces_china_and_hides_library_ids(self, async_client):
+        svc = _fake_service(
+            get_design={"id": 1400373, "title": "China model"},
+            get_design_instances={"total": 1, "hits": [{"profileId": 298919107, "title": "Plate"}]},
+        )
+
+        with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)) as build:
+            resp = await async_client.post(
+                "/api/v1/makerworld/public/china/resolve",
+                json={"url": "https://makerworld.cn/zh/models/1400373", "region": "global", "account_id": 999},
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["region"] == "china"
+        assert resp.json()["account_id"] is None
+        assert resp.json()["already_imported_library_ids"] == []
+        assert build.await_args.kwargs == {"account_id": None, "region": "china"}
+
+
+    @pytest.mark.asyncio
     async def test_flags_already_imported_library_ids(self, async_client, db_session):
         # Seed a matching LibraryFile so resolve() reports it back
         existing = LibraryFile(
@@ -325,6 +346,28 @@ class TestImport:
         assert (await db_session.execute(select(LibraryFile))).scalars().all() == []
         assert (await db_session.execute(select(LibraryFolder))).scalars().all() == []
         svc.get_profile_download.assert_awaited_once_with(298919107, "US2bb73b106683e5")
+
+    @pytest.mark.asyncio
+    async def test_public_china_download_forces_china_and_does_not_write_library(self, async_client, db_session):
+        db_session.add(Settings(key="auth_enabled", value="true"))
+        await db_session.commit()
+        svc = _fake_service(
+            get_design=_default_design(),
+            get_profile_download=_default_manifest(),
+            download_3mf=(self._FAKE_3MF_BYTES, "benchy.3mf"),
+        )
+
+        with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)) as build:
+            resp = await async_client.post(
+                "/api/v1/makerworld/public/china/download",
+                json={"model_id": 1400373, "profile_id": 298919107, "region": "global", "account_id": 999},
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.content == self._FAKE_3MF_BYTES
+        assert build.await_args.kwargs == {"account_id": None, "region": "china"}
+        assert (await db_session.execute(select(LibraryFile))).scalars().all() == []
+        assert (await db_session.execute(select(LibraryFolder))).scalars().all() == []
 
     @pytest.mark.asyncio
     async def test_source_archive_is_opt_in_and_disabled_by_default(

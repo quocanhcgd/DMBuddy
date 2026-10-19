@@ -107,5 +107,9 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    // Keep React and React DOM on the same module instance. This prevents
+    // hooks from reading a null dispatcher when Vite is started from a
+    // workspace that contains stale/pre-bundled dependency paths.
+    dedupe: ['react', 'react-dom'],
   },
 })

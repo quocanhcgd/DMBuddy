@@ -4976,6 +4976,33 @@ export const api = {
   // MakerWorld URL-paste import flow.
   getMakerworldStatus: () =>
     request<MakerworldStatus>('/makerworld/status'),
+  resolvePublicChinaMakerworldUrl: (url: string) =>
+    request<MakerworldResolvedModel>('/makerworld/public/china/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    }),
+  downloadPublicChinaMakerworldInstance: async (model_id: number, profile_id: number): Promise<void> => {
+    const response = await fetch(`${API_BASE}/makerworld/public/china/download`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model_id, profile_id }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    const disposition = response.headers.get('Content-Disposition');
+    const filename = parseContentDispositionFilename(disposition) || `makerworld-${model_id}.3mf`;
+    const blob = await response.blob();
+    const objectUrl = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    window.URL.revokeObjectURL(objectUrl);
+  },
   resolveMakerworldUrl: (url: string, accountId?: number | null, region?: 'auto' | 'global' | 'china') =>
     request<MakerworldResolvedModel>('/makerworld/resolve', {
       method: 'POST',

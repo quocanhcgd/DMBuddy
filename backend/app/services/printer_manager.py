@@ -14,6 +14,29 @@ from backend.app.services.printer_providers.factory import create_printer_client
 
 logger = logging.getLogger(__name__)
 
+
+def _provider_connection_error(provider: str, exc: Exception) -> str:
+    """Return a safe, actionable connection diagnostic without response bodies."""
+    import httpx
+
+    provider_label = "Moonraker" if provider in {"klipper", "mainsail", "fluidd"} else provider
+    if isinstance(exc, httpx.TimeoutException):
+        return f"{provider_label} request timed out; verify the endpoint and network route."
+    if isinstance(exc, httpx.ConnectError):
+        return f"Could not open a network connection to {provider_label}; verify the host, port, firewall, and container network."
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code
+        if status_code in {401, 403}:
+            return f"{provider_label} rejected the request (HTTP {status_code}); check its API token or authentication settings."
+        if status_code == 404:
+            return f"{provider_label} returned HTTP 404; check that the URL points to the API endpoint, not only the web interface."
+        return f"{provider_label} returned HTTP {status_code}."
+    if isinstance(exc, httpx.InvalidURL):
+        return f"The {provider_label} URL is invalid; include a scheme and port, for example http://printer.local:7125."
+    if isinstance(exc, httpx.DecodingError):
+        return f"{provider_label} returned an invalid response; verify the API URL and reverse-proxy configuration."
+    return f"{provider_label} connection failed ({type(exc).__name__})."
+
 # Replacing a client can synchronously wait for its network thread. Keep that
 # teardown bounded so a failed device connection cannot freeze the API loop.
 REPLACEMENT_DISCONNECT_TIMEOUT_SECONDS = 2.0
@@ -721,7 +744,13 @@ class PrinterManager:
                     "prusaconnect": "Prusa Connect Mobile",
                     "elegoo_sdcp": "Elegoo SDCP",
                 }.get(provider_name, "Klipper/Moonraker")
-                return {"success": False, "state": None, "model": model_label, "error": type(exc).__name__}
+                return {
+                    "success": False,
+                    "state": None,
+                    "model": model_label,
+                    "error": _provider_connection_error(provider_name, exc),
+                    "error_type": type(exc).__name__,
+                }
             finally:
                 disconnect = getattr(client, "disconnect", None)
                 if disconnect:

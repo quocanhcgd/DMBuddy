@@ -381,6 +381,7 @@ async def create_printer(
             detail={
                 "code": "printer_connection_failed",
                 "message": failure_message,
+                "diagnostic": test_result.get("error"),
             },
         )
 
@@ -844,7 +845,12 @@ async def get_printer_status(
                         tray_sub_brands=tray_data.get("tray_sub_brands"),
                         tray_id_name=tray_data.get("tray_id_name"),
                         tray_info_idx=tray_data.get("tray_info_idx"),
-                        remain=tray_data.get("remain", 0),
+                        # Some printer firmware reports an empty/unknown spool
+                        # with an explicit JSON null.  ``dict.get(..., 0)`` does
+                        # not apply its default in that case, and Pydantic
+                        # rejects null for the integer field, causing the whole
+                        # printer status endpoint to return 500.
+                        remain=tray_data.get("remain") if tray_data.get("remain") is not None else 0,
                         k=k_value,
                         cali_idx=cali_idx,
                         tag_uid=tag_uid,

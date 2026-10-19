@@ -8,13 +8,17 @@ Interactive installation scripts for Printbuddy with support for both native and
 
 **Linux/macOS:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vmhomelab/Printbuddy/main/install/docker-install.sh -o docker-install.sh && chmod +x docker-install.sh && ./docker-install.sh
+curl -fsSL https://raw.githubusercontent.com/quocanhcgd/Printbuddy/main/install/docker-install.sh -o docker-install.sh && chmod +x docker-install.sh && ./docker-install.sh
 ```
 
 **Windows (Command Prompt or PowerShell):**
 ```cmd
-powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/vmhomelab/Printbuddy/main/install/docker-install.ps1 -OutFile docker-install.ps1; .\docker-install.ps1"
+powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/quocanhcgd/Printbuddy/main/install/docker-install.ps1 -OutFile docker-install.ps1; .\docker-install.ps1"
 ```
+
+The customized repository publishes its image to `ghcr.io/quocanhcgd/printbuddy`.
+For Ubuntu deployment, use the repository `docker-compose.yml` and the Docker
+procedure in `docs/deploy-new-server.md`.
 
 > Requires Docker Desktop running. Printer auto-discovery is unavailable in Docker Desktop — add printers manually by IP.
 
@@ -22,8 +26,11 @@ powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercon
 
 **Linux/macOS:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vmhomelab/Printbuddy/main/install/install.sh -o install.sh && chmod +x install.sh && ./install.sh
+curl -fsSL https://raw.githubusercontent.com/quocanhcgd/Printbuddy/main/install/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 ```
+
+For a complete Ubuntu native (non-Docker) procedure using the customized
+repository, see [`../docs/deploy-native-ubuntu.md`](../docs/deploy-native-ubuntu.md).
 
 ---
 
@@ -207,7 +214,7 @@ docker compose logs -f      # View logs
 
 **Native installation:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vmhomelab/Printbuddy/main/install/update.sh -o update.sh
+curl -fsSL https://raw.githubusercontent.com/quocanhcgd/Printbuddy/main/install/update.sh -o update.sh
 chmod +x update.sh
 sudo ./update.sh
 ```

@@ -58,6 +58,7 @@ PKG_MANAGER=""
 PYTHON_CMD=""
 BRANCH=""
 SERVICE_USER="printbuddy"
+REPOSITORY_URL="${PRINTBUDDY_REPOSITORY_URL:-https://github.com/quocanhcgd/Printbuddy.git}"
 
 # -----------------------------------------------------------------------------
 # Helper Functions
@@ -324,11 +325,20 @@ create_user() {
 
     if id "$SERVICE_USER" &>/dev/null; then
         log_info "User '$SERVICE_USER' already exists"
+        # Older/manual installs may have the user but not a matching group.
+        if ! getent group "$SERVICE_USER" >/dev/null 2>&1; then
+            log_info "Creating missing group '$SERVICE_USER'..."
+            sudo groupadd --system "$SERVICE_USER"
+        fi
+        if [[ "$(id -gn "$SERVICE_USER")" != "$SERVICE_USER" ]]; then
+            sudo usermod --gid "$SERVICE_USER" "$SERVICE_USER"
+        fi
         return
     fi
 
     log_info "Creating service user '$SERVICE_USER'..."
-    sudo useradd --system --shell /usr/sbin/nologin --home-dir "$INSTALL_PATH" "$SERVICE_USER"
+    # --user-group creates a private group with the same name as the user.
+    sudo useradd --system --user-group --shell /usr/sbin/nologin --home-dir "$INSTALL_PATH" "$SERVICE_USER"
     log_success "Service user created"
 }
 
@@ -336,10 +346,10 @@ download_printbuddy() {
     log_info "Downloading Printbuddy..."
 
     # Validate branch exists on remote before proceeding
-    if ! git ls-remote --exit-code --heads https://github.com/vmhomelab/Printbuddy.git "$BRANCH" &>/dev/null; then
+    if ! git ls-remote --exit-code --heads "$REPOSITORY_URL" "$BRANCH" &>/dev/null; then
         log_error "Branch '$BRANCH' not found in the Printbuddy repository."
         log_info "Available branches:"
-        git ls-remote --heads https://github.com/vmhomelab/Printbuddy.git | sed 's|.*refs/heads/|  - |'
+        git ls-remote --heads "$REPOSITORY_URL" | sed 's|.*refs/heads/|  - |'
         exit 1
     fi
 
@@ -359,7 +369,7 @@ download_printbuddy() {
         # dir to the service user before the clone, which left the install-running
         # user (not root, not printbuddy) unable to write .git into it.
         sudo mkdir -p "$INSTALL_PATH"
-        sudo git clone --branch "$BRANCH" https://github.com/vmhomelab/Printbuddy.git "$INSTALL_PATH"
+        sudo git clone --branch "$BRANCH" "$REPOSITORY_URL" "$INSTALL_PATH"
         sudo chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_PATH" 2>/dev/null || true
     fi
 

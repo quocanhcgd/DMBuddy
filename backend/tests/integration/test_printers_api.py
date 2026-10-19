@@ -638,6 +638,38 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_get_printer_status_normalizes_null_ams_remain(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        """Firmware may send remain=null for an empty or unknown spool."""
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory(serial_number="AMS-NULL-REMAIN")
+        state = PrinterState(
+            connected=True,
+            state="IDLE",
+            raw_data={
+                "ams": [
+                    {
+                        "id": 0,
+                        "tray": [{"id": 0, "tray_type": "PLA", "remain": None}],
+                    }
+                ]
+            },
+        )
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert response.status_code == 200
+        assert response.json()["ams"][0]["tray"][0]["remain"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_get_printer_status_not_found(self, async_client: AsyncClient):
         """Verify 404 for status of non-existent printer."""
         response = await async_client.get("/api/v1/printers/9999/status")

@@ -4,7 +4,7 @@
 # Supports: Linux (all distros), macOS
 #
 # Usage:
-#   Interactive:  curl -fsSL https://raw.githubusercontent.com/vmhomelab/Printbuddy/main/install/docker-install.sh -o docker-install.sh && chmod +x docker-install.sh && ./docker-install.sh
+#   Interactive:  curl -fsSL https://raw.githubusercontent.com/quocanhcgd/Printbuddy/main/install/docker-install.sh -o docker-install.sh && chmod +x docker-install.sh && ./docker-install.sh
 #   Unattended:   ./docker-install.sh --path /opt/printbuddy --port 8000 --yes
 #
 # Options:
@@ -265,12 +265,12 @@ download_compose_file() {
             git fetch origin
             git reset --hard origin/main
         else
-            git clone https://github.com/vmhomelab/Printbuddy.git .
+            git clone https://github.com/quocanhcgd/Printbuddy.git .
         fi
     else
         # Just download the compose file
         curl -fsSL -o docker-compose.yml \
-            https://raw.githubusercontent.com/vmhomelab/Printbuddy/main/docker-compose.yml
+            https://raw.githubusercontent.com/quocanhcgd/Printbuddy/main/docker-compose.yml
     fi
 
     log_success "docker-compose.yml ready"
@@ -319,6 +319,8 @@ start_container() {
     if [[ "$BUILD_FROM_SOURCE" == "true" ]]; then
         $DOCKER_CMD up -d --build
     else
+        log_info "Pulling the GitHub-built image..."
+        $DOCKER_CMD pull printbuddy
         $DOCKER_CMD up -d
     fi
 
@@ -536,7 +538,7 @@ main() {
     echo ""
     echo -e "  ${BOLD}Data location:${NC}  Docker volumes (printbuddy_data, printbuddy_logs)"
     echo ""
-    echo -e "  ${BOLD}Documentation:${NC}  ${CYAN}https://github.com/vmhomelab/Printbuddy#readme${NC}"
+    echo -e "  ${BOLD}Documentation:${NC}  ${CYAN}https://github.com/quocanhcgd/Printbuddy#readme${NC}"
     echo ""
 
     # Warn about iptables persistence

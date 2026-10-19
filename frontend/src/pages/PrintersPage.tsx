@@ -8682,7 +8682,13 @@ export function PrintersPage() {
       // Localized message when the backend returns a stable error code;
       // the raw message is an English fallback for non-UI clients.
       if (error instanceof ApiError && error.code === 'printer_connection_failed') {
-        showToast(t('printers.toast.connectionFailedNotAdded'), 'error');
+        const diagnostic = typeof error.detail?.diagnostic === 'string' ? error.detail.diagnostic : '';
+        showToast(
+          diagnostic
+            ? `${t('printers.toast.connectionFailedNotAdded')} ${diagnostic}`
+            : t('printers.toast.connectionFailedNotAdded'),
+          'error',
+        );
         return;
       }
       showToast(error.message || t('printers.toast.failedToAdd'), 'error');

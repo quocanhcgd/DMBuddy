@@ -400,12 +400,14 @@ def _moonraker_progress_percent(virtual_sdcard: dict[str, Any], display_status: 
 
 
 def _moonraker_url_candidates(base_url: str) -> list[str]:
-    """Return Moonraker probe URLs, including :7125 fallback for Fluidd UI URLs."""
+    """Return Moonraker probe URLs, including safe UI/API port fallbacks."""
     parsed = urlparse(base_url)
     if not parsed.scheme or not parsed.hostname:
         return [base_url.rstrip("/") + "/"]
 
-    primary = base_url.rstrip("/") + "/"
+    primary = urlunparse(parsed._replace(path=parsed.path.rstrip("/") or "/", query="", fragment=""))
+    if not primary.endswith("/"):
+        primary += "/"
     candidates = [primary]
 
     # Users often paste the Fluidd/Mainsail UI URL (http://printer/) instead
@@ -419,11 +421,15 @@ def _moonraker_url_candidates(base_url: str) -> list[str]:
         host = f"[{host}]"
 
     if parsed.port != 7125:
-        fallback = urlunparse((parsed.scheme or "http", f"{host}:7125", "", "", "", "")).rstrip("/") + "/"
+        fallback = urlunparse((parsed.scheme or "http", f"{host}:7125", parsed.path.rstrip("/") or "/", "", "", ""))
+        if not fallback.endswith("/"):
+            fallback += "/"
         if fallback not in candidates:
             candidates.append(fallback)
     else:
-        fallback = urlunparse((parsed.scheme or "http", host, "", "", "", "")).rstrip("/") + "/"
+        fallback = urlunparse((parsed.scheme or "http", host, parsed.path.rstrip("/") or "/", "", "", ""))
+        if not fallback.endswith("/"):
+            fallback += "/"
         if fallback not in candidates:
             candidates.append(fallback)
     return candidates
@@ -1465,6 +1471,8 @@ class MoonrakerPrinterClient:
 
 def create_moonraker_client(printer: Any, **callbacks: Any) -> MoonrakerPrinterClient:  # noqa: ARG001
     base_url = printer.api_url or f"http://{printer.ip_address}:7125"
+    if "://" not in str(base_url):
+        base_url = f"http://{base_url}"
     return MoonrakerPrinterClient(
         base_url=base_url,
         auth_token=getattr(printer, "auth_token", None),

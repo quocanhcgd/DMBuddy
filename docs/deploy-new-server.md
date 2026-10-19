@@ -1,8 +1,8 @@
-# Triển khai Printbuddy trên máy chủ mới
+# Triển khai Printbuddy bằng Docker trên máy chủ mới
 
 Hướng dẫn này dùng repository tùy chỉnh `quocanhcgd/Printbuddy`, nhánh `main`,
-và Docker Compose trên máy chủ Linux mới. Không dùng nhánh hoặc repository
-upstream nếu muốn triển khai các thay đổi riêng của Printbuddy.
+Docker Compose và image do GitHub Actions build/publish lên GHCR tại
+`ghcr.io/quocanhcgd/printbuddy`. Không dùng image Docker Hub của upstream.
 
 ## 1. Chuẩn bị máy chủ
 
@@ -29,6 +29,12 @@ Repository riêng tư cần quyền xác thực. Khuyến nghị tạo SSH deplo
 quyền đọc cho repository `quocanhcgd/Printbuddy`, cài public key vào GitHub,
 rồi kiểm tra kết nối SSH. Không đặt personal access token trong URL clone,
 `.env`, tài liệu hay lịch sử shell.
+
+Image GHCR thường ở chế độ private ban đầu. Sau lần publish đầu tiên, vào
+GitHub → Packages → `printbuddy` → Package settings và đặt package thành
+Public nếu muốn máy chủ pull không cần credential. Nếu để private, máy chủ
+cần GitHub token có quyền `read:packages`; đăng nhập an toàn bằng `docker login
+ghcr.io`, không đặt token vào URL hoặc file compose.
 
 Clone repo và chuyển vào thư mục triển khai:
 
@@ -75,10 +81,16 @@ hoạt động. Chạy:
 
 ```bash
 docker compose config --quiet
-docker compose up -d --build
+docker compose pull printbuddy
+docker compose up -d
 docker compose ps
 curl --fail http://127.0.0.1:8000/health
 ```
+
+Compose chỉ định sẵn image `ghcr.io/quocanhcgd/printbuddy:latest`. Trên Ubuntu
+Linux, `network_mode: host` được bật để discovery/kết nối printer hoạt động.
+Không cần `--build` trên server khi dùng image GitHub đã publish. Nếu cần build
+thủ công từ checkout hiện tại, chạy `docker compose up -d --build`.
 
 Theo dõi log khởi tạo:
 
@@ -106,27 +118,21 @@ Khi có DNS và reverse proxy, truy cập bằng URL HTTPS. Connector Windows c�
 
 Trước khi đưa vào sử dụng, lập lịch sao lưu thư mục `/app/data` trong volume
 `printbuddy_data` ra thiết bị khác. Volume cùng máy chủ không phải bản sao lưu
-khi ổ đĩa/máy chủ bị hỏng. Trước mỗi cập nhật, dùng script:
+khi ổ đĩa/máy chủ bị hỏng. Mỗi lần push commit mới lên `main`, GitHub Actions
+build image mới và cập nhật tag `latest`. Sau khi workflow thành công, cập nhật
+server bằng lệnh:
 
 ```bash
 cd /opt/printbuddy
-bash scripts/update-server.sh
+docker compose pull printbuddy
+docker compose up -d
+docker compose ps
+curl --fail http://127.0.0.1:8000/health
 ```
 
-Script mặc định cập nhật `main`. Có thể chọn nhánh đã checkout bằng biến:
-
-```bash
-PRINTBUDDY_BRANCH=main bash scripts/update-server.sh
-```
-
-Script từ chối chạy khi working tree có thay đổi chưa commit, chỉ fast-forward,
-dừng dịch vụ để sao lưu nhất quán data volume, build/restart Compose, rồi chờ
-health endpoint. Nếu build hoặc health check thất bại, script trả mã nguồn
-về commit trước và thử dựng lại phiên bản cũ. Bản backup trước cập nhật được
-giữ lại để xử lý thủ công; script không tự phục hồi database sau migration.
-
-Không chạy song song hai lần cập nhật. Nếu dùng PostgreSQL bên ngoài, script
-chỉ sao lưu volume Printbuddy; phải sao lưu PostgreSQL riêng trước khi nâng cấp.
+Nếu image private, Docker phải được đăng nhập vào GHCR trước `docker compose
+pull`. Không chạy song song hai lần cập nhật. Sao lưu volume `printbuddy_data`
+định kỳ; nếu dùng PostgreSQL bên ngoài thì sao lưu PostgreSQL riêng.
 
 ## 7. Chẩn đoán thường gặp
 
