@@ -518,7 +518,11 @@ def _normalize_moonraker_webcam(base_url: str, webcam: dict[str, Any]) -> dict[s
         stream_url = snapshot_url
     if not stream_url:
         return None
-    camera_type = "snapshot" if snapshot_url and stream_url == snapshot_url else "mjpeg"
+    raw_camera_type = str(webcam.get("camera_type") or webcam.get("type") or "").strip().lower()
+    if raw_camera_type in {"webrtc", "whep"} or "/webcam/webrtc" in stream_url.lower() or stream_url.lower().rstrip("/").endswith("/whep"):
+        camera_type = "webrtc"
+    else:
+        camera_type = "snapshot" if snapshot_url and stream_url == snapshot_url else "mjpeg"
     return {
         "name": str(webcam.get("name") or webcam.get("id") or "Moonraker camera"),
         "stream_url": stream_url,

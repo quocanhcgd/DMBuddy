@@ -1459,7 +1459,7 @@ export default {
       security: 'Tính an toàn',
     },
     connectors: {
-      title: 'Connector Printbuddy từ xa',
+      title: 'Connector DMbuddy từ xa',
       description: 'Kết nối máy tính hoặc mạng ở xa để quản lý máy in mà không cần cùng dải IP.',
       createTitle: 'Tạo mã ghép nối',
       createDescription: 'Nhập mã này trong ứng dụng Connector. Mã chỉ dùng một lần và hết hạn sau 10 phút.',
@@ -2174,13 +2174,14 @@ export default {
     cameraOverlayDescription: 'Camera mở trong lớp phủ có thể thay đổi kích thước trên màn hình chính',
     cameraWindowDescription: 'Máy ảnh mở trong một cửa sổ trình duyệt riêng',
     cameraCardDescription: 'Camera mở rộng bên trong mỗi card máy in',
-    externalCamerasDescription: 'Cấu hình camera bên ngoài để thay thế camera máy in tích hợp. Hỗ trợ các luồng MJPEG, RTSP, ảnh chụp nhanh HTTP và camera USB (V4L2). Khi được bật, camera bên ngoài sẽ được sử dụng để xem trực tiếp và hoàn thiện ảnh.',
+    externalCamerasDescription: 'Cấu hình camera bên ngoài để thay thế camera máy in tích hợp. Hỗ trợ MJPEG, RTSP, WebRTC, ảnh chụp nhanh HTTP và camera USB (V4L2). WebRTC cần URL snapshot riêng cho timelapse và nhận diện bàn in.',
     cameraPlaceholderUsb: 'Đường dẫn thiết bị (/dev/video0)',
     cameraPlaceholderUrl: 'URL máy ảnh (rtsp://... hoặc http://...)',
     cameraTypeMjpeg: 'Luồng MJPEG',
     cameraTypeRtsp: 'Luồng RTSP',
     cameraTypeSnapshot: 'Ảnh chụp nhanh HTTP',
     cameraTypeUsb: 'Máy ảnh USB (V4L2)',
+    cameraTypeWebrtc: 'WebRTC (Fluidd/Moonraker)',
     cameraSnapshotUrl: 'URL ảnh chụp nhanh (tùy chọn)',
     cameraSnapshotUrlPlaceholder: 'http://192.168.1.61:1984/api/frame.jpeg?src=printer',
     cameraSnapshotUrlHelp: 'URL khung đơn được sử dụng cho hình thu nhỏ thông báo, ảnh hoàn thiện, khung thời gian theo lớp và phát hiện tấm. Mỗi loại phát hiện timelapse và tấm đều yêu cầu chuyển đổi riêng trên mỗi máy in - URL này chỉ là nguồn hình ảnh mà chúng lấy từ khi hoạt động. Để trống để ghi lại từ luồng trực tiếp ở trên. Hữu ích cho go2rtc (/api/frame.jpeg) và camera IP có điểm cuối chụp nhanh chuyên dụng.',
@@ -2687,6 +2688,7 @@ export default {
       stage: {
         tcp_reachable: 'Khả năng tiếp cận mạng',
         first_frame: 'Chụp khung',
+        signaling_endpoint: 'Điểm kết nối tín hiệu WebRTC',
         live_stream_active: 'Phát trực tiếp đang hoạt động',
       },
       summary: {
@@ -2695,6 +2697,7 @@ export default {
         printer_unreachable: 'Máy in is not reachable. Check the IP address, network connection, and that the printer is powered on.',
         camera_port_closed: 'Máy in is reachable but the camera port is closed. Make sure LAN-only mode and Developer Mode are enabled in the printer settings.',
         no_frame: 'Đã kết nối to the camera but no frames were received. Try again, or check that the camera is enabled in the printer settings.',
+        webrtc_endpoint_unavailable: 'Không thể truy cập điểm WebRTC. Kiểm tra URL, HTTPS/CORS và đảm bảo trình phát camera Fluidd có thể truy cập từ trình duyệt này.',
         unknown_failure: 'Chẩn đoán máy ảnh không thành công vì lý do không xác định. Kiểm tra nhật ký hỗ trợ để biết chi tiết.',
       },
       meta: {

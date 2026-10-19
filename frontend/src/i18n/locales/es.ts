@@ -1457,7 +1457,7 @@ export default {
     },
     // LDAP settings
     connectors: {
-      title: 'Conectores remotos de Printbuddy',
+      title: 'Conectores remotos de DMbuddy',
       description: 'Conecta equipos o redes remotas para gestionar impresoras sin compartir el mismo rango IP.',
       createTitle: 'Crear código de registro',
       createDescription: 'Introduce este código en la aplicación Connector. Solo se puede usar una vez y caduca en 10 minutos.',

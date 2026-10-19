@@ -644,6 +644,14 @@ async def camera_stream(
     if effective_camera.enabled and effective_camera.url:
         camera_url = effective_camera.url
         camera_type = effective_camera.camera_type or "mjpeg"
+        if camera_type == "webrtc":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "This camera uses WebRTC and must be opened by the browser. "
+                    "Configure a separate snapshot URL for server-side camera features."
+                ),
+            )
         import time
 
         from backend.app.services.external_camera import generate_mjpeg_stream

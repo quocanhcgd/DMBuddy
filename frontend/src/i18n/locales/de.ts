@@ -1455,7 +1455,7 @@ export default {
       security: 'Sicherheit',
     },
     connectors: {
-      title: 'Remote-Connectors von Printbuddy',
+      title: 'Remote-Connectors von DMbuddy',
       description: 'Computer oder Netzwerke aus der Ferne verbinden, um Drucker ohne gemeinsames IP-Netz zu verwalten.',
       createTitle: 'Anmeldecode erstellen',
       createDescription: 'Geben Sie diesen Code in der Connector-Anwendung ein. Er ist einmalig verwendbar und läuft nach 10 Minuten ab.',

@@ -1455,7 +1455,7 @@ export default {
       security: '安全',
     },
     connectors: {
-      title: 'Printbuddy 遠端連接器',
+      title: 'DMbuddy 遠端連接器',
       description: '連接遠端電腦或網路，即使不在同一個 IP 網段也能管理印表機。',
       createTitle: '建立配對碼',
       createDescription: '在 Connector 應用程式輸入此代碼。僅可使用一次，10 分鐘後到期。',

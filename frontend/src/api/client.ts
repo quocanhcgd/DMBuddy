@@ -296,7 +296,7 @@ export interface Printer {
   auto_archive: boolean;
   reconnect_interval_seconds?: number;
   external_camera_url: string | null;
-  external_camera_type: string | null;  // "mjpeg", "rtsp", "snapshot"
+  external_camera_type: string | null;  // "mjpeg", "rtsp", "snapshot", "usb", "webrtc"
   external_camera_enabled: boolean;
   external_camera_snapshot_url: string | null;  // optional single-frame override (#1177)
   camera_rotation: number;  // 0, 90, 180, 270 degrees
@@ -536,7 +536,7 @@ export interface MoonrakerWebcamCandidate {
   name: string;
   stream_url: string;
   snapshot_url?: string | null;
-  camera_type: 'mjpeg' | 'snapshot';
+  camera_type: 'mjpeg' | 'snapshot' | 'webrtc';
   enabled: boolean;
 }
 

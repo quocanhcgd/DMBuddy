@@ -183,7 +183,7 @@ async def capture_frame(
 
     Args:
         url: Live-stream URL (MJPEG stream, RTSP URL, HTTP snapshot URL, or USB device path).
-        camera_type: "mjpeg", "rtsp", "snapshot", or "usb".
+        camera_type: "mjpeg", "rtsp", "snapshot", "usb", or "webrtc".
         timeout: Connection timeout in seconds.
         snapshot_url: Optional override for single-frame capture. When set, fetched
             via plain HTTP GET regardless of `camera_type`. Bypasses MJPEG warm-up
@@ -206,6 +206,11 @@ async def capture_frame(
         return await _capture_snapshot(url, timeout)
     elif camera_type == "usb":
         return await _capture_usb_frame(url, timeout)
+    elif camera_type == "webrtc":
+        # WebRTC frames are negotiated by the browser.  Backend consumers
+        # (timelapse, plate detection, notifications) must use snapshot_url.
+        logger.warning("WebRTC camera requires a separate snapshot URL for server-side frame capture")
+        return None
     else:
         logger.warning("Unknown camera type: %s", camera_type)
         return None
@@ -507,6 +512,9 @@ async def test_connection(url: str, camera_type: str) -> dict:
         Dict with {success: bool, error?: str, resolution?: str}
     """
     logger.info("Testing camera connection: type=%s, url=%s...", camera_type, url[:50])
+    if camera_type == "webrtc":
+        return await test_webrtc_endpoint(url)
+
     try:
         frame = await capture_frame(url, camera_type, timeout=10)
         logger.info("Capture result: %s bytes", len(frame) if frame else 0)
@@ -539,12 +547,36 @@ async def test_connection(url: str, camera_type: str) -> dict:
         return {"success": False, "error": f"Connection failed: {error_type}"}
 
 
+async def test_webrtc_endpoint(url: str, timeout: int = 10) -> dict:
+    """Probe a browser WebRTC/signaling endpoint without pretending to capture JPEG.
+
+    Fluidd's ``/webcam/webrtc`` endpoint is commonly a browser player page,
+    while WHEP endpoints may respond differently to GET.  We only verify that
+    the HTTP endpoint is reachable; the browser performs the actual WebRTC
+    negotiation when the camera page is opened.
+    """
+    safe_url = _sanitize_camera_url(url, ("http", "https"))
+    if not safe_url:
+        return {"success": False, "error": "Invalid WebRTC URL format"}
+    try:
+        async with (
+            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session,
+            session.get(safe_url, allow_redirects=True) as response,
+        ):
+            if 200 <= response.status < 400:
+                return {"success": True, "protocol": "webrtc", "http_status": response.status}
+            return {"success": False, "error": f"WebRTC endpoint returned HTTP {response.status}"}
+    except (TimeoutError, aiohttp.ClientError, OSError) as exc:
+        logger.warning("WebRTC endpoint probe failed: %s", exc)
+        return {"success": False, "error": f"WebRTC endpoint unavailable: {type(exc).__name__}"}
+
+
 async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> AsyncGenerator[bytes, None]:
     """Generator yielding MJPEG frames for streaming.
 
     Args:
         url: Camera URL or USB device path
-        camera_type: "mjpeg", "rtsp", "snapshot", or "usb"
+        camera_type: "mjpeg", "rtsp", "snapshot", "usb", or "webrtc"
         fps: Target frames per second
 
     Yields:

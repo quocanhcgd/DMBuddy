@@ -383,6 +383,9 @@ function formatKValue(k: number | null | undefined): string {
 
 function inferExternalCameraType(url: string): NonNullable<PrinterCreate['external_camera_type']> {
   const normalized = url.trim().toLowerCase();
+  if (normalized.includes('/webcam/webrtc') || normalized.replace(/\/$/, '').endsWith('/webrtc') || normalized.replace(/\/$/, '').endsWith('/whep')) {
+    return 'webrtc';
+  }
   if (normalized.startsWith('rtsp://') || normalized.startsWith('rtsps://')) {
     return 'rtsp';
   }
@@ -7567,7 +7570,7 @@ function AddPrinterModal({
                     placeholder="http://printer.local/webcam/?action=stream"
                   />
                   <p className="text-xs text-bambu-gray mt-1">
-                    Optional for non-Bambu printers. Add a camera stream or snapshot URL if available; DMbuddy will detect MJPEG, RTSP, snapshot, or USB camera type automatically.
+                    Optional for non-Bambu printers. Add a camera stream or snapshot URL if available; DMbuddy will detect MJPEG, RTSP, WebRTC, snapshot, or USB camera type automatically.
                   </p>
                   {isMoonrakerProvider && (
                     <div className="mt-3 flex flex-col gap-2">

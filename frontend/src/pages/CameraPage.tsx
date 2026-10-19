@@ -69,6 +69,8 @@ export function CameraPage() {
     queryFn: () => api.getPrinter(id),
     enabled: id > 0,
   });
+  const isWebRtcCamera = printer?.external_camera_enabled === true && printer.external_camera_type === 'webrtc';
+  const webRtcUrl = isWebRtcCamera ? printer.external_camera_url : null;
 
   // Fetch printer status for light toggle and skip objects
   const { data: status } = useQuery({
@@ -276,7 +278,7 @@ export function CameraPage() {
   useEffect(() => {
     // Only skip stall check during initial load, reconnecting, or transitioning
     // Continue checking even during streamError to detect recovery
-    if (streamMode !== 'stream' || streamLoading || isReconnecting || transitioning) {
+    if (isWebRtcCamera || streamMode !== 'stream' || streamLoading || isReconnecting || transitioning) {
       if (stallCheckIntervalRef.current) {
         clearInterval(stallCheckIntervalRef.current);
         stallCheckIntervalRef.current = null;
@@ -311,7 +313,7 @@ export function CameraPage() {
         stallCheckIntervalRef.current = null;
       }
     };
-  }, [streamMode, streamLoading, streamError, isReconnecting, transitioning, id, attemptReconnect]);
+  }, [isWebRtcCamera, streamMode, streamLoading, streamError, isReconnecting, transitioning, id, attemptReconnect]);
 
   const handleStreamError = () => {
     setStreamLoading(false);
@@ -604,6 +606,8 @@ export function CameraPage() {
     streamTokenValue ? `${url}&token=${encodeURIComponent(streamTokenValue)}` : withStreamToken(url);
   const currentUrl = transitioning || waitingForStreamToken
     ? ''
+    : isWebRtcCamera && streamMode === 'stream'
+      ? ''
     : streamMode === 'stream'
       ? appendToken(appAssetPath(`/api/v1/printers/${id}/camera/stream?fps=${fps}&t=${imageKey}`))
       : appendToken(appAssetPath(`/api/v1/printers/${id}/camera/snapshot?t=${imageKey}`));
@@ -768,22 +772,35 @@ export function CameraPage() {
               </div>
             </div>
           )}
-          <img
-            ref={imgRef}
-            key={imageKey}
-            src={currentUrl}
-            alt={t('camera.cameraStream')}
-            className="max-w-full max-h-full object-contain select-none"
-            style={{
-              transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px) rotate(${printer?.camera_rotation || 0}deg)`,
-              ...(printer?.camera_rotation === 90 || printer?.camera_rotation === 270 ? { maxWidth: '100vh', maxHeight: '100vw' } : {}),
-              cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
-            }}
-            onError={currentUrl ? handleStreamError : undefined}
-            onLoad={currentUrl ? handleStreamLoad : undefined}
-            onMouseDown={handleImageMouseDown}
-            draggable={false}
-          />
+          {isWebRtcCamera && streamMode === 'stream' && webRtcUrl ? (
+            <iframe
+              key={imageKey}
+              src={webRtcUrl}
+              title={t('camera.cameraStream')}
+              allow="autoplay; camera; microphone; fullscreen"
+              referrerPolicy="no-referrer"
+              className="w-full h-full min-h-[320px] border-0 bg-black"
+              onLoad={handleStreamLoad}
+              onError={handleStreamError}
+            />
+          ) : (
+            <img
+              ref={imgRef}
+              key={imageKey}
+              src={currentUrl}
+              alt={t('camera.cameraStream')}
+              className="max-w-full max-h-full object-contain select-none"
+              style={{
+                transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px) rotate(${printer?.camera_rotation || 0}deg)`,
+                ...(printer?.camera_rotation === 90 || printer?.camera_rotation === 270 ? { maxWidth: '100vh', maxHeight: '100vw' } : {}),
+                cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
+              }}
+              onError={currentUrl ? handleStreamError : undefined}
+              onLoad={currentUrl ? handleStreamLoad : undefined}
+              onMouseDown={handleImageMouseDown}
+              draggable={false}
+            />
+          )}
 
           {/* Zoom controls */}
           <div className="absolute bottom-4 left-4 flex items-center gap-1.5 bg-black/60 rounded-lg px-2 py-1.5">

@@ -2122,6 +2122,7 @@ export function SettingsPage() {
                                 <option value="rtsp">{t('settings.cameraTypeRtsp')}</option>
                                 <option value="snapshot">{t('settings.cameraTypeSnapshot')}</option>
                                 <option value="usb">{t('settings.cameraTypeUsb')}</option>
+                                <option value="webrtc">{t('settings.cameraTypeWebrtc')}</option>
                               </select>
                               <Button
                                 size="sm"
@@ -2151,7 +2152,7 @@ export function SettingsPage() {
                                 )}
                               </div>
                             )}
-                            {(printer.external_camera_type === 'mjpeg' || printer.external_camera_type === 'rtsp' || printer.external_camera_type === 'usb') && (
+                            {(printer.external_camera_type === 'mjpeg' || printer.external_camera_type === 'rtsp' || printer.external_camera_type === 'usb' || printer.external_camera_type === 'webrtc') && (
                               <div className="space-y-1">
                                 <label className="text-xs text-bambu-gray">{t('settings.cameraSnapshotUrl', 'Snapshot URL (optional)')}</label>
                                 <div className="flex gap-2">

@@ -1459,7 +1459,7 @@ export default {
       security: 'Security',
     },
     connectors: {
-      title: 'Remote Printbuddy Connectors',
+      title: 'Remote DMbuddy Connectors',
       description: 'Connect computers or networks remotely to manage printers without sharing the same IP range.',
       createTitle: 'Create enrollment code',
       createDescription: 'Enter this code in the Connector application. It can be used once and expires after 10 minutes.',
@@ -2174,13 +2174,14 @@ export default {
     cameraOverlayDescription: 'Camera opens in a resizable overlay on the main screen',
     cameraWindowDescription: 'Camera opens in a separate browser window',
     cameraCardDescription: 'Camera expands inside each printer card',
-    externalCamerasDescription: 'Configure external cameras to replace the built-in printer camera. Supports MJPEG streams, RTSP, HTTP snapshots, and USB cameras (V4L2). When enabled, the external camera is used for live view and finish photos.',
+    externalCamerasDescription: 'Configure external cameras to replace the built-in printer camera. Supports MJPEG, RTSP, WebRTC, HTTP snapshots, and USB cameras (V4L2). WebRTC needs a separate snapshot URL for timelapse and plate detection.',
     cameraPlaceholderUsb: 'Device path (/dev/video0)',
     cameraPlaceholderUrl: 'Camera URL (rtsp://... or http://...)',
     cameraTypeMjpeg: 'MJPEG Stream',
     cameraTypeRtsp: 'RTSP Stream',
     cameraTypeSnapshot: 'HTTP Snapshot',
     cameraTypeUsb: 'USB Camera (V4L2)',
+    cameraTypeWebrtc: 'WebRTC (Fluidd/Moonraker)',
     cameraSnapshotUrl: 'Snapshot URL (optional)',
     cameraSnapshotUrlPlaceholder: 'http://192.168.1.61:1984/api/frame.jpeg?src=printer',
     cameraSnapshotUrlHelp: 'Single-frame URL used for notification thumbnails, finish photos, layer-timelapse frames, and plate detection. Timelapse and plate detection each require their own per-printer toggle — this URL is just the image source they pull from when active. Leave blank to capture from the live stream above. Useful for go2rtc (/api/frame.jpeg) and IP cameras with a dedicated snapshot endpoint.',
@@ -2687,6 +2688,7 @@ export default {
       stage: {
         tcp_reachable: 'Network reachability',
         first_frame: 'Frame capture',
+        signaling_endpoint: 'WebRTC signaling endpoint',
         live_stream_active: 'Live stream active',
       },
       summary: {
@@ -2695,6 +2697,7 @@ export default {
         printer_unreachable: 'Printer is not reachable. Check the IP address, network connection, and that the printer is powered on.',
         camera_port_closed: 'Printer is reachable but the camera port is closed. Make sure LAN-only mode and Developer Mode are enabled in the printer settings.',
         no_frame: 'Connected to the camera but no frames were received. Try again, or check that the camera is enabled in the printer settings.',
+        webrtc_endpoint_unavailable: 'The WebRTC endpoint could not be reached. Check the URL, HTTPS/CORS settings, and that the Fluidd camera player is available from this browser.',
         unknown_failure: 'Camera diagnostic failed for an unknown reason. Check the support log for details.',
       },
       meta: {

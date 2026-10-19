@@ -221,7 +221,7 @@ def _prusalink_provider_camera_source(printer: Any) -> EffectiveCameraSource | N
 
     snapshot_url = str(options.get("camera_snapshot_url") or options.get("prusalink_camera_snapshot_url") or "").strip()
     camera_type = str(options.get("camera_type") or options.get("prusalink_camera_type") or "").strip().lower()
-    if camera_type not in {"mjpeg", "rtsp", "snapshot", "usb"}:
+    if camera_type not in {"mjpeg", "rtsp", "snapshot", "usb", "webrtc"}:
         normalized = camera_url.lower().split("?", 1)[0]
         if normalized.startswith(("rtsp://", "rtsps://")):
             camera_type = "rtsp"

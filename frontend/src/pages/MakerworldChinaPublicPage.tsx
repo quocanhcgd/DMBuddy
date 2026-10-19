@@ -43,7 +43,7 @@ export function MakerworldChinaPublicPage() {
     <main className="min-h-screen bg-bambu-dark text-bambu-gray-light">
       <header className="border-b border-bambu-gray-dark/30">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-          <a href="/" className="font-semibold tracking-wide text-white">Printbuddy</a>
+          <a href="/" className="font-semibold tracking-wide text-white">DMbuddy</a>
           <span className="inline-flex items-center gap-2 text-sm text-bambu-gray">
             <span className="h-2 w-2 rounded-full bg-status-ok" /> MakerWorld China
           </span>

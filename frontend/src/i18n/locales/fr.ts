@@ -1455,7 +1455,7 @@ export default {
       security: 'Sécurité',
     },
     connectors: {
-      title: 'Connecteurs distants Printbuddy',
+      title: 'Connecteurs distants DMbuddy',
       description: 'Connectez des ordinateurs ou réseaux distants pour gérer les imprimantes sans partager la même plage IP.',
       createTitle: 'Créer un code d’inscription',
       createDescription: 'Saisissez ce code dans l’application Connector. Il est utilisable une fois et expire après 10 minutes.',

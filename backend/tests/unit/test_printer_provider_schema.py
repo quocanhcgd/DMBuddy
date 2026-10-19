@@ -39,6 +39,18 @@ def test_printer_create_accepts_klipper_provider_metadata():
     assert printer.external_camera_type == "mjpeg"
 
 
+def test_klipper_webrtc_camera_url_is_not_treated_as_mjpeg():
+    printer = PrinterCreate(
+        **_printer_payload(
+            provider="fluidd",
+            api_url="http://192.168.0.38:7125",
+            external_camera_url="http://192.168.0.38/webcam/webrtc",
+        )
+    )
+
+    assert printer.external_camera_type == "webrtc"
+
+
 def test_klipper_printer_can_be_created_without_bambu_serial_or_access_code():
     printer = PrinterCreate(
         name="Voron 2.4",

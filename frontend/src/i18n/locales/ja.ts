@@ -1454,7 +1454,7 @@ export default {
       security: 'セキュリティ',
     },
     connectors: {
-      title: 'PrintbuddyリモートConnector',
+      title: 'DMbuddyリモートConnector',
       description: '同じIP範囲にいないコンピューターやネットワークからプリンターを管理できます。',
       createTitle: '登録コードを作成',
       createDescription: 'Connectorアプリにこのコードを入力してください。1回だけ使用でき、10分で期限切れになります。',

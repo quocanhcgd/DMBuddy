@@ -43,7 +43,12 @@ def _synthetic_elegoo_sdcp_serial(value: object) -> str:
 
 
 def infer_external_camera_type(camera_url: str) -> str:
-    lower_url = camera_url.lower()
+    lower_url = camera_url.lower().rstrip("/")
+    # Fluidd/Mainsail installations commonly expose a browser WebRTC player
+    # at /webcam/webrtc.  This is not an MJPEG resource and must be rendered
+    # by a browser player instead of the backend <img>/FFmpeg pipeline.
+    if "/webcam/webrtc" in lower_url or lower_url.endswith(("/webrtc", "/whep")):
+        return "webrtc"
     if lower_url.startswith(("rtsp://", "rtsps://")):
         return "rtsp"
     if lower_url.startswith("/dev/video") or lower_url.startswith("usb://"):
@@ -169,7 +174,7 @@ class PrinterBase(BaseModel):
     auto_archive: bool = True
     reconnect_interval_seconds: int = Field(default=30, ge=10, le=3600)
     external_camera_url: str | None = None
-    external_camera_type: str | None = None  # "mjpeg", "rtsp", "snapshot", "usb"
+    external_camera_type: str | None = None  # "mjpeg", "rtsp", "snapshot", "usb", "webrtc"
     external_camera_enabled: bool = False
     external_camera_snapshot_url: str | None = None  # Optional single-frame override; #1177
     camera_rotation: int = 0  # 0, 90, 180, 270 degrees

@@ -1455,7 +1455,7 @@ export default {
       security: '安全',
     },
     connectors: {
-      title: 'Printbuddy 远程连接器',
+      title: 'DMbuddy 远程连接器',
       description: '连接远程计算机或网络，无需与服务器处于同一 IP 网段即可管理打印机。',
       createTitle: '创建配对码',
       createDescription: '在 Connector 应用中输入此代码。代码只能使用一次，10 分钟后过期。',

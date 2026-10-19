@@ -1455,7 +1455,7 @@ export default {
       security: 'Sicurezza',
     },
     connectors: {
-      title: 'Connector remoti Printbuddy',
+      title: 'Connector remoti DMbuddy',
       description: 'Collega computer o reti remote per gestire le stampanti senza condividere lo stesso intervallo IP.',
       createTitle: 'Crea codice di registrazione',
       createDescription: 'Inserisci questo codice nell’app Connector. È utilizzabile una sola volta e scade dopo 10 minuti.',

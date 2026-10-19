@@ -212,6 +212,8 @@ def _summary_for_stages(stages: list[CameraDiagnoseStage]) -> str:
             return "camera_port_closed"
         if stage.code == "tcp_unreachable":
             return "printer_unreachable"
+        if stage.code == "webrtc_endpoint":
+            return "webrtc_endpoint_unavailable"
         if stage.code in ("no_frame", "capture_exception"):
             return "no_frame"
         return "unknown_failure"
@@ -228,6 +230,23 @@ async def _check_first_external_frame(
     the same helper used by /camera/stream and /camera/snapshot."""
     started = time.monotonic()
     try:
+        if camera_type == "webrtc":
+            from backend.app.services.external_camera import test_webrtc_endpoint
+
+            probe = await test_webrtc_endpoint(camera_url, timeout)
+            if probe.get("success"):
+                return CameraDiagnoseStage(
+                    name="signaling_endpoint",
+                    status="ok",
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                )
+            return CameraDiagnoseStage(
+                name="signaling_endpoint",
+                status="failed",
+                duration_ms=int((time.monotonic() - started) * 1000),
+                code="webrtc_endpoint",
+            )
+
         from backend.app.services.external_camera import capture_frame
 
         jpeg = await capture_frame(
