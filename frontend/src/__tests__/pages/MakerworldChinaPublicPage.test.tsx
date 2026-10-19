@@ -62,6 +62,7 @@ describe('MakerworldChinaPublicPage', () => {
     const footer = screen.getByRole('contentinfo');
     expect(footer).toHaveTextContent('© 2026. Bản quyền thuộc về DM2026.');
     expect(await screen.findByRole('contentinfo')).toHaveTextContent('Phiên bản v0.2.5.4 (abc1234)');
+    expect(screen.getByRole('link', { name: 'Ủng hộ' })).toHaveAttribute('href', '/support');
     await userEvent.click(screen.getByRole('button', { name: /Xem mẫu/i }));
 
     expect(await screen.findByRole('heading', { name: 'Seed Starter' })).toBeInTheDocument();

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import DOMPurify from 'dompurify';
 import JSZip from 'jszip';
-import { AlertCircle, Download, ExternalLink, LoaderCircle, Search } from 'lucide-react';
+import { AlertCircle, Download, ExternalLink, Heart, LoaderCircle, Search } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api, type MakerworldResolvedModel } from '../api/client';
 import { Button } from '../components/Button';
@@ -94,9 +94,18 @@ export function MakerworldChinaPublicPage() {
       <header className="border-b border-bambu-gray-dark/30">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
           <a href="/" className="font-semibold tracking-wide text-white">DMbuddy</a>
-          <span className="inline-flex items-center gap-2 text-sm text-bambu-gray">
-            <span className="h-2 w-2 rounded-full bg-status-ok" /> MakerWorld China
-          </span>
+          <div className="flex items-center gap-4">
+            <span className="hidden items-center gap-2 text-sm text-bambu-gray sm:inline-flex">
+              <span className="h-2 w-2 rounded-full bg-status-ok" /> MakerWorld China
+            </span>
+            <a
+              href="/support"
+              className="inline-flex min-h-10 items-center gap-2 rounded-md border border-bambu-gray-dark/50 px-3 text-sm font-medium text-white transition-colors hover:border-rose-400/60 hover:text-rose-300"
+            >
+              <Heart className="h-4 w-4" />
+              Ủng hộ
+            </a>
+          </div>
         </div>
       </header>
 

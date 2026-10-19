@@ -20,6 +20,7 @@ import { GroupEditPage } from './pages/GroupEditPage';
 import InventoryPage from './pages/InventoryPage';
 import { MakerworldPage } from './pages/MakerworldPage';
 import { MakerworldChinaPublicPage } from './pages/MakerworldChinaPublicPage';
+import { SupportPage } from './pages/SupportPage';
 import { SystemInfoPage } from './pages/SystemInfoPage';
 import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
@@ -169,6 +170,7 @@ function App() {
 
                 {/* Standalone China MakerWorld download page; backend uses its shared China account. */}
                 <Route path="/makerworld-cn" element={<MakerworldChinaPublicPage />} />
+                <Route path="/support" element={<SupportPage />} />
 
                 {/* Camera page - standalone, no layout, no WebSocket (doesn't need real-time updates) */}
                 <Route path="/camera/:printerId" element={<CameraPage />} />
