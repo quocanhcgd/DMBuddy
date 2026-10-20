@@ -647,6 +647,22 @@ class TestFetchThumbnail:
         assert content_type == "image/jpeg"
 
     @pytest.mark.asyncio
+    async def test_accepts_full_resolution_profile_cover_over_10_mb(self, service):
+        """MakerWorld profile covers can be full-resolution photos around 16 MB."""
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.headers = {"content-type": "image/jpeg"}
+        resp.content = b"\xff\xd8\xff" + b"x" * (11 * 1024 * 1024)
+        service._client.get.return_value = resp
+
+        payload, content_type = await service.fetch_thumbnail(
+            "https://makerworld.bblmw.cn/makerworld/model/X/cover.jpg"
+        )
+
+        assert len(payload) == 11 * 1024 * 1024 + 3
+        assert content_type == "image/jpeg"
+
+    @pytest.mark.asyncio
     async def test_infers_mime_from_extension_when_cdn_lies(self, service):
         """MakerWorld's CDN returns application/octet-stream for real PNG/JPG
         files. Relying on upstream content-type alone would fail every

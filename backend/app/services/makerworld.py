@@ -42,6 +42,7 @@ MAKERWORLD_CDN_HOSTS = (
     "public-cdn.bblmw.com",
     "makerworld.bblmw.cn",
     "public-cdn.bblmw.cn",
+    "store.bblcdn.com",
 )
 
 # China-region MakerWorld downloads are currently signed on this Bambu CDN
@@ -73,7 +74,7 @@ _CLIENT_HEADERS = {
 _MODEL_ID_RE = re.compile(r"/models/(\d+)")
 _PROFILE_ID_RE = re.compile(r"#profileId[-=](\d+)")
 _MAX_3MF_BYTES = 200 * 1024 * 1024  # 200 MB hard cap
-_MAX_THUMBNAIL_BYTES = 10 * 1024 * 1024  # 10 MB hard cap — MakerWorld's "thumbnails" can be 2–3 MB source images
+_MAX_THUMBNAIL_BYTES = 25 * 1024 * 1024  # MakerWorld profile covers can be full-resolution photos (>15 MB)
 _IMAGE_EXT_TO_MIME = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -569,7 +570,7 @@ class MakerWorldService:
 
         Validates that the URL's host is one of the known MakerWorld CDN
         hosts (SSRF guard — same allowlist as :meth:`download_3mf`). Caps
-        payload at 5 MB. Returns ``(bytes, content_type)``; content type
+        payload at 25 MB. Returns ``(bytes, content_type)``; content type
         defaults to ``image/jpeg`` if the upstream didn't set one.
         """
         try:

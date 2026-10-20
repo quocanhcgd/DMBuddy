@@ -252,9 +252,15 @@ class TestResolve:
                         "modelInfo": {
                             "compatibility": ["A1"],
                             "otherCompatibility": ["H2D", "P1S"],
-                            "plates": [{"thumbnail": {"url": "https://makerworld.bblmw.com/preview.png"}}],
-                        }
+                            "plates": [
+                                {"thumbnail": {"url": "https://makerworld.bblmw.com/preview.png"}, "prediction": 1200},
+                                {"prediction": 2400},
+                            ],
+                        },
                     },
+                    "prediction": 3600,
+                    "ratingScoreTotal": 5,
+                    "ratingCount": 1,
                 },
                 {
                     "id": 1452158,
@@ -287,6 +293,10 @@ class TestResolve:
         assert by_id[1452154]["compatibility"] == ["A1"]
         assert by_id[1452154]["otherCompatibility"] == ["H2D", "P1S"]
         assert by_id[1452154]["thumbnailUrl"] == "https://makerworld.bblmw.com/preview.png"
+        assert by_id[1452154]["plateCount"] == 2
+        assert by_id[1452154]["printTimeSeconds"] == 3600
+        assert by_id[1452154]["ratingScoreTotal"] == 5
+        assert by_id[1452154]["ratingCount"] == 1
         assert by_id[1452158]["compatibility"] == ["X1 Carbon"]
         assert by_id[1452158]["otherCompatibility"] == []
 
