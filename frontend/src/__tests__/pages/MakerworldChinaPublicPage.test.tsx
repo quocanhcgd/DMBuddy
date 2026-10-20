@@ -27,7 +27,7 @@ describe('MakerworldChinaPublicPage', () => {
           design: {
             title: 'Seed Starter',
             designCreator: { name: 'Maker' },
-            summary: '<p>Printable seed tray</p><script>window.pwned = true</script>',
+            summary: '<p>Printable seed tray</p><img src="https://makerworld.bblmw.com/description-large.jpg" width="2400" height="1800"><script>window.pwned = true</script>',
             downloadCount: 1234,
             license: 'CC BY-NC-SA',
             designExtension: {
@@ -77,8 +77,7 @@ describe('MakerworldChinaPublicPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /Xem mẫu/i }));
 
     expect(await screen.findByRole('heading', { name: 'Seed Starter' })).toBeInTheDocument();
-    expect(screen.getByText('Printable seed tray')).toBeInTheDocument();
-    expect(screen.getByText('Printable seed tray').parentElement).toHaveClass('line-clamp-3');
+    expect(screen.queryByText('Printable seed tray')).not.toBeInTheDocument();
     expect(screen.queryByText(/window.pwned/)).not.toBeInTheDocument();
     expect(screen.getByText('1,234 lượt tải')).toBeInTheDocument();
     expect(screen.getByText('Giấy phép: CC BY-NC-SA')).toBeInTheDocument();
@@ -103,6 +102,7 @@ describe('MakerworldChinaPublicPage', () => {
     const descriptionPanel = screen.getByRole('tabpanel');
     expect(within(descriptionPanel).getByText('Printable seed tray')).toBeInTheDocument();
     expect(within(descriptionPanel).getByText('Printable seed tray').parentElement).not.toHaveClass('line-clamp-3');
+    expect(descriptionPanel.querySelector('.makerworld-description img')).toHaveAttribute('src', expect.stringContaining('/api/v1/makerworld/thumbnail?url='));
 
     await userEvent.click(screen.getByRole('tab', { name: 'Vật tư yêu cầu' }));
     expect(screen.getByText('M3x8 screws')).toBeInTheDocument();

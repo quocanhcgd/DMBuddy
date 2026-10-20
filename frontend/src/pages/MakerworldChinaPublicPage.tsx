@@ -191,12 +191,6 @@ export function MakerworldChinaPublicPage() {
                   {license && <span>Giấy phép: {license}</span>}
                   <span>Mã mẫu {resolved.model_id}</span>
                 </div>
-                {summary && (
-                  <div
-                    className="makerworld-summary prose prose-sm mt-3 line-clamp-3 max-w-4xl overflow-hidden text-bambu-gray-light dark:prose-invert"
-                    dangerouslySetInnerHTML={{ __html: safeHtml(summary) }}
-                  />
-                )}
                 <a
                   className="mt-3 inline-flex items-center gap-1.5 text-xs text-bambu-gray-light hover:text-bambu-green"
                   href={`https://makerworld.cn/zh/models/${resolved.model_id}`}
@@ -349,7 +343,7 @@ export function MakerworldChinaPublicPage() {
                 <h2 className="mb-4 text-base font-semibold text-white">Mô tả, giới thiệu</h2>
                 {summary ? (
                   <div
-                    className="makerworld-summary prose prose-sm max-w-4xl text-bambu-gray-light dark:prose-invert"
+                    className="makerworld-summary makerworld-description prose prose-sm max-w-4xl text-bambu-gray-light dark:prose-invert"
                     dangerouslySetInnerHTML={{ __html: safeHtml(summary) }}
                   />
                 ) : <p className="py-5 text-sm text-bambu-gray">Mẫu này chưa có mô tả.</p>}

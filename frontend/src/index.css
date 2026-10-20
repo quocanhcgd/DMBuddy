@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+.makerworld-description img {
+  display: block;
+  max-width: 100%;
+  max-height: min(70vh, 640px);
+  height: auto;
+  object-fit: contain;
+  margin-inline: auto;
+}
+
 /* Inter, self-hosted (#1460).  Printbuddy is a local-first, offline-capable PWA;
    pulling the font from fonts.googleapis.com at runtime broke the install on
    Android (CSP-blocked cross-origin fetch) and meant the UI couldn't render
