@@ -16,7 +16,7 @@
 
 [Unit]
 Description=Printbuddy - 3D Printer Management
-Documentation=https://github.com/vmhomelab/Printbuddy
+Documentation=https://github.com/quocanhcgd/DMBuddy
 After=network.target
 
 [Service]

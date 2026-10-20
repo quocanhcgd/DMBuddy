@@ -109,8 +109,9 @@ services:
       #- DB_POOL_RECYCLE=1800
       # External library folders are disabled unless their host paths live
       # under this colon-separated allowlist. Example:
-      # PRINTBUDDY_EXTERNAL_ROOTS=/mnt/prints:/srv/print-library
-      #- PRINTBUDDY_EXTERNAL_ROOTS=
+      # External library folders are disabled when both values are empty.
+      - DMBUDDY_EXTERNAL_ROOTS=${DMBUDDY_EXTERNAL_ROOTS:-}
+      - PRINTBUDDY_EXTERNAL_ROOTS=${PRINTBUDDY_EXTERNAL_ROOTS:-}
       #
       # Slicer API sidecar (optional — Settings → "Use Slicer API" toggles this on).
       # Default points at the OrcaSlicer sidecar on the docker host; change if you

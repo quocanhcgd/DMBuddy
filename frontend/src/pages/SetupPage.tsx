@@ -78,7 +78,7 @@ export function SetupPage() {
         <div className="text-center">
           <div className="flex items-center justify-center gap-3 mb-6" aria-label="DMbuddy">
             <img
-              src={appAssetPath('/img/printbuddy_icon.png')}
+              src={appAssetPath('/img/android-chrome-192x192.png')}
               alt="DMbuddy app icon"
               className="h-12 w-12 rounded-xl object-contain"
             />

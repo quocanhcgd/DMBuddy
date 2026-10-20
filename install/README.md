@@ -8,12 +8,12 @@ Interactive installation scripts for Printbuddy with support for both native and
 
 **Linux/macOS:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/quocanhcgd/Printbuddy/main/install/docker-install.sh -o docker-install.sh && chmod +x docker-install.sh && ./docker-install.sh
+curl -fsSL https://raw.githubusercontent.com/quocanhcgd/DMBuddy/main/install/docker-install.sh -o docker-install.sh && chmod +x docker-install.sh && ./docker-install.sh
 ```
 
 **Windows (Command Prompt or PowerShell):**
 ```cmd
-powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/quocanhcgd/Printbuddy/main/install/docker-install.ps1 -OutFile docker-install.ps1; .\docker-install.ps1"
+powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/quocanhcgd/DMBuddy/main/install/docker-install.ps1 -OutFile docker-install.ps1; .\docker-install.ps1"
 ```
 
 The customized repository publishes its image to `ghcr.io/quocanhcgd/printbuddy`.
@@ -26,7 +26,7 @@ procedure in `docs/deploy-new-server.md`.
 
 **Linux/macOS:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/quocanhcgd/Printbuddy/main/install/install.sh -o install.sh && chmod +x install.sh && ./install.sh
+curl -fsSL https://raw.githubusercontent.com/quocanhcgd/DMBuddy/main/install/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 ```
 
 For a complete Ubuntu native (non-Docker) procedure using the customized
@@ -214,7 +214,7 @@ docker compose logs -f      # View logs
 
 **Native installation:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/quocanhcgd/Printbuddy/main/install/update.sh -o update.sh
+curl -fsSL https://raw.githubusercontent.com/quocanhcgd/DMBuddy/main/install/update.sh -o update.sh
 chmod +x update.sh
 sudo ./update.sh
 ```
@@ -304,5 +304,5 @@ sudo lsof -i :8000  # Linux/macOS
 
 ## Support
 
-- **Documentation:** https://github.com/vmhomelab/Printbuddy#readme
-- **Issues:** https://github.com/vmhomelab/Printbuddy/issues
+- **Documentation:** https://github.com/quocanhcgd/DMBuddy#readme
+- **Issues:** https://github.com/quocanhcgd/DMBuddy/issues

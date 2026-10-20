@@ -121,7 +121,7 @@ describe('StreamOverlayPage', () => {
       await waitFor(() => {
         const logo = screen.getByAltText('DMbuddy');
         const link = logo.closest('a');
-        expect(link).toHaveAttribute('href', 'https://github.com/vmhomelab/Printbuddy');
+        expect(link).toHaveAttribute('href', 'https://github.com/quocanhcgd/DMBuddy');
       });
     });
   });

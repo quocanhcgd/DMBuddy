@@ -116,7 +116,7 @@ class OpenFilamentDatabaseClient:
         self.timeout = timeout
         self.headers = {
             "Accept": "application/json",
-            "User-Agent": f"PrintBuddy/{APP_VERSION} (+https://github.com/vmhomelab/PrintBuddy)",
+            "User-Agent": f"DMbuddy/{APP_VERSION} (+https://github.com/quocanhcgd/DMBuddy)",
         }
 
     async def _get_json(self, path: str) -> dict[str, Any]:

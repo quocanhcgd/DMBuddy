@@ -1,6 +1,6 @@
-// Printbuddy Service Worker
-const CACHE_NAME = 'printbuddy-v1';
-const STATIC_CACHE = 'printbuddy-static-v1';
+// DMbuddy Service Worker
+const CACHE_NAME = 'dmbuddy-v1';
+const STATIC_CACHE = 'dmbuddy-static-v1';
 
 // Static assets to cache on install
 const STATIC_ASSETS = [
@@ -12,7 +12,8 @@ const STATIC_ASSETS = [
   '/img/android-chrome-192x192.png',
   '/img/android-chrome-512x512.png',
   '/img/apple-touch-icon.png',
-  '/img/printbuddy_logo_dark_transparent.png',
+  '/img/android-chrome-192x192-dark.png',
+  '/img/android-chrome-192x192.png',
   '/img/dmbuddy-logo-dark.svg',
   '/img/dmbuddy-logo-light.svg',
   // Self-hosted Inter font (#1460) - cached so the UI renders offline.

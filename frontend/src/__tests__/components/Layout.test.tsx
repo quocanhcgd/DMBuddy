@@ -37,7 +37,7 @@ describe('Layout', () => {
           display_version: '0.1.6 (abc1234)',
           source_ref: 'abc1234567890abc1234567890abc1234567890ab',
           source_ref_short: 'abc1234',
-          repo: 'vmhomelab/Printbuddy',
+          repo: 'quocanhcgd/DMBuddy',
         });
       }),
       http.get('/api/v1/settings/', () => {
@@ -183,7 +183,7 @@ describe('Layout', () => {
       render(<Layout />);
 
       const sourceLink = await screen.findByRole('link', { name: /source code/i });
-      expect(sourceLink).toHaveAttribute('href', 'https://github.com/vmhomelab/Printbuddy');
+      expect(sourceLink).toHaveAttribute('href', 'https://github.com/quocanhcgd/DMBuddy');
     });
   });
 
@@ -229,7 +229,7 @@ describe('Layout', () => {
 
       const logo = await waitFor(() => document.querySelector('aside img[alt="DMbuddy"]')) as HTMLImageElement;
       expect(logo).toBeInTheDocument();
-      expect(logo.getAttribute('src')).toBe('/img/printbuddy_icon_dark.png');
+      expect(logo.getAttribute('src')).toBe('/img/android-chrome-192x192-dark.png');
       expect(logo).toHaveClass('h-8', 'w-8');
     });
 

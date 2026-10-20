@@ -20,7 +20,7 @@ BAMBU_API_BASE_CN = "https://api.bambulab.cn"
 # OrcaSlicer fork was called out for in the May 2026 Bambu Lab blog post
 # ("Setting the record straight on cloud access and community"): we do not
 # introduce ourselves as official Bambu Studio.
-_USER_AGENT = "Printbuddy/1.0 (+https://github.com/vmhomelab/Printbuddy)"
+_USER_AGENT = "DMbuddy/1.0 (+https://github.com/quocanhcgd/DMBuddy)"
 
 # The `/v1/iot-service/api/slicer/setting` endpoint requires a `version` query
 # parameter in the XX.YY.ZZ.WW format Bambu Studio releases use (without it the

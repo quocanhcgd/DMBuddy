@@ -80,7 +80,7 @@ ORCA_INSTANCE_URL = os.environ.get("ORCA_CLOUD_INSTANCE_URL", "").strip().rstrip
 
 # User-Agent deliberately identifies Printbuddy without impersonating Orca's
 # desktop client. It also clears Cloudflare's User-Agent gate in front of the API.
-_USER_AGENT = f"Printbuddy/{APP_VERSION} (+https://github.com/vmhomelab/printbuddy)"
+_USER_AGENT = f"DMbuddy/{APP_VERSION} (+https://github.com/quocanhcgd/DMBuddy)"
 
 # Refresh the access token when it has less than this much life left, so a
 # slow downstream API call doesn't expire the token mid-flight.

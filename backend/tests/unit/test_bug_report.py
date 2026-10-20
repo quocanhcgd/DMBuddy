@@ -34,7 +34,7 @@ class TestBugReportService:
 
         assert result["success"] is True
         assert result["issue_number"] is None
-        assert result["issue_url"].startswith("https://github.com/vmhomelab/Printbuddy/issues/new?")
+        assert result["issue_url"].startswith("https://github.com/quocanhcgd/DMBuddy/issues/new?")
         assert "Test+bug" in result["issue_url"]
         assert "sanitized+log+line" in result["issue_url"]
         assert "screenshot" in result["message"].lower()
@@ -224,7 +224,7 @@ class TestSubmitBugReportRoute:
             mock_submit.return_value = {
                 "success": True,
                 "message": "Created",
-                "issue_url": "https://github.com/vmhomelab/Printbuddy/issues/1",
+                "issue_url": "https://github.com/quocanhcgd/DMBuddy/issues/1",
                 "issue_number": 1,
             }
 

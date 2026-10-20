@@ -220,7 +220,7 @@ export function StreamOverlayPage() {
 
       {/* DMbuddy logo - top right */}
       <a
-        href="https://github.com/vmhomelab/Printbuddy"
+          href="https://github.com/quocanhcgd/DMBuddy"
         target="_blank"
         rel="noopener noreferrer"
         className="absolute top-4 right-4 z-10"

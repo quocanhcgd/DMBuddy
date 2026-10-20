@@ -90,7 +90,7 @@ describe('SettingsPage', () => {
           display_version: '0.2.4.7 (abc1234)',
           source_ref: 'abc1234567890abc1234567890abc1234567890ab',
           source_ref_short: 'abc1234',
-          repo: 'vmhomelab/Printbuddy',
+          repo: 'quocanhcgd/DMBuddy',
         });
       })
     );

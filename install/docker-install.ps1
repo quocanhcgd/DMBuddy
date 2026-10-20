@@ -26,7 +26,7 @@
 
 .EXAMPLE
     Interactive install (cmd or PowerShell):
-      powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/vmhomelab/Printbuddy/main/install/docker-install.ps1 -OutFile docker-install.ps1; .\docker-install.ps1"
+      powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/quocanhcgd/DMBuddy/main/install/docker-install.ps1 -OutFile docker-install.ps1; .\docker-install.ps1"
 
 .EXAMPLE
     Unattended install:
@@ -199,11 +199,11 @@ function Get-ComposeFile {
             git fetch origin
             git reset --hard origin/main
         } else {
-            git clone https://github.com/vmhomelab/Printbuddy.git .
+            git clone https://github.com/quocanhcgd/DMBuddy.git .
         }
     } else {
         Invoke-WebRequest `
-            -Uri 'https://raw.githubusercontent.com/vmhomelab/Printbuddy/main/docker-compose.yml' `
+            -Uri 'https://raw.githubusercontent.com/quocanhcgd/DMBuddy/main/docker-compose.yml' `
             -OutFile 'docker-compose.yml' `
             -UseBasicParsing
     }
@@ -338,7 +338,7 @@ if ($Build) {
     Write-Host "    cd `"$InstallPath`"; $DockerCompose pull; $DockerCompose up -d"
 }
 Write-Host ''
-Write-Host '  Documentation:    https://github.com/vmhomelab/Printbuddy#readme' -ForegroundColor Cyan
+Write-Host '  Documentation:    https://github.com/quocanhcgd/DMBuddy#readme' -ForegroundColor Cyan
 Write-Host ''
 Write-Host '  Note: Printer discovery is unavailable on Docker Desktop.' -ForegroundColor Yellow
 Write-Host '        Add your printers manually by IP address in the UI.' -ForegroundColor Yellow

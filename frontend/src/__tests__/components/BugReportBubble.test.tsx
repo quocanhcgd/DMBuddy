@@ -155,7 +155,7 @@ describe('BugReportBubble', () => {
         return HttpResponse.json({
           success: true,
           message: 'Bug report prepared. Review and submit it on GitHub.',
-          issue_url: 'https://github.com/vmhomelab/Printbuddy/issues/new?title=Bug+report',
+          issue_url: 'https://github.com/quocanhcgd/DMBuddy/issues/new?title=Bug+report',
           issue_number: null,
         });
       })
@@ -185,7 +185,7 @@ describe('BugReportBubble', () => {
         expect(screen.getAllByText(/prepared/i).length).toBeGreaterThan(0);
         expect(screen.getByRole('link', { name: /open github issue/i })).toHaveAttribute(
           'href',
-          'https://github.com/vmhomelab/Printbuddy/issues/new?title=Bug+report'
+          'https://github.com/quocanhcgd/DMBuddy/issues/new?title=Bug+report'
         );
         expect(screen.queryByText(/#42/)).not.toBeInTheDocument();
       },

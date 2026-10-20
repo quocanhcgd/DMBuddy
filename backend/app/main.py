@@ -338,7 +338,7 @@ if not app_settings.debug:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("paho.mqtt").setLevel(logging.WARNING)
 
-logging.info("Printbuddy starting - debug=%s, log_level=%s", app_settings.debug, log_level_str)
+logging.info("DMbuddy starting - debug=%s, log_level=%s", app_settings.debug, log_level_str)
 
 
 # Track active prints: {(printer_id, filename): archive_id}

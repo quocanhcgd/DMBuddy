@@ -68,7 +68,7 @@ describe('SystemHealthPanel', () => {
     const link = screen.getByRole('link', { name: /How to fix/i });
     expect(link).toHaveAttribute(
       'href',
-      'https://github.com/vmhomelab/Printbuddy/blob/main/DEPLOYMENT.md#wrong-access-code',
+      'https://github.com/quocanhcgd/DMBuddy/blob/main/DEPLOYMENT.md#wrong-access-code',
     );
   });
 });

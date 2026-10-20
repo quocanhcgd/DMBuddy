@@ -1,6 +1,6 @@
 # Triển khai Printbuddy bằng Docker trên máy chủ mới
 
-Hướng dẫn này dùng repository tùy chỉnh `quocanhcgd/Printbuddy`, nhánh `main`,
+Hướng dẫn này dùng repository tùy chỉnh `quocanhcgd/DMBuddy`, nhánh `main`,
 Docker Compose và image do GitHub Actions build/publish lên GHCR tại
 `ghcr.io/quocanhcgd/printbuddy`. Không dùng image Docker Hub của upstream.
 
@@ -26,7 +26,7 @@ Docker. Quyền nhóm `docker` tương đương quyền root trên máy chủ.
 ## 2. Cho máy chủ quyền đọc GitHub
 
 Repository riêng tư cần quyền xác thực. Khuyến nghị tạo SSH deploy key chỉ có
-quyền đọc cho repository `quocanhcgd/Printbuddy`, cài public key vào GitHub,
+quyền đọc cho repository `quocanhcgd/DMBuddy`, cài public key vào GitHub,
 rồi kiểm tra kết nối SSH. Không đặt personal access token trong URL clone,
 `.env`, tài liệu hay lịch sử shell.
 
@@ -41,7 +41,7 @@ Clone repo và chuyển vào thư mục triển khai:
 ```bash
 sudo mkdir -p /opt/printbuddy
 sudo chown "$USER":"$USER" /opt/printbuddy
-git clone --branch main git@github.com:quocanhcgd/Printbuddy.git /opt/printbuddy
+git clone --branch main git@github.com:quocanhcgd/DMBuddy.git /opt/printbuddy
 cd /opt/printbuddy
 ```
 

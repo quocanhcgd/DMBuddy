@@ -23,6 +23,15 @@ import pytest
 from backend.app.services.homeassistant import HomeAssistantService
 
 
+def test_homeassistant_client_disables_tls_verification():
+    service = HomeAssistantService(timeout=7)
+
+    with patch("httpx.AsyncClient") as async_client:
+        service._client()
+
+    async_client.assert_called_once_with(timeout=7, verify=False)
+
+
 def _ha_response(entities: list[dict]) -> MagicMock:
     response = MagicMock()
     response.raise_for_status = MagicMock()

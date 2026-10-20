@@ -133,7 +133,7 @@ class FirmwareCheckService:
                 # Lab firmware wiki — verified 2026-05-12 that the wiki serves
                 # this UA identically to a Chrome UA (same HTML response shape).
                 # No browser impersonation needed for read-only public pages.
-                "User-Agent": "Printbuddy/1.0 (+https://github.com/vmhomelab/Printbuddy)",
+                "User-Agent": "DMbuddy/1.0 (+https://github.com/quocanhcgd/DMBuddy)",
                 # Some Cloudflare bot rules on bambulab.com 403 requests with a
                 # bare UA but no browser-like Accept headers (seen on AU IPs in
                 # #1350). Sending normal Accept hints removes that signal while

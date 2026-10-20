@@ -44,8 +44,8 @@ describe('LoginPage', () => {
       render(<LoginPage />);
 
       const icon = await screen.findByAltText('DMbuddy app icon');
-      expect(icon).toHaveAttribute('src', expect.stringContaining('/img/printbuddy_icon.png'));
-      expect(icon).not.toHaveAttribute('src', expect.stringContaining('printbuddy_logo.svg'));
+      expect(icon).toHaveAttribute('src', expect.stringContaining('/img/android-chrome-192x192.png'));
+      expect(icon).not.toHaveAttribute('src', expect.stringContaining('printbuddy_'));
     });
 
     it('shows the fleet dashboard tagline in the login header', async () => {
@@ -59,7 +59,7 @@ describe('LoginPage', () => {
       render(<LoginPage />);
 
       const sourceLink = await screen.findByRole('link', { name: /source code/i });
-      expect(sourceLink).toHaveAttribute('href', 'https://github.com/vmhomelab/Printbuddy');
+      expect(sourceLink).toHaveAttribute('href', 'https://github.com/quocanhcgd/DMBuddy');
     });
   });
 

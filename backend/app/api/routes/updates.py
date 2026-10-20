@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
-from backend.app.core.config import APP_VERSION, GITHUB_REPO, settings
+from backend.app.core.config import APP_VERSION, GITHUB_REPO, get_compat_env, settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.settings import Settings
@@ -137,7 +137,7 @@ def _get_source_ref() -> str | None:
     usually no usable .git directory at runtime. The add-on Dockerfile exports
     PRINTBUDDY_REF for that case. Native/git installs fall back to reading HEAD.
     """
-    env_ref = os.environ.get("PRINTBUDDY_REF", "").strip()
+    env_ref = get_compat_env("DMBUDDY_REF").strip()
     if env_ref:
         return env_ref
 

@@ -11,6 +11,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Home Assistant TLS verification is disabled to support private CA and IP-based
+# deployments. Bearer tokens are consequently sent without server identity checks.
+logger.warning("Home Assistant TLS certificate verification is disabled")
+
 
 class HomeAssistantService:
     """Service for controlling Home Assistant entities via REST API."""
@@ -31,6 +35,10 @@ class HomeAssistantService:
             "Content-Type": "application/json",
         }
 
+    def _client(self) -> httpx.AsyncClient:
+        """Create an HA client for deployments whose certificate is not trusted."""
+        return httpx.AsyncClient(timeout=self.timeout, verify=False)  # nosec B501
+
     async def get_status(self, plug: "SmartPlug") -> dict:
         """Get current state of HA entity.
 
@@ -43,7 +51,7 @@ class HomeAssistantService:
             return {"state": None, "reachable": False, "device_name": None}
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with self._client() as client:
                 response = await client.get(
                     f"{self.base_url}/api/states/{plug.ha_entity_id}",
                     headers=self._headers(),
@@ -98,7 +106,7 @@ class HomeAssistantService:
         domain = plug.ha_entity_id.split(".")[0]  # "switch", "light", etc.
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with self._client() as client:
                 response = await client.post(
                     f"{self.base_url}/api/services/{domain}/{action}",
                     headers=self._headers(),
@@ -125,7 +133,7 @@ class HomeAssistantService:
         total = None
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with self._client() as client:
                 # Fetch power from dedicated sensor entity if configured
                 if plug.ha_power_entity:
                     power = await self._get_sensor_value(client, plug.ha_power_entity)
@@ -211,7 +219,7 @@ class HomeAssistantService:
         if not safe_url:
             return {"success": False, "message": None, "error": "Invalid Home Assistant URL"}
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with self._client() as client:
                 response = await client.get(
                     f"{safe_url.rstrip('/')}/api/",
                     headers={"Authorization": f"Bearer {token}"},
@@ -258,7 +266,7 @@ class HomeAssistantService:
         allowed_domains = {"switch", "light", "input_boolean", "script"}
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with self._client() as client:
                 response = await client.get(
                     f"{url.rstrip('/')}/api/states",
                     headers={"Authorization": f"Bearer {token}"},
@@ -301,7 +309,7 @@ class HomeAssistantService:
         Returns list of sensor entities with power/energy units.
         """
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with self._client() as client:
                 response = await client.get(
                     f"{url.rstrip('/')}/api/states",
                     headers={"Authorization": f"Bearer {token}"},

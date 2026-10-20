@@ -13,7 +13,7 @@ describe('SetupPage', () => {
 
     const icon = screen.getByAltText('DMbuddy app icon') as HTMLImageElement;
     expect(icon).toBeInTheDocument();
-    expect(icon.getAttribute('src')).toContain('/img/printbuddy_icon.png');
-    expect(icon).not.toHaveAttribute('src', expect.stringContaining('printbuddy_logo.svg'));
+    expect(icon.getAttribute('src')).toContain('/img/android-chrome-192x192.png');
+    expect(icon).not.toHaveAttribute('src', expect.stringContaining('printbuddy_'));
   });
 });

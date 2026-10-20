@@ -16,7 +16,7 @@ type LoginStep = 'credentials' | '2fa' | 'reset-password';
 // Read + remove in one try so all branches in the OIDC useEffect see the same
 // value and a subsequent page load does not replay the flag.
 const REMEMBER_ME_KEY = 'auth_remember_me';
-const SOURCE_CODE_URL = 'https://github.com/vmhomelab/Printbuddy';
+const SOURCE_CODE_URL = 'https://github.com/quocanhcgd/DMBuddy';
 
 function SourceCodeLink() {
   return (
@@ -619,7 +619,7 @@ export function LoginPage() {
         <div className="text-center">
           <div className="flex items-center justify-center gap-3 mb-6" aria-label="DMbuddy">
             <img
-              src={appAssetPath('/img/printbuddy_icon.png')}
+              src={appAssetPath('/img/android-chrome-192x192.png')}
               alt="DMbuddy app icon"
               className="h-12 w-12 rounded-xl object-contain"
             />

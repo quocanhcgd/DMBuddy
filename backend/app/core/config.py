@@ -6,8 +6,15 @@ from pathlib import Path
 from pydantic_settings import BaseSettings
 
 # Application version - single source of truth
-APP_VERSION = "0.2.5.4"
-GITHUB_REPO = "vmhomelab/Printbuddy"
+APP_VERSION = "0.2.5.5"
+GITHUB_REPO = "quocanhcgd/DMBuddy"
+UPSTREAM_GITHUB_REPO = "vmhomelab/Printbuddy"
+
+
+def get_compat_env(name: str, default: str = "") -> str:
+    """Read a DMbuddy environment variable, falling back to its Printbuddy name."""
+    suffix = name.removeprefix("DMBUDDY_").removeprefix("PRINTBUDDY_")
+    return os.environ.get(f"DMBUDDY_{suffix}", os.environ.get(f"PRINTBUDDY_{suffix}", default))
 
 # App directory - where the application is installed (for static files)
 _app_dir = Path(__file__).resolve().parent.parent.parent.parent
@@ -77,7 +84,7 @@ class Settings(BaseSettings):
     db_pool_recycle: int = 1800
     # Colon-separated allowlist for host paths that may be mounted through the
     # external library folder feature. Empty means disabled by default.
-    external_roots: str = os.environ.get("PRINTBUDDY_EXTERNAL_ROOTS", "")
+    external_roots: str = get_compat_env("DMBUDDY_EXTERNAL_ROOTS")
 
     # Logging
     log_level: str = "INFO"  # Override with LOG_LEVEL env var or DEBUG=true
@@ -112,7 +119,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# S6: Warn on unknown MFA_*/PRINTBUDDY_* env vars so typos like MFA_ENCYPTION_KEY
+# S6: Warn on unknown MFA_*/DMBUDDY_*/PRINTBUDDY_* env vars so typos like MFA_ENCYPTION_KEY
 # are not silently swallowed by ``extra = "ignore"``. The original Pydantic
 # behaviour rejected them outright and broke startup (#1219); we now accept
 # them but log every unrecognised one at INFO so operators can spot mistakes.
@@ -122,7 +129,8 @@ _INTENTIONAL_UNSETTINGS = {
     "DATABASE_URL",  # config.py (above)
     "LOG_DIR",  # config.py (above)
     "LOG_LEVEL",  # main.py logging setup
-    "PRINTBUDDY_EXTERNAL_ROOTS",  # config.py field sourced explicitly above
+    "DMBUDDY_EXTERNAL_ROOTS",  # config.py field sourced explicitly above
+    "PRINTBUDDY_EXTERNAL_ROOTS",  # legacy alias for existing installations
     "DISCOVERY_EXTRA_SUBNETS",  # network_utils.py — extra CIDRs for Docker scan UI
     "DISCOVERY_MOONRAKER_PORTS",  # discovery.py — Moonraker scan ports (default 7125,80)
 }
@@ -130,7 +138,7 @@ _INTENTIONAL_UNSETTINGS = {
 _known_settings_fields = {f.upper() for f in settings.model_fields}
 
 for _env_key in os.environ:
-    if _re.match(r"^(MFA_|PRINTBUDDY_)", _env_key, _re.IGNORECASE):
+    if _re.match(r"^(MFA_|DMBUDDY_|PRINTBUDDY_)", _env_key, _re.IGNORECASE):
         _norm = _env_key.upper()
         if _norm not in _known_settings_fields and _norm not in _INTENTIONAL_UNSETTINGS:
             logging.info(

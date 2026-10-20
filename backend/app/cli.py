@@ -6,7 +6,7 @@ import argparse
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Printbuddy command line utilities")
+    parser = argparse.ArgumentParser(description="DMbuddy command line utilities")
     parser.parse_args()
 
 

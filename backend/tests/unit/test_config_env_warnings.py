@@ -24,7 +24,7 @@ def test_unknown_mfa_env_var_logs_info(monkeypatch, caplog):
 
 @pytest.mark.unit
 def test_unknown_printbuddy_env_var_logs_info(monkeypatch, caplog):
-    """An unrecognised PRINTBUDDY_* env var must also be logged."""
+    """An unrecognised legacy PRINTBUDDY_* env var must also be logged."""
     monkeypatch.setenv("PRINTBUDDY_NEW_FEATURE", "v1")
 
     import backend.app.core.config as cfg_mod
@@ -33,6 +33,41 @@ def test_unknown_printbuddy_env_var_logs_info(monkeypatch, caplog):
         importlib.reload(cfg_mod)
 
     assert any("PRINTBUDDY_NEW_FEATURE" in rec.message for rec in caplog.records)
+
+
+@pytest.mark.unit
+def test_unknown_dmbuddy_env_var_logs_info(monkeypatch, caplog):
+    """An unrecognised DMBUDDY_* env var must also be logged."""
+    monkeypatch.setenv("DMBUDDY_NEW_FEATURE", "v1")
+
+    import backend.app.core.config as cfg_mod
+
+    with caplog.at_level(logging.INFO):
+        importlib.reload(cfg_mod)
+
+    assert any("DMBUDDY_NEW_FEATURE" in rec.message for rec in caplog.records)
+
+
+@pytest.mark.unit
+def test_dmbuddy_environment_name_takes_precedence_over_legacy_alias(monkeypatch):
+    """New names win when both the new and legacy env variables are set."""
+    from backend.app.core.config import get_compat_env
+
+    monkeypatch.setenv("DMBUDDY_SAMPLE", "new")
+    monkeypatch.setenv("PRINTBUDDY_SAMPLE", "legacy")
+
+    assert get_compat_env("DMBUDDY_SAMPLE") == "new"
+
+
+@pytest.mark.unit
+def test_printbuddy_environment_name_remains_a_supported_fallback(monkeypatch):
+    """Existing installations can keep their PRINTBUDDY_* environment names."""
+    from backend.app.core.config import get_compat_env
+
+    monkeypatch.delenv("DMBUDDY_SAMPLE", raising=False)
+    monkeypatch.setenv("PRINTBUDDY_SAMPLE", "legacy")
+
+    assert get_compat_env("DMBUDDY_SAMPLE") == "legacy"
 
 
 @pytest.mark.unit

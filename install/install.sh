@@ -4,7 +4,7 @@
 # Supports: Debian/Ubuntu, RHEL/Fedora/CentOS, Arch Linux, macOS
 #
 # Usage:
-#   Interactive:  curl -fsSL https://raw.githubusercontent.com/vmhomelab/Printbuddy/main/install/install.sh -o install.sh && chmod +x install.sh && ./install.sh
+#   Interactive:  curl -fsSL https://raw.githubusercontent.com/quocanhcgd/DMBuddy/main/install/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 #   Unattended:   ./install.sh --path /opt/printbuddy --port 8000 --yes
 #
 # Options:
@@ -58,7 +58,7 @@ PKG_MANAGER=""
 PYTHON_CMD=""
 BRANCH=""
 SERVICE_USER="printbuddy"
-REPOSITORY_URL="${PRINTBUDDY_REPOSITORY_URL:-https://github.com/quocanhcgd/Printbuddy.git}"
+REPOSITORY_URL="${PRINTBUDDY_REPOSITORY_URL:-https://github.com/quocanhcgd/DMBuddy.git}"
 
 # -----------------------------------------------------------------------------
 # Helper Functions
@@ -532,7 +532,7 @@ create_systemd_service() {
     cat > /tmp/printbuddy.service << EOF
 [Unit]
 Description=Printbuddy - Bambu Lab Print Management
-Documentation=https://github.com/vmhomelab/Printbuddy
+Documentation=https://github.com/quocanhcgd/DMBuddy
 After=network.target
 
 [Service]
@@ -926,7 +926,7 @@ main() {
         echo -e "    sudo systemctl restart printbuddy"
     fi
     echo ""
-    echo -e "  ${BOLD}Documentation:${NC}  ${CYAN}https://github.com/vmhomelab/Printbuddy#readme${NC}"
+    echo -e "  ${BOLD}Documentation:${NC}  ${CYAN}https://github.com/quocanhcgd/DMBuddy#readme${NC}"
     echo ""
 }
 

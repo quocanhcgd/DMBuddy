@@ -497,7 +497,7 @@ export function Layout() {
   }, [handleKeyDown]);
 
   const sidebarBrandImagePath = !isSidebarCompact && !sidebarExpanded
-    ? (mode === 'dark' ? '/img/printbuddy_icon_dark.png' : '/img/printbuddy_icon.png')
+    ? (mode === 'dark' ? '/img/android-chrome-192x192-dark.png' : '/img/android-chrome-192x192.png')
     : (mode === 'dark' ? '/img/dmbuddy-logo-dark.svg' : '/img/dmbuddy-logo-light.svg');
 
   return (

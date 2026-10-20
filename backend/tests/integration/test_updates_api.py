@@ -15,10 +15,24 @@ class TestUpdatesAPI:
         assert response.status_code == 200
         result = response.json()
         assert result["version"]
-        assert result["repo"] == "vmhomelab/Printbuddy"
+        assert result["repo"] == "quocanhcgd/DMBuddy"
         assert result["source_ref"] == "1a593e7b9440ce692cf7eddb8006d8f45add755f"
         assert result["source_ref_short"] == "1a593e7"
         assert result["display_version"].endswith("(1a593e7)")
+
+    @pytest.mark.asyncio
+    async def test_new_ref_environment_name_takes_precedence(self, async_client: AsyncClient):
+        with patch.dict(
+            "os.environ",
+            {
+                "DMBUDDY_REF": "2b593e7b9440ce692cf7eddb8006d8f45add755f",
+                "PRINTBUDDY_REF": "1a593e7b9440ce692cf7eddb8006d8f45add755f",
+            },
+            clear=False,
+        ):
+            response = await async_client.get("/api/v1/updates/version")
+        assert response.status_code == 200
+        assert response.json()["source_ref"] == "2b593e7b9440ce692cf7eddb8006d8f45add755f"
 
     @pytest.mark.asyncio
     async def test_apply_update_docker_rejection(self, async_client: AsyncClient):
@@ -501,7 +515,7 @@ class TestUpdatesAPI:
     @pytest.mark.asyncio
     async def test_perform_update_preserves_ssh_origin_when_pointing_at_correct_repo(self, tmp_path):
         """Regression for the developer-checkout footgun: if origin already
-        points at github.com/vmhomelab/Printbuddy via SSH, the updater must
+        points at github.com/quocanhcgd/DMBuddy via SSH, the updater must
         leave it alone instead of clobbering it with HTTPS. Pre-fix, every
         Apply Update click rewrote `git@github.com:...` to `https://...`,
         breaking subsequent `git push` for any developer testing the
@@ -523,7 +537,7 @@ class TestUpdatesAPI:
             # SSH URL. Every other subprocess returns successfully with no
             # output.
             if "get-url" in args and "origin" in args:
-                proc.communicate = AsyncMock(return_value=(b"git@github.com:vmhomelab/Printbuddy.git\n", b""))
+                proc.communicate = AsyncMock(return_value=(b"git@github.com:quocanhcgd/DMBuddy.git\n", b""))
             else:
                 proc.communicate = AsyncMock(return_value=(b"", b""))
             proc.returncode = 0
@@ -622,7 +636,7 @@ class TestUpdatesAPI:
             calls.append({"args": args, "cwd": kwargs.get("cwd")})
             proc = MagicMock()
             if "get-url" in args and "origin" in args:
-                proc.communicate = AsyncMock(return_value=(b"git@github.com:vmhomelab/Printbuddy.git\n", b""))
+                proc.communicate = AsyncMock(return_value=(b"git@github.com:quocanhcgd/DMBuddy.git\n", b""))
             else:
                 proc.communicate = AsyncMock(return_value=(b"", b""))
             proc.returncode = 0

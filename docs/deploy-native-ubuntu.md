@@ -10,7 +10,7 @@ dùng để build frontend.
 - Tối thiểu 2 CPU, 4 GB RAM và khoảng 10 GB trống (nhiều hơn nếu lưu 3MF)
 - Máy chủ có Internet để cài package và clone GitHub
 - Máy chủ có route đến mạng máy in nếu cần kết nối Moonraker/Bambu
-- Repository: `https://github.com/quocanhcgd/Printbuddy.git`
+- Repository: `https://github.com/quocanhcgd/DMBuddy.git`
 
 Đăng nhập SSH và chuyển sang root:
 
@@ -44,13 +44,13 @@ mkdir -p /opt
 
 if [ -d /opt/printbuddy/.git ]; then
   cd /opt/printbuddy
-  git remote set-url origin https://github.com/quocanhcgd/Printbuddy.git
+  git remote set-url origin https://github.com/quocanhcgd/DMBuddy.git
   git fetch origin
   git checkout main
   git reset --hard origin/main
 else
   git clone --branch main \
-    https://github.com/quocanhcgd/Printbuddy.git /opt/printbuddy
+    https://github.com/quocanhcgd/DMBuddy.git /opt/printbuddy
   cd /opt/printbuddy
 fi
 ```

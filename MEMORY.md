@@ -89,7 +89,7 @@ Khi người dùng nói “tiếp tục MakerWorld User Accounts”, tiếp tụ
 
 ## GitHub và đồng bộ mã nguồn
 
-- Repository riêng tư lưu mã nguồn tùy chỉnh: [quocanhcgd/Printbuddy](https://github.com/quocanhcgd/Printbuddy).
+- Repository riêng tư lưu mã nguồn tùy chỉnh: [quocanhcgd/DMBuddy](https://github.com/quocanhcgd/DMBuddy).
 - Local repository dùng nhánh `main`, remote `origin` qua HTTPS và đã push commit khởi tạo.
 - Quy trình cập nhật: kiểm tra thay đổi và secret → chạy test phù hợp → `git add`/`git commit` → `git push origin main`.
 - Không đưa dữ liệu runtime hoặc thông tin nhạy cảm lên GitHub: `data/`, `archive/`, `logs/`, `*.db`, `.env`, credential/token/key runtime đã được loại bởi `.gitignore`.

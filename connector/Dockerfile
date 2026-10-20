@@ -1,8 +1,8 @@
 FROM python:3.12-slim
 
-LABEL org.opencontainers.image.title="Printbuddy Connector" \
+LABEL org.opencontainers.image.title="DMbuddy Connector" \
       org.opencontainers.image.description="Outbound Connector for private printer networks" \
-      org.opencontainers.image.source="https://github.com/quocanhcgd/Printbuddy"
+      org.opencontainers.image.source="https://github.com/quocanhcgd/DMBuddy"
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

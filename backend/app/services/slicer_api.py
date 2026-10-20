@@ -84,7 +84,7 @@ def _parse_bundle_summary(payload: dict) -> BundleSummary:
 
 
 _shared_http_client: httpx.AsyncClient | None = None
-_USER_AGENT = "Printbuddy/1.0 (+https://github.com/vmhomelab/Printbuddy)"
+_USER_AGENT = "DMbuddy/1.0 (+https://github.com/quocanhcgd/DMBuddy)"
 
 
 def _format_sidecar_error(response: httpx.Response) -> str:
