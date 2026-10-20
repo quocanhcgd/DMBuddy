@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, type CSSProperties } from 're
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, RefreshCw, AlertTriangle, Maximize2, Minimize2, GripVertical, WifiOff, ZoomIn, ZoomOut, Fullscreen, Minimize, Stethoscope } from 'lucide-react';
-import { api, getAuthToken, withStreamToken } from '../api/client';
+import { api, getAuthToken, getStreamToken, withStreamToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { ChamberLight } from './icons/ChamberLight';
@@ -46,7 +46,15 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const { hasPermission } = useAuth();
+  const { authEnabled, user, hasPermission } = useAuth();
+
+  const { data: streamTokenData } = useQuery({
+    queryKey: ['camera-stream-token', user?.id ?? null],
+    queryFn: () => api.getCameraStreamToken(),
+    enabled: authEnabled ? !!user : true,
+    staleTime: 50 * 60 * 1000,
+  });
+  const streamTokenValue = streamTokenData?.token ?? getStreamToken();
 
   const isInline = mode === 'inline';
   const minWidth = isInline ? INLINE_MIN_WIDTH : FLOATING_MIN_WIDTH;
@@ -127,6 +135,10 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     queryFn: () => api.getPrinter(printerId),
     enabled: printerId > 0,
   });
+  // WebRTC cameras are browser-native player pages. They cannot be consumed
+  // through the backend MJPEG endpoint (which intentionally returns 409).
+  const isWebRtcCamera = printer?.external_camera_enabled === true && printer.external_camera_type === 'webrtc';
+  const webRtcUrl = isWebRtcCamera ? printer.external_camera_url : null;
 
   // Fetch printer status for light toggle and skip objects
   const { data: status } = useQuery({
@@ -247,7 +259,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
 
   // Stall detection
   useEffect(() => {
-    if (streamLoading || isReconnecting || isMinimized) {
+    if (isWebRtcCamera || streamLoading || isReconnecting || isMinimized) {
       if (stallCheckIntervalRef.current) {
         clearInterval(stallCheckIntervalRef.current);
         stallCheckIntervalRef.current = null;
@@ -277,7 +289,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
         stallCheckIntervalRef.current = null;
       }
     };
-  }, [streamLoading, streamError, isReconnecting, isMinimized, printerId, attemptReconnect]);
+  }, [isWebRtcCamera, streamLoading, streamError, isReconnecting, isMinimized, printerId, attemptReconnect]);
 
   // Fullscreen change listener
   useEffect(() => {
@@ -577,7 +589,12 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     }
   }, [isDragging, isResizing, dragOffset, isInline, minHeight, minWidth]);
 
-  const streamUrl = withStreamToken(`/api/v1/printers/${printerId}/camera/stream?fps=15&t=${imageKey}`);
+  const waitingForStreamToken = authEnabled && !streamTokenValue;
+  const streamUrl = waitingForStreamToken
+    ? ''
+    : streamTokenValue
+      ? `/api/v1/printers/${printerId}/camera/stream?fps=15&t=${imageKey}&token=${encodeURIComponent(streamTokenValue)}`
+      : withStreamToken(`/api/v1/printers/${printerId}/camera/stream?fps=15&t=${imageKey}`);
 
   const containerClassName = isInline
     ? `${isFullscreen ? 'fixed inset-0 z-[100]' : 'relative w-full rounded-lg border border-bambu-dark-tertiary'} bg-bambu-dark-secondary overflow-hidden`
@@ -737,22 +754,35 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
               </div>
             </div>
           )}
-          <img
-            ref={imgRef}
-            key={imageKey}
-            src={streamUrl}
-            alt="Camera stream"
-            className="max-w-full max-h-full object-contain select-none"
-            style={{
-              transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px) rotate(${printer?.camera_rotation || 0}deg)`,
-              ...(printer?.camera_rotation === 90 || printer?.camera_rotation === 270 ? { maxWidth: '100%', maxHeight: '100%' } : {}),
-              cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
-            }}
-            onError={handleStreamError}
-            onLoad={handleStreamLoad}
-            onMouseDown={handleImageMouseDown}
-            draggable={false}
-          />
+          {isWebRtcCamera && webRtcUrl ? (
+            <iframe
+              key={imageKey}
+              src={webRtcUrl}
+              title={t('camera.cameraStream')}
+              allow="autoplay; camera; microphone; fullscreen"
+              referrerPolicy="no-referrer"
+              className="w-full h-full min-h-[220px] border-0 bg-black"
+              onLoad={handleStreamLoad}
+              onError={handleStreamError}
+            />
+          ) : (printer && !waitingForStreamToken ? (
+            <img
+              ref={imgRef}
+              key={imageKey}
+              src={streamUrl}
+              alt="Camera stream"
+              className="max-w-full max-h-full object-contain select-none"
+              style={{
+                transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px) rotate(${printer?.camera_rotation || 0}deg)`,
+                ...(printer?.camera_rotation === 90 || printer?.camera_rotation === 270 ? { maxWidth: '100%', maxHeight: '100%' } : {}),
+                cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
+              }}
+              onError={handleStreamError}
+              onLoad={handleStreamLoad}
+              onMouseDown={handleImageMouseDown}
+              draggable={false}
+            />
+          ) : null)}
 
           {/* Zoom controls */}
           <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/60 rounded px-1.5 py-1 no-drag">
