@@ -41,6 +41,7 @@ describe('MakerworldChinaPublicPage', () => {
               downloadCount: 87,
               compatibility: { devProductName: 'A1 mini' },
               otherCompatibility: [{ devProductName: 'A1' }],
+              thumbnailUrl: 'https://makerworld.bblmw.com/preview.png',
             },
             { id: 2, profileId: 298919564, title: '12 cells' },
           ],
@@ -49,7 +50,7 @@ describe('MakerworldChinaPublicPage', () => {
       }),
     );
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    render(
+    const { container } = render(
       <QueryClientProvider client={queryClient}>
         <MakerworldChinaPublicPage />
       </QueryClientProvider>,
@@ -72,6 +73,7 @@ describe('MakerworldChinaPublicPage', () => {
     expect(screen.getByText('1,234 lượt tải')).toBeInTheDocument();
     expect(screen.getByText('Giấy phép: CC BY-NC-SA')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /9 cells/i })).toBeInTheDocument();
+    expect(container.querySelector('img[src*="preview.png"]')).toBeInTheDocument();
     expect(screen.getByText('Tối ưu cho A1 mini')).toBeInTheDocument();
     expect(screen.getByText('2 loại vật liệu')).toBeInTheDocument();
     expect(screen.getByText('Cần AMS')).toBeInTheDocument();

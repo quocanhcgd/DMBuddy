@@ -559,9 +559,24 @@ async def resolve_url(
             if iid is None:
                 continue
             ext = (di.get("extention") or {}).get("modelInfo") or {}
+            plates = ext.get("plates") or []
+            preview_url = None
+            if isinstance(plates, list):
+                for plate in plates:
+                    if not isinstance(plate, dict):
+                        continue
+                    thumbnail = plate.get("thumbnail")
+                    if isinstance(thumbnail, dict) and isinstance(thumbnail.get("url"), str):
+                        preview_url = thumbnail["url"]
+                        break
+                    top_picture = plate.get("top_picture")
+                    if isinstance(top_picture, dict) and isinstance(top_picture.get("url"), str):
+                        preview_url = top_picture["url"]
+                        break
             compat_by_id[iid] = {
                 "compatibility": ext.get("compatibility"),
                 "otherCompatibility": ext.get("otherCompatibility"),
+                "thumbnailUrl": preview_url,
             }
         for inst in instances:
             if not isinstance(inst, dict):
@@ -571,6 +586,8 @@ async def resolve_url(
             if extra:
                 inst["compatibility"] = extra["compatibility"]
                 inst["otherCompatibility"] = extra["otherCompatibility"]
+                if extra["thumbnailUrl"]:
+                    inst["thumbnailUrl"] = extra["thumbnailUrl"]
 
     # Find every library row whose source_url is either the model-level
     # canonical URL (legacy whole-model imports) or any plate-level URL

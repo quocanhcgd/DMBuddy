@@ -252,6 +252,7 @@ class TestResolve:
                         "modelInfo": {
                             "compatibility": ["A1"],
                             "otherCompatibility": ["H2D", "P1S"],
+                            "plates": [{"thumbnail": {"url": "https://makerworld.bblmw.com/preview.png"}}],
                         }
                     },
                 },
@@ -285,6 +286,7 @@ class TestResolve:
         by_id = {i["id"]: i for i in instances}
         assert by_id[1452154]["compatibility"] == ["A1"]
         assert by_id[1452154]["otherCompatibility"] == ["H2D", "P1S"]
+        assert by_id[1452154]["thumbnailUrl"] == "https://makerworld.bblmw.com/preview.png"
         assert by_id[1452158]["compatibility"] == ["X1 Carbon"]
         assert by_id[1452158]["otherCompatibility"] == []
 

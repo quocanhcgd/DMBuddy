@@ -211,7 +211,7 @@ export function MakerworldChinaPublicPage() {
                   const profileId = numberField(instance.profileId);
                   const instanceTitle = textField(instance.title) || `Bàn in ${index + 1}`;
                   const active = profileId !== null && profileId === selectedProfile;
-                  const thumb = imageUrl(textField(instance.cover));
+                  const thumb = imageUrl(textField(instance.thumbnailUrl) || textField(instance.cover));
                   const materialCount = numberField(instance.materialCnt);
                   const plateDownloads = numberField(instance.downloadCount);
                   const compatibility = instance.compatibility && typeof instance.compatibility === 'object'
