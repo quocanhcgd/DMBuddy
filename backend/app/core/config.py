@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings
 
 # Application version - single source of truth
-APP_VERSION = "0.2.5.5"
+APP_VERSION = "0.2.5.6"
 GITHUB_REPO = "quocanhcgd/DMBuddy"
 UPSTREAM_GITHUB_REPO = "vmhomelab/Printbuddy"
 
@@ -132,7 +132,7 @@ _INTENTIONAL_UNSETTINGS = {
     "DMBUDDY_EXTERNAL_ROOTS",  # config.py field sourced explicitly above
     "PRINTBUDDY_EXTERNAL_ROOTS",  # legacy alias for existing installations
     "DISCOVERY_EXTRA_SUBNETS",  # network_utils.py — extra CIDRs for Docker scan UI
-    "DISCOVERY_MOONRAKER_PORTS",  # discovery.py — Moonraker scan ports (default 7125,80)
+    "DISCOVERY_MOONRAKER_PORTS",  # discovery.py — Moonraker scan ports (default 7125,80,4408)
 }
 
 _known_settings_fields = {f.upper() for f in settings.model_fields}

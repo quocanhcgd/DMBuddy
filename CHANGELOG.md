@@ -5,6 +5,17 @@ The historical upstream changelog is preserved after that section for fork/upstr
 
 ## Printbuddy
 
+### 0.2.5.6 - 2026-10-22
+
+#### Added
+- Added FlashForge AD5M and Creator 5 printer providers, discovery, controls, file operations, upload support, and connector protocol handling.
+- Added Creality K2/K2 Pro/K3 model assets and Creality K3 support for multi-nozzle status, temperatures, fans, chamber light, and CFS-Nano state.
+- Added embedded G-code thumbnail extraction for the file manager and current-print view.
+
+#### Changed
+- Expanded Moonraker discovery and direct connection support to cover Fluidd on port 4408 alongside standard Moonraker ports.
+- Added Klipper manual controls and printer capability detection for the newly supported hardware.
+
 ### Unreleased
 
 #### Changed

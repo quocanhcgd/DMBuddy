@@ -24,6 +24,8 @@ ELEGOO_SDCP_CAMERA_PATH = "/video"
 ELEGOO_SDCP_CAMERA_TYPE = "mjpeg"
 ELEGOO_SDCP_WS_PORT = 3030
 ELEGOO_SDCP_DISCOVERY_PORT = 3000
+FLASHFORGE_AD5M_PROVIDER = "flashforge_ad5m"
+FLASHFORGE_CREATOR5_PROVIDER = "flashforge_creator5"
 ELEGOO_SDCP_DISCOVERY_MESSAGE = b"M99999"
 ELEGOO_SDCP_STATUS_COMMAND = 0
 
@@ -241,12 +243,40 @@ def _prusalink_provider_camera_source(printer: Any) -> EffectiveCameraSource | N
     )
 
 
+def _flashforge_camera_source(printer: Any) -> EffectiveCameraSource | None:
+    provider = str(getattr(printer, "provider", None) or "").strip().lower()
+    if provider not in {FLASHFORGE_AD5M_PROVIDER, FLASHFORGE_CREATOR5_PROVIDER}:
+        return None
+    if str(getattr(printer, "connection_mode", "direct") or "direct").strip().lower() != "direct":
+        return None
+    host = _normalize_host(getattr(printer, "ip_address", None))
+    if not host:
+        return None
+
+    options = _provider_options_dict(printer)
+    try:
+        from backend.app.services.printer_providers.flashforge_contract import validate_flashforge_options
+
+        normalized = validate_flashforge_options(provider, getattr(printer, "model", None), options)
+        port = normalized["camera_port"]
+    except (TypeError, ValueError):
+        return None
+
+    formatted_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    return EffectiveCameraSource(
+        enabled=True,
+        url=f"http://{formatted_host}:{port}/?action=stream",
+        camera_type="mjpeg",
+        snapshot_url=None,
+        derived=True,
+    )
+
+
 def get_effective_camera_source(printer: Any) -> EffectiveCameraSource:
     """Return the camera source Printbuddy should use for a printer.
 
-    Manual external-camera configuration wins. Existing Elegoo SDCP printer rows
-    normally predate camera support and have no external camera URL persisted;
-    for those, derive the validated CC1 MJPEG endpoint from the printer IP.
+    Manual external-camera configuration wins. Provider-specific direct sources
+    are derived only from validated printer host/model/port configuration.
     """
 
     configured_enabled = bool(getattr(printer, "external_camera_enabled", False))
@@ -270,6 +300,10 @@ def get_effective_camera_source(printer: Any) -> EffectiveCameraSource:
     creality_webrtc_camera = _creality_webrtc_provider_camera_source(printer)
     if creality_webrtc_camera:
         return creality_webrtc_camera
+
+    flashforge_camera = _flashforge_camera_source(printer)
+    if flashforge_camera:
+        return flashforge_camera
 
     if is_elegoo_sdcp_provider(getattr(printer, "provider", None)):
         derived_url = build_elegoo_sdcp_camera_url(getattr(printer, "ip_address", None))

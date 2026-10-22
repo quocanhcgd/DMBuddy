@@ -55,9 +55,10 @@ class MoonrakerSubnetScanRequest(BaseModel):
 
     subnet: str  # CIDR notation, e.g., "192.168.1.0/24"
     timeout: float = 1.0  # Connection timeout per host
-    # Ports to probe per host. Default is DISCOVERY_MOONRAKER_PORTS or 7125,80.
-    # Port 80 covers CosmOS / Fluidd reverse-proxies; hits still require
-    # Moonraker-shaped JSON so unrelated HTTP services are ignored.
+    # Ports to probe per host. Default is DISCOVERY_MOONRAKER_PORTS or
+    # 7125,80,4408. Port 80 covers CosmOS / Fluidd reverse-proxies; 4408 is a
+    # candidate for some Creality interfaces, not a K3 guarantee. Hits still
+    # require Moonraker-shaped JSON so unrelated HTTP services are ignored.
     ports: list[int] | None = None
 
 

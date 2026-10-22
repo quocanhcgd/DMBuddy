@@ -91,9 +91,19 @@ describe('getPrinterImage', () => {
         ['Elegoo Neptune 4 Plus', 'elegoo-neptune-4-plus.png'],
         ['Elegoo Neptune 4 Max', 'elegoo-neptune-4-max.png'],
         ['Elegoo Centauri Carbon', 'elegoo-centauri-carbon.png'],
-        ['Creality K1', 'creality-k1.png'],
-        ['Creality K1C', 'creality-k1c.png'],
-        ['Creality K2 Plus', 'creality-k2-plus.png'],
+        ['Creality Ender-3', 'creality-ender-3.png'],
+        ['Creality Ender-3 Pro', 'creality-ender-3-pro.png'],
+        ['Creality Ender-3 V2', 'creality-ender-3-pro-v2.png'],
+        ['Creality Ender-3 S1', 'creality-ender-3-pro-s1.png'],
+        ['Creality Ender-5 Plus', 'creality-ender-5-plus.png'],
+        ['Creality CR-10S Pro', 'creality-cr10s-pro.png'],
+        ['Creality CR-10S Pro V2', 'creality-cr10s-pro-v2.png'],
+        ['Creality K1', 'creality-k1.png?v=2'],
+        ['Creality K1C', 'creality-k1c.png?v=2'],
+        ['Creality K2', 'creality-k2.png?v=2'],
+        ['Creality K2 Pro', 'creality-k2-pro.png?v=2'],
+        ['Creality K2 Plus', 'creality-k2-plus.png?v=2'],
+        ['Creality K3', 'creality-k3-v2.png?v=2'],
         ['Snapmaker U1', 'snapmaker-u1.png'],
         ['Prusa CORE One', 'prusa-core-one.png'],
         ['Prusa MK4S', 'prusa-mk4s.png'],
@@ -119,9 +129,14 @@ describe('getPrinterImage', () => {
       expect(getPrinterImage('Elegoo Centauri')).toBe('/img/printers/default.png');
       expect(getPrinterImage('Prusa MK4')).toBe('/img/printers/prusa-mk4.png');
       expect(getPrinterImage('Prusa MK4S')).toBe('/img/printers/prusa-mk4s.png');
-      expect(getPrinterImage('Creality K1')).toBe('/img/printers/creality-k1.png');
-      expect(getPrinterImage('Creality K1C')).toBe('/img/printers/creality-k1c.png');
-      expect(getPrinterImage('Creality K2 Plus')).toBe('/img/printers/creality-k2-plus.png');
+      expect(getPrinterImage('Creality K1')).toBe('/img/printers/creality-k1.png?v=2');
+      expect(getPrinterImage('Creality K1C')).toBe('/img/printers/creality-k1c.png?v=2');
+      expect(getPrinterImage('K2')).toBe('/img/printers/creality-k2.png?v=2');
+      expect(getPrinterImage('K2 Combo')).toBe('/img/printers/creality-k2.png?v=2');
+      expect(getPrinterImage('Creality K2 Pro')).toBe('/img/printers/creality-k2-pro.png?v=2');
+      expect(getPrinterImage('Creality K2 Plus')).toBe('/img/printers/creality-k2-plus.png?v=2');
+      expect(getPrinterImage('K3')).toBe('/img/printers/creality-k3-v2.png?v=2');
+      expect(getPrinterImage('Creality K3 Combo')).toBe('/img/printers/creality-k3-v2.png?v=2');
       expect(getPrinterImage('Creality K10')).toBe('/img/printers/default.png');
       expect(getPrinterImage('Snapmaker U1')).toBe('/img/printers/snapmaker-u1.png');
       expect(getPrinterImage('Snapmaker U2')).toBe('/img/printers/default.png');

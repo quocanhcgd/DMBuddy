@@ -16,17 +16,36 @@ from pathlib import Path
 
 import httpx
 import websockets
+from pydantic import ValidationError
 
-from connector.discovery import discover_lan, probe_printer_status
-from connector.provider_verification import verify_provider
+from connector.discovery import discover_lan
+from connector.flashforge_control import execute_control
+from connector.flashforge_files import list_flashforge_files
+from connector.flashforge_temperature import execute_temperature
+from connector.flashforge_upload import (
+    MAX_ACTIVE_UPLOAD_SESSIONS,
+    MAX_UPLOAD_STAGING_BYTES,
+    UPLOAD_SESSION_TTL_SECONDS,
+    UploadSession,
+    upload_to_flashforge,
+)
+from connector.provider_verification import get_provider_status, verify_provider
 from connector_protocol import (
     MAX_FRAME_BYTES,
     PROTOCOL_VERSION,
     ConnectorDiscoveryRequest,
     ConnectorDiscoveryResult,
     ConnectorMessage,
+    ConnectorPrinterControlRequest,
+    ConnectorPrinterControlResult,
+    ConnectorPrinterFilesRequest,
+    ConnectorPrinterFilesResult,
     ConnectorPrinterStatusRequest,
     ConnectorPrinterStatusResult,
+    ConnectorPrinterTemperatureRequest,
+    ConnectorPrinterTemperatureResult,
+    ConnectorPrinterUploadRequest,
+    ConnectorPrinterUploadResult,
     ConnectorPrinterVerifyRequest,
     ConnectorPrinterVerifyResult,
 )
@@ -67,6 +86,7 @@ class ConnectorAgent:
         self.credential: str | None = None
         self.stop_event = stop_event or threading.Event()
         self._load_state()
+        self._uploads: dict[str, UploadSession] = {}
 
     def _load_state(self) -> None:
         if not self.state_path.exists():
@@ -135,19 +155,28 @@ class ConnectorAgent:
                     send_lock = asyncio.Lock()
                     heartbeat_task = asyncio.create_task(self._heartbeat_loop(websocket, send_lock))
                     receive_task = asyncio.create_task(self._receive_loop(websocket, send_lock))
+                    upload_cleanup_task = asyncio.create_task(self._upload_cleanup_loop())
                     stop_task = asyncio.create_task(asyncio.to_thread(self.stop_event.wait))
-                    done, pending = await asyncio.wait(
-                        {heartbeat_task, receive_task, stop_task},
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-                    for task in pending:
-                        task.cancel()
-                    await asyncio.gather(*pending, return_exceptions=True)
-                    for task in done:
-                        if task is not stop_task:
-                            task.result()
-                    if stop_task in done:
-                        return
+                    session_tasks = {heartbeat_task, receive_task, upload_cleanup_task, stop_task}
+                    try:
+                        done, pending = await asyncio.wait(
+                            session_tasks,
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                        for task in pending:
+                            task.cancel()
+                        await asyncio.gather(*pending, return_exceptions=True)
+                        for task in done:
+                            if task is not stop_task:
+                                task.result()
+                        if stop_task in done:
+                            return
+                    finally:
+                        for task in session_tasks:
+                            if not task.done():
+                                task.cancel()
+                        await asyncio.gather(*session_tasks, return_exceptions=True)
+                        self._close_uploads()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -181,6 +210,22 @@ class ConnectorAgent:
             except asyncio.TimeoutError:
                 pass
 
+    def _close_uploads(self) -> None:
+        sessions, self._uploads = self._uploads, {}
+        for session in sessions.values():
+            session.close()
+
+    def _cleanup_expired_uploads(self, now: float | None = None) -> int:
+        expired_ids = [upload_id for upload_id, session in self._uploads.items() if session.is_expired(now)]
+        for upload_id in expired_ids:
+            self._uploads.pop(upload_id).close()
+        return len(expired_ids)
+
+    async def _upload_cleanup_loop(self) -> None:
+        while not self.stop_event.is_set():
+            self._cleanup_expired_uploads()
+            await asyncio.sleep(min(30, UPLOAD_SESSION_TTL_SECONDS / 2))
+
     async def _receive_loop(self, websocket: object, send_lock: asyncio.Lock) -> None:
         assert self.connector_id
         while not self.stop_event.is_set():
@@ -193,9 +238,16 @@ class ConnectorAgent:
             message = ConnectorMessage.model_validate_json(raw)
             if message.connector_id != self.connector_id:
                 raise RuntimeError("Connector ID mismatch in server message")
-            if message.type not in {"discovery.request", "printer.verify.request", "printer.status.request"}:
+            if message.type not in {"discovery.request", "printer.verify.request", "printer.status.request", "printer.files.request", "printer.upload.request", "printer.control.request", "printer.temperature.request"}:
                 continue
             request_id = str(message.payload.get("request_id", ""))
+            temperature_heater = message.payload.get("heater")
+            if temperature_heater not in {"nozzle", "bed", "chamber"}:
+                temperature_heater = "unknown"
+            temperature_target = message.payload.get("target")
+            if isinstance(temperature_target, bool) or not isinstance(temperature_target, int) or not 0 <= temperature_target <= 320:
+                temperature_target = 0
+            safe_validation_error = "invalid Connector request"
             try:
                 if message.type == "discovery.request":
                     request = ConnectorDiscoveryRequest.model_validate(message.payload)
@@ -218,18 +270,94 @@ class ConnectorAgent:
                         model=verification.model,
                         error=verification.error,
                     )
-                else:
+                elif message.type == "printer.status.request":
                     request = ConnectorPrinterStatusRequest.model_validate(message.payload)
-                    reachable = await probe_printer_status(request)
+                    status = await get_provider_status(request)
                     result = ConnectorPrinterStatusResult(
                         request_id=request.request_id,
                         status="completed",
-                        connected=reachable,
-                        state="reachable" if reachable else "unreachable",
+                        connected=status.connected,
+                        state=status.state if status.state in {"reachable", "unreachable", "unknown"} else status.state,
+                        telemetry=status.telemetry,
+                        error=status.error,
                     )
+                elif message.type == "printer.files.request":
+                    request = ConnectorPrinterFilesRequest.model_validate(message.payload)
+                    files, completeness, source = await list_flashforge_files(request)
+                    result = ConnectorPrinterFilesResult(
+                        request_id=request.request_id,
+                        status="completed",
+                        path=request.path,
+                        files=files,
+                        completeness=completeness,
+                        source=source,
+                    )
+                elif message.type == "printer.upload.request":
+                    request = ConnectorPrinterUploadRequest.model_validate(message.payload)
+                    self._cleanup_expired_uploads()
+                    if request.phase == "begin":
+                        if request.upload_id in self._uploads:
+                            raise ValueError("Upload ID is already active")
+                        if len(self._uploads) >= MAX_ACTIVE_UPLOAD_SESSIONS:
+                            raise ValueError("Too many active upload sessions")
+                        staged_bytes = sum(item.request.size for item in self._uploads.values())
+                        if staged_bytes + request.size > MAX_UPLOAD_STAGING_BYTES:
+                            raise ValueError("Upload staging size limit exceeded")
+                        self._uploads[request.upload_id] = UploadSession(request)
+                        result = ConnectorPrinterUploadResult(
+                            request_id=request.request_id, upload_id=request.upload_id, status="accepted"
+                        )
+                    elif request.phase == "abort":
+                        session = self._uploads.pop(request.upload_id, None)
+                        if session:
+                            session.close()
+                        result = ConnectorPrinterUploadResult(
+                            request_id=request.request_id, upload_id=request.upload_id, status="aborted"
+                        )
+                    else:
+                        session = self._uploads.get(request.upload_id)
+                        if session is None:
+                            raise ValueError("Upload session was not found")
+                        if request.phase == "chunk":
+                            received = session.accept_chunk(request)
+                            result = ConnectorPrinterUploadResult(
+                                request_id=request.request_id,
+                                upload_id=request.upload_id,
+                                status="accepted",
+                                received_bytes=received,
+                            )
+                        else:
+                            path = session.finish(request)
+                            try:
+                                await upload_to_flashforge(session.request, path)
+                            finally:
+                                session.close()
+                                self._uploads.pop(request.upload_id, None)
+                            result = ConnectorPrinterUploadResult(
+                                request_id=request.request_id,
+                                upload_id=request.upload_id,
+                                status="completed",
+                                received_bytes=session.received,
+                            )
+                else:
+                    if message.type == "printer.control.request":
+                        request = ConnectorPrinterControlRequest.model_validate(message.payload)
+                        before, after, filename = await execute_control(request)
+                        result = ConnectorPrinterControlResult(
+                            request_id=request.request_id, status="completed", action=request.action,
+                            state_before=before, state_after=after, filename=filename,
+                        )
+                    else:
+                        request = ConnectorPrinterTemperatureRequest.model_validate(message.payload)
+                        observed = await execute_temperature(request)
+                        result = ConnectorPrinterTemperatureResult(
+                            request_id=request.request_id, status="completed", heater=request.heater,
+                            target=request.target, observed=observed,
+                        )
             except ValueError as exc:
+                error_message = safe_validation_error if isinstance(exc, ValidationError) else str(exc)
                 if message.type == "discovery.request":
-                    result = ConnectorDiscoveryResult(request_id=request_id, status="failed", error=str(exc))
+                    result = ConnectorDiscoveryResult(request_id=request_id, status="failed", error=error_message)
                 elif message.type == "printer.verify.request":
                     result = ConnectorPrinterVerifyResult(
                         request_id=request_id,
@@ -237,12 +365,38 @@ class ConnectorAgent:
                         provider=str(message.payload.get("provider", "unknown")),
                         protocol="tcp",
                         service="printer-endpoint",
-                        error=str(exc),
+                        error=error_message,
+                    )
+                elif message.type == "printer.status.request":
+                    result = ConnectorPrinterStatusResult(request_id=request_id, status="failed", error=error_message)
+                elif message.type == "printer.upload.request":
+                    upload_id = str(message.payload.get("upload_id", ""))
+                    if message.payload.get("phase") in {"chunk", "finish"}:
+                        session = self._uploads.pop(upload_id, None)
+                        if session:
+                            session.close()
+                    result = ConnectorPrinterUploadResult(
+                        request_id=request_id,
+                        upload_id=upload_id or "unknown",
+                        status="failed",
+                        error=error_message,
+                    )
+                elif message.type == "printer.control.request":
+                    result = ConnectorPrinterControlResult(
+                        request_id=request_id,
+                        status="failed",
+                        action=str(message.payload.get("action", "unknown")),
+                        error=error_message,
+                    )
+                elif message.type == "printer.temperature.request":
+                    result = ConnectorPrinterTemperatureResult(
+                        request_id=request_id, status="failed",
+                        heater=temperature_heater, target=temperature_target, error=error_message,
                     )
                 else:
-                    result = ConnectorPrinterStatusResult(request_id=request_id, status="failed", error=str(exc))
-            except Exception:
-                logger.warning("Connector printer operation failed", exc_info=True)
+                    result = ConnectorPrinterFilesResult(request_id=request_id, status="failed", error=error_message)
+            except Exception as exc:
+                logger.warning("Connector printer operation failed (%s)", type(exc).__name__)
                 if message.type == "discovery.request":
                     result = ConnectorDiscoveryResult(request_id=request_id, status="failed", error="operation failed")
                 elif message.type == "printer.verify.request":
@@ -254,16 +408,46 @@ class ConnectorAgent:
                         service="printer-endpoint",
                         error="operation failed",
                     )
-                else:
+                elif message.type == "printer.status.request":
                     result = ConnectorPrinterStatusResult(
                         request_id=request_id,
                         status="failed",
                         error="operation failed",
                     )
+                elif message.type == "printer.upload.request":
+                    upload_id = str(message.payload.get("upload_id", ""))
+                    if message.payload.get("phase") in {"chunk", "finish"}:
+                        session = self._uploads.pop(upload_id, None)
+                        if session:
+                            session.close()
+                    result = ConnectorPrinterUploadResult(
+                        request_id=request_id,
+                        upload_id=upload_id or "unknown",
+                        status="failed",
+                        error="operation failed",
+                    )
+                elif message.type == "printer.control.request":
+                    result = ConnectorPrinterControlResult(
+                        request_id=request_id,
+                        status="failed",
+                        action=str(message.payload.get("action", "unknown")),
+                        error="operation failed",
+                    )
+                elif message.type == "printer.temperature.request":
+                    result = ConnectorPrinterTemperatureResult(
+                        request_id=request_id, status="failed",
+                        heater=temperature_heater, target=temperature_target, error="operation failed",
+                    )
+                else:
+                    result = ConnectorPrinterFilesResult(request_id=request_id, status="failed", error="operation failed")
             response_type = {
                 "discovery.request": "discovery.result",
                 "printer.verify.request": "printer.verify.result",
                 "printer.status.request": "printer.status.result",
+                "printer.files.request": "printer.files.result",
+                "printer.upload.request": "printer.upload.result",
+                "printer.control.request": "printer.control.result",
+                "printer.temperature.request": "printer.temperature.result",
             }[message.type]
             response = ConnectorMessage(
                 connector_id=self.connector_id,

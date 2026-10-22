@@ -817,6 +817,21 @@ class TestPrinterStateToDict:
         assert result["progress"] == 50
         assert result["temperatures"] == {"nozzle": 200, "bed": 60}
 
+    def test_k3_cfs_nano_is_surfaced_separately_from_ams(self, mock_state):
+        cfs_nano = {
+            "station_type": "CFS-Nano",
+            "state": "connect",
+            "online": True,
+            "slots": [{"slot": "T1A", "material_name": "PLA", "material_code": None, "color": None}],
+        }
+        mock_state.raw_data = {"creality_k3": {"cfs_nano": cfs_nano}}
+
+        result = printer_state_to_dict(mock_state)
+
+        assert result["cfs_nano"] == cfs_nano
+        assert result["ams"] is None
+        assert result["vt_tray"] == []
+
     def test_ams_data_parsing(self, mock_state):
         """Verify AMS data is parsed correctly."""
         mock_state.raw_data = {

@@ -166,6 +166,13 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         except json.JSONDecodeError:
             ams_mapping_parsed = None
 
+    creator5_material_mappings = None
+    if item.creator5_material_mappings:
+        try:
+            creator5_material_mappings = json.loads(item.creator5_material_mappings)
+        except json.JSONDecodeError:
+            creator5_material_mappings = None
+
     # Parse required_filament_types from JSON string
     required_filament_types_parsed = None
     if item.required_filament_types:
@@ -201,6 +208,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "filament_short": bool(item.filament_short),
         "skip_filament_check": bool(item.skip_filament_check),
         "ams_mapping": ams_mapping_parsed,
+        "creator5_material_mappings": creator5_material_mappings,
         "plate_id": item.plate_id,
         "bed_levelling": item.bed_levelling,
         "print_platform_type": item.print_platform_type,
@@ -414,6 +422,11 @@ async def add_to_queue(
         if not assigned_printer:
             raise HTTPException(400, "Printer not found")
 
+    if data.creator5_material_mappings and (
+        assigned_printer is None or assigned_printer.provider != "flashforge_creator5"
+    ):
+        raise HTTPException(400, "Creator 5 material mapping requires an assigned Creator 5 printer")
+
     (
         bed_levelling,
         print_platform_type,
@@ -560,6 +573,11 @@ async def add_to_queue(
             raise HTTPException(status_code=404, detail="Project not found")
 
     ams_mapping_json = json.dumps(data.ams_mapping) if data.ams_mapping else None
+    creator5_material_mappings_json = (
+        json.dumps([mapping.model_dump(by_alias=True) for mapping in data.creator5_material_mappings])
+        if data.creator5_material_mappings
+        else None
+    )
     items = []
     for i in range(quantity):
         item = PrintQueueItem(
@@ -576,6 +594,7 @@ async def add_to_queue(
             manual_start=data.manual_start,
             skip_filament_check=data.skip_filament_check,
             ams_mapping=ams_mapping_json,
+            creator5_material_mappings=creator5_material_mappings_json,
             plate_id=data.plate_id,
             bed_levelling=bed_levelling,
             print_platform_type=print_platform_type,
@@ -968,8 +987,35 @@ async def update_queue_item(
     # Validate new printer_id if being changed (and not None)
     if "printer_id" in update_data and update_data["printer_id"] is not None:
         result = await db.execute(select(Printer).where(Printer.id == update_data["printer_id"]))
-        if not result.scalar_one_or_none():
+        updated_printer = result.scalar_one_or_none()
+        if not updated_printer:
             raise HTTPException(400, "Printer not found")
+    else:
+        updated_printer = None
+
+    effective_mappings = update_data.get("creator5_material_mappings")
+    if "creator5_material_mappings" not in update_data and item.creator5_material_mappings:
+        try:
+            effective_mappings = json.loads(item.creator5_material_mappings)
+        except json.JSONDecodeError:
+            effective_mappings = None
+    effective_printer_id = update_data.get("printer_id", item.printer_id)
+    if effective_mappings:
+        existing_ams_mapping = None
+        if item.ams_mapping:
+            try:
+                existing_ams_mapping = json.loads(item.ams_mapping)
+            except json.JSONDecodeError:
+                existing_ams_mapping = None
+        if update_data.get("ams_mapping", existing_ams_mapping) is not None:
+            raise HTTPException(400, "Creator 5 material mapping cannot be combined with Bambu AMS mapping")
+        if effective_printer_id is None:
+            raise HTTPException(400, "Creator 5 material mapping requires an assigned Creator 5 printer")
+        if updated_printer is None:
+            printer_result = await db.execute(select(Printer).where(Printer.id == effective_printer_id))
+            updated_printer = printer_result.scalar_one_or_none()
+        if updated_printer is None or updated_printer.provider != "flashforge_creator5":
+            raise HTTPException(400, "Creator 5 material mapping requires an assigned Creator 5 printer")
 
     # Validate target_model has active printers
     if "target_model" in update_data and update_data["target_model"]:
@@ -982,6 +1028,12 @@ async def update_queue_item(
     # Serialize ams_mapping to JSON for TEXT column storage
     if "ams_mapping" in update_data:
         update_data["ams_mapping"] = json.dumps(update_data["ams_mapping"]) if update_data["ams_mapping"] else None
+
+    if "creator5_material_mappings" in update_data:
+        mappings = data.creator5_material_mappings
+        update_data["creator5_material_mappings"] = (
+            json.dumps([mapping.model_dump(by_alias=True) for mapping in mappings]) if mappings else None
+        )
 
     # Serialize filament_overrides to JSON for TEXT column storage
     if "filament_overrides" in update_data:

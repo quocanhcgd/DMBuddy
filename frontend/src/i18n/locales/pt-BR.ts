@@ -247,6 +247,23 @@ export default {
     camera: 'âmera',
     skipObject: 'Ignorar objeto',
     reconnect: 'Reconectar',
+    klipper: {
+      manualControls: 'Controles manuais', manualControlsDescription: 'Movimento, extrusão e temperaturas do Klipper', collapsed: 'recolhido', homeAll: 'Referenciar todos os eixos',
+      extrusionLength: 'Comprimento da extrusão', extrusionSpeed: 'Velocidade de extrusão', retract: 'Retrair', extrude: 'Extrudar',
+      nozzle: 'Bico', bed: 'Mesa', set: 'Definir', zOffset: 'Deslocamento Z', saveZOffset: 'Salvar deslocamento Z na configuração',
+      stepperMotors: 'Motores de passo', disableSteppers: 'Desativar motores de passo', millimeters: 'mm', millimetersPerSecond: 'mm por segundo',
+      nozzleTemperatureTarget: 'Temperatura alvo do bico', bedTemperatureTarget: 'Temperatura alvo da mesa',
+      increaseZOffset: 'Aumentar deslocamento Z em {{step}} mm', decreaseZOffset: 'Diminuir deslocamento Z em {{step}} mm',
+      homeXY: 'Referenciar os eixos X e Y', homeAxis: 'Referenciar o eixo {{axis}}',
+    },
+    u1FilamentInExtruder: 'No extrusor',
+    u1FilamentInExtruderHelp: 'O filamento foi carregado pelo alimentador até o extrusor',
+    u1FilamentPreloaded: 'Pré-carregado',
+    u1FilamentPreloadedHelp: 'O filamento está no alimentador, mas ainda não chegou ao extrusor',
+    u1FilamentDetected: 'Detectado',
+    u1FilamentDetectedHelp: 'Filamento detectado neste canal do alimentador',
+    u1FilamentEmpty: 'Vazio',
+    u1FilamentEmptyHelp: 'Nenhum filamento detectado neste canal do alimentador',
     forceRefresh: 'Forçar atualização',
     forceRefreshSuccess: 'Atualização solicitada',
     mqttDebug: 'Depuração MQTT',
@@ -317,6 +334,7 @@ export default {
       failedToStopPrint: 'Falha ao parar impressão',
       failedToPausePrint: 'Falha ao pausar impressão',
       failedToResumePrint: 'Falha ao retomar impressão',
+      deliveryUnknown: 'A impressora pode ter recebido este comando. Verifique o status atual antes de tentar novamente.',
       failedToControlChamberLight: 'Falha ao controlar a luz da câmara',
       failedToSetSpeed: 'Falha ao definir a velocidade de impressão',
       failedToUpdateSetting: 'Falha ao atualizar configuração',
@@ -505,9 +523,9 @@ export default {
       scanningNetwork: 'Escaneando rede...',
       noPrintersFoundSubnetMoonraker: 'Nenhuma instância Moonraker encontrada na sub-rede especificada.',
       moonrakerNeedsAuth: 'Esta instância Moonraker exige um token de API — informe abaixo.',
-      moonrakerSubnetNote: 'Procura a API Moonraker/Klipper nas portas abaixo (padrão 7125 e depois 80 para CosmOS/Fluidd). Usa a mesma lista de sub-redes do Bambu, incluindo DISCOVERY_EXTRA_SUBNETS.',
+      moonrakerSubnetNote: 'Procura a API Moonraker/Klipper nas portas abaixo (padrão 7125, 80 e 4408 para algumas interfaces web da Creality). Usa a mesma lista de sub-redes do Bambu, incluindo DISCOVERY_EXTRA_SUBNETS.',
       moonrakerPorts: 'Portas para escanear',
-      moonrakerPortsNote: 'Separadas por vírgula. Use 80 para CosmOS / Moonraker com proxy. Só hosts com JSON da API Moonraker são listados.',
+      moonrakerPortsNote: 'Separadas por vírgula. Use 80 para CosmOS / Moonraker com proxy. A porta 4408 é candidata em alguns firmwares Creality; não foi confirmada no K3. Só hosts com JSON da API Moonraker são listados.',
       serialRequired: 'Serial necessário',
       unknown: 'Desconhecido',
       failedToStart: 'Falha ao iniciar a descoberta',
@@ -2167,6 +2185,7 @@ export default {
     cameraTypeRtsp: 'Stream RTSP',
     cameraTypeSnapshot: 'Snapshot HTTP',
     cameraTypeUsb: 'Câmera USB (V4L2)',
+    cameraTypeWebrtc: 'Câmera WebRTC (Fluidd/Moonraker)',
     cameraSnapshotUrl: 'URL de captura (opcional)',
     cameraSnapshotUrlPlaceholder: 'http://192.168.1.61:1984/api/frame.jpeg?src=printer',
     cameraSnapshotUrlHelp: 'URL de frame único usado para miniaturas de notificação, fotos de finalização, frames do timelapse por camada e detecção de mesa. Timelapse e detecção de mesa requerem cada um seu próprio toggle por impressora — esta URL é apenas a fonte de imagem que eles usam quando ativos. Deixe em branco para capturar do stream ao vivo acima. Útil para go2rtc (/api/frame.jpeg) e câmeras IP com endpoint de captura dedicado.',
@@ -2458,6 +2477,7 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    root: 'Diretório raiz',
     title: 'Gerenciador de Arquivos',
     storageUsed: 'Usado:',
     storageFree: 'Livre:',
@@ -2472,6 +2492,7 @@ export default {
     toast: {
       filesDeleted: 'Arquivos excluídos: {{count}}',
       deleteFailed: 'Falha ao excluir: {{error}}',
+      uploadOutcomeUnknown: 'A impressora pode ter recebido o arquivo. A lista foi atualizada; verifique o arquivo antes de tentar novamente.',
     },
   },
 
@@ -2665,6 +2686,7 @@ export default {
       stage: {
         tcp_reachable: 'Conectividade de rede',
         first_frame: 'Captura de frame',
+        signaling_endpoint: 'Endpoint de sinalização WebRTC',
         live_stream_active: 'Transmissão ao vivo ativa',
       },
       summary: {
@@ -2672,6 +2694,7 @@ export default {
         live_stream_active_healthy: 'A câmera está transmitindo com frames recentes — nenhum teste necessário.',
         printer_unreachable: 'Impressora inacessível. Verifique o endereço IP, a conexão de rede e se a impressora está ligada.',
         camera_port_closed: 'A impressora responde mas a porta da câmera está fechada. Verifique se o modo LAN e o modo desenvolvedor estão ativados nas configurações da impressora.',
+        webrtc_endpoint_unavailable: 'Não foi possível acessar o endpoint WebRTC. Verifique a URL, as configurações HTTPS/CORS e se o reprodutor de câmera do Fluidd está disponível neste navegador.',
         no_frame: 'Conexão com a câmera estabelecida mas nenhum frame recebido. Tente novamente ou verifique se a câmera está habilitada nas configurações da impressora.',
         unknown_failure: 'Diagnóstico da câmera falhou por motivo desconhecido. Consulte o log de suporte para mais detalhes.',
       },

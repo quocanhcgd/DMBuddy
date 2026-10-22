@@ -1,7 +1,14 @@
+from types import SimpleNamespace
+
 import pytest
 from pydantic import ValidationError
 
-from backend.app.schemas.printer import PrinterCreate, normalize_external_camera_update
+from backend.app.schemas.printer import (
+    CrealityCfsNanoStatusResponse,
+    PrinterCreate,
+    PrinterResponse,
+    normalize_external_camera_update,
+)
 
 
 def _printer_payload(**overrides):
@@ -20,6 +27,27 @@ def test_printer_create_defaults_to_bambu_provider():
 
     assert printer.provider == "bambu"
     assert printer.serial_number == "01S00ABC123"
+
+
+def test_creality_cfs_nano_status_preserves_unknown_slots_and_validates_identifiers():
+    status = CrealityCfsNanoStatusResponse.model_validate(
+        {
+            "station_type": "CFS-Nano",
+            "state": "connect",
+            "online": True,
+            "slots": [
+                {"slot": "T1A", "material_name": "PLA", "color": "#0A2989"},
+                {"slot": "T1B", "material_name": None, "color": None},
+            ],
+        }
+    )
+
+    assert status.slots[0].material_name == "PLA"
+    assert status.slots[1].material_name is None
+    with pytest.raises(ValidationError):
+        CrealityCfsNanoStatusResponse.model_validate(
+            {"slots": [{"slot": "AMS-A", "material_name": "PLA"}]}
+        )
 
 
 def test_printer_create_accepts_klipper_provider_metadata():
@@ -177,3 +205,53 @@ def test_external_camera_update_clears_disabled_state_when_url_is_blank():
 def test_printer_create_rejects_unknown_provider():
     with pytest.raises(ValidationError):
         PrinterCreate(**_printer_payload(provider="octoprint"))
+
+
+def test_flashforge_create_canonicalizes_model_and_ports_without_exposing_secret():
+    printer = PrinterCreate(
+        name="AD5M Pro",
+        provider="flashforge_ad5m",
+        model="adventurer 5m pro",
+        serial_number="ff-123",
+        ip_address="192.168.1.60",
+        auth_token="check-code",
+    )
+
+    assert printer.model == "Adventurer 5M Pro"
+    assert printer.access_code == "flashforge"
+    assert printer.provider_options == '{"http_port":8898,"camera_port":8080,"tcp_port":8899}'
+
+
+def test_flashforge_creator5_rejects_tcp_option():
+    with pytest.raises(ValidationError, match="does not support"):
+        PrinterCreate(
+            name="Creator 5",
+            provider="flashforge_creator5",
+            model="Creator 5",
+            serial_number="creator-123",
+            ip_address="creator.local",
+            auth_token="check-code",
+            provider_options='{"tcp_port":8899}',
+        )
+
+
+def test_printer_response_scrubs_credentials_and_reports_presence():
+    row = SimpleNamespace(
+        id=9, name="P1S", serial_number="SN", ip_address="192.168.1.2", access_code="secret",
+        provider="bambu", api_url=None, auth_token="token", provider_options=None, model=None, location=None,
+        auto_archive=True, reconnect_interval_seconds=30, external_camera_enabled=False,
+        external_camera_url=None, external_camera_type=None, external_camera_snapshot_url=None, camera_rotation=0,
+        is_active=True, nozzle_count=1, print_hours_offset=0.0, plate_detection_enabled=False,
+        plate_detection_roi_x=None, plate_detection_roi_y=None, plate_detection_roi_w=None,
+        plate_detection_roi_h=None, connector_id=None, connector_last_seen_at=None, connector_last_error=None,
+        created_at="2026-01-01T00:00:00", updated_at="2026-01-01T00:00:00",
+    )
+
+    response = PrinterResponse.from_orm_with_roi(row)
+    assert response.access_code is None
+    assert response.auth_token is None
+    assert response.access_code_set is True
+    assert response.auth_token_set is True
+    payload = response.model_dump()
+    assert payload["access_code"] is None
+    assert payload["auth_token"] is None

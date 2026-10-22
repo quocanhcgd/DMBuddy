@@ -31,8 +31,8 @@ class TestMoonrakerHelpers:
         assert not _looks_like_moonraker_info(None)
 
     def test_parse_ports_default(self):
-        assert parse_moonraker_scan_ports(None) == [7125, 80]
-        assert parse_moonraker_scan_ports("") == [7125, 80]
+        assert parse_moonraker_scan_ports(None) == [7125, 80, 4408]
+        assert parse_moonraker_scan_ports("") == [7125, 80, 4408]
 
     def test_parse_ports_custom(self):
         assert parse_moonraker_scan_ports("80") == [80]
@@ -74,6 +74,32 @@ async def test_probe_hit_on_7125_server_info():
     assert hit.needs_auth is False
     assert hit.serial == "KLIPPER-10-0-0-89"
     client.get.assert_awaited_once_with("http://10.0.0.89:7125/server/info")
+
+
+@pytest.mark.asyncio
+async def test_subnet_scan_reuses_one_bounded_http_client():
+    scanner = MoonrakerSubnetScanner()
+    client = AsyncMock()
+    client.get = AsyncMock(
+        side_effect=lambda url: _mock_response(
+            200,
+            {"result": {"klippy_state": "ready", "moonraker_version": "0.9.0"}},
+        )
+        if url == "http://10.0.0.6:7125/server/info"
+        else _mock_response(404)
+    )
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", return_value=client) as async_client:
+        results = await scanner.scan_subnet("10.0.0.0/29", timeout=0.1, ports=[7125])
+
+    assert [printer.ip_address for printer in results] == ["10.0.0.6"]
+    async_client.assert_called_once()
+    limits = async_client.call_args.kwargs["limits"]
+    assert limits.max_connections == 32
+    assert limits.max_keepalive_connections == 16
+    assert client.get.await_count == 6
 
 
 @pytest.mark.asyncio

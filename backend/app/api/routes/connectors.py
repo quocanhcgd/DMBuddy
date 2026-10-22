@@ -25,6 +25,8 @@ from backend.app.schemas.connector import (
     ConnectorEnrollmentResponse,
     ConnectorEnrollRequest,
     ConnectorEnrollResponse,
+    ConnectorPrinterFilesCreate,
+    ConnectorPrinterFilesResponse,
     ConnectorPrinterStatusCreate,
     ConnectorPrinterStatusResponse,
     ConnectorPrinterVerifyCreate,
@@ -40,7 +42,11 @@ from connector_protocol import (
     ConnectorDiscoveryResult,
     ConnectorHeartbeat,
     ConnectorMessage,
+    ConnectorPrinterControlResult,
+    ConnectorPrinterFilesResult,
     ConnectorPrinterStatusResult,
+    ConnectorPrinterTemperatureResult,
+    ConnectorPrinterUploadResult,
     ConnectorPrinterVerifyResult,
 )
 
@@ -295,6 +301,23 @@ async def printer_status_through_connector(
     )
 
 
+@router.post("/{connector_id}/printer-files", response_model=ConnectorPrinterFilesResponse)
+async def printer_files_through_connector(
+    connector_id: str,
+    data: ConnectorPrinterFilesCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CONNECTORS_READ),
+):
+    return await _connector_endpoint_operation(
+        connector_id,
+        {**data.model_dump(), "request_id": secrets.token_urlsafe(16)},
+        "printer.files.request",
+        ConnectorPrinterFilesResponse,
+        db,
+        current_user,
+    )
+
+
 @router.get("/{connector_id}", response_model=ConnectorResponse)
 async def get_connector(
     connector_id: str,
@@ -467,12 +490,20 @@ async def connector_websocket(websocket: WebSocket):
                 "discovery.result",
                 "printer.verify.result",
                 "printer.status.result",
+                "printer.files.result",
+                "printer.upload.result",
+                "printer.control.result",
+                "printer.temperature.result",
             }:
                 try:
                     result_model = {
                         "discovery.result": ConnectorDiscoveryResult,
                         "printer.verify.result": ConnectorPrinterVerifyResult,
                         "printer.status.result": ConnectorPrinterStatusResult,
+                        "printer.files.result": ConnectorPrinterFilesResult,
+                        "printer.upload.result": ConnectorPrinterUploadResult,
+                        "printer.control.result": ConnectorPrinterControlResult,
+                        "printer.temperature.result": ConnectorPrinterTemperatureResult,
                     }[message.type]
                     result = result_model.model_validate(message.payload)
                 except Exception:
@@ -481,6 +512,8 @@ async def connector_websocket(websocket: WebSocket):
                     return
                 await connector_gateway.resolve_request(
                     connector.public_id,
+                    session,
+                    message.type,
                     result.model_dump(mode="json"),
                 )
             else:

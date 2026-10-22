@@ -247,6 +247,23 @@ export default {
     camera: 'Telecamera',
     skipObject: 'Salta Oggetto',
     reconnect: 'Riconnetti',
+    klipper: {
+      manualControls: 'Controlli manuali', manualControlsDescription: 'Movimento, estrusione e temperature Klipper', collapsed: 'compresso', homeAll: 'Azzerare tutti gli assi',
+      extrusionLength: 'Lunghezza estrusione', extrusionSpeed: 'Velocità estrusione', retract: 'Ritrai', extrude: 'Estrudi',
+      nozzle: 'Ugello', bed: 'Piano', set: 'Imposta', zOffset: 'Offset Z', saveZOffset: 'Salva offset Z nella configurazione',
+      stepperMotors: 'Motori passo-passo', disableSteppers: 'Disattiva motori passo-passo', millimeters: 'mm', millimetersPerSecond: 'mm al secondo',
+      nozzleTemperatureTarget: 'Temperatura obiettivo ugello', bedTemperatureTarget: 'Temperatura obiettivo piano',
+      increaseZOffset: 'Aumenta offset Z di {{step}} mm', decreaseZOffset: 'Riduci offset Z di {{step}} mm',
+      homeXY: 'Azzerare gli assi X e Y', homeAxis: 'Azzerare l’asse {{axis}}',
+    },
+    u1FilamentInExtruder: 'Nell’estrusore',
+    u1FilamentInExtruderHelp: 'Il filamento è stato caricato attraverso l’alimentatore fino all’estrusore',
+    u1FilamentPreloaded: 'Precaricato',
+    u1FilamentPreloadedHelp: 'Il filamento è nell’alimentatore, ma non ancora nell’estrusore',
+    u1FilamentDetected: 'Rilevato',
+    u1FilamentDetectedHelp: 'Filamento rilevato in questo canale dell’alimentatore',
+    u1FilamentEmpty: 'Vuoto',
+    u1FilamentEmptyHelp: 'Nessun filamento rilevato in questo canale dell’alimentatore',
     forceRefresh: 'Forza aggiornamento',
     forceRefreshSuccess: 'Aggiornamento richiesto',
     mqttDebug: 'Debug MQTT',
@@ -317,6 +334,7 @@ export default {
       failedToStopPrint: 'Impossibile fermare stampa',
       failedToPausePrint: 'Impossibile mettere in pausa stampa',
       failedToResumePrint: 'Impossibile riprendere stampa',
+      deliveryUnknown: 'La stampante potrebbe aver ricevuto il comando. Controlla lo stato attuale prima di riprovare.',
       failedToControlChamberLight: 'Impossibile controllare luce camera',
       failedToSetSpeed: 'Impossibile impostare la velocità di stampa',
       failedToUpdateSetting: 'Impossibile aggiornare impostazione',
@@ -505,9 +523,9 @@ export default {
       scanningNetwork: 'Scansione rete...',
       noPrintersFoundSubnetMoonraker: 'Nessuna istanza Moonraker trovata nella sottorete specificata.',
       moonrakerNeedsAuth: 'Questa istanza Moonraker richiede un token API — inseriscilo sotto.',
-      moonrakerSubnetNote: 'Cerca l’API Moonraker/Klipper sulle porte sotto (predefinito 7125 poi 80 per CosmOS/Fluidd). Usa lo stesso elenco di sottoreti di Bambu, incluso DISCOVERY_EXTRA_SUBNETS.',
+      moonrakerSubnetNote: 'Cerca l’API Moonraker/Klipper sulle porte sotto (predefinite 7125, 80 e 4408 per alcune interfacce web Creality). Usa lo stesso elenco di sottoreti di Bambu, incluso DISCOVERY_EXTRA_SUBNETS.',
       moonrakerPorts: 'Porte da scansionare',
-      moonrakerPortsNote: 'Separate da virgola. Usa 80 per CosmOS / Moonraker in proxy. Solo gli host che restituiscono JSON Moonraker vengono elencati.',
+      moonrakerPortsNote: 'Separate da virgola. Usa 80 per CosmOS / Moonraker in proxy. La porta 4408 è solo un tentativo per alcuni firmware Creality; K3 non è confermato. Sono elencati solo gli host che restituiscono JSON Moonraker.',
       serialRequired: 'Seriale richiesto',
       unknown: 'Sconosciuto',
       failedToStart: 'Avvio ricerca non riuscito',
@@ -2167,6 +2185,7 @@ export default {
     cameraTypeRtsp: 'Stream RTSP',
     cameraTypeSnapshot: 'Snapshot HTTP',
     cameraTypeUsb: 'Fotocamera USB (V4L2)',
+    cameraTypeWebrtc: 'Fotocamera WebRTC (Fluidd/Moonraker)',
     cameraSnapshotUrl: 'URL istantanea (facoltativo)',
     cameraSnapshotUrlPlaceholder: 'http://192.168.1.61:1984/api/frame.jpeg?src=printer',
     cameraSnapshotUrlHelp: 'URL singolo frame usato per miniature di notifica, foto di fine, frame del layer timelapse e rilevamento del piano. Timelapse e rilevamento del piano richiedono ciascuno il proprio toggle per stampante — questo URL è solo la sorgente immagine che usano quando attivi. Lascia vuoto per acquisire dallo stream live sopra. Utile per go2rtc (/api/frame.jpeg) e telecamere IP con endpoint snapshot dedicato.',
@@ -2458,6 +2477,7 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    root: 'Cartella principale',
     title: 'Gestore file',
     storageUsed: 'Usato:',
     storageFree: 'Libero:',
@@ -2472,6 +2492,7 @@ export default {
     toast: {
       filesDeleted: 'Eliminati {{count}} file',
       deleteFailed: 'Eliminazione fallita: {{error}}',
+      uploadOutcomeUnknown: 'La stampante potrebbe aver ricevuto il file. L’elenco è stato aggiornato; verifica il file prima di riprovare.',
     },
   },
 
@@ -2665,6 +2686,7 @@ export default {
       stage: {
         tcp_reachable: 'Raggiungibilità di rete',
         first_frame: 'Acquisizione frame',
+        signaling_endpoint: 'Endpoint di segnalazione WebRTC',
         live_stream_active: 'Stream live attivo',
       },
       summary: {
@@ -2672,6 +2694,7 @@ export default {
         live_stream_active_healthy: 'La telecamera sta trasmettendo con frame recenti — nessun test necessario.',
         printer_unreachable: 'La stampante non è raggiungibile. Verifica l\'indirizzo IP, la connessione di rete e che la stampante sia accesa.',
         camera_port_closed: 'La stampante risponde ma la porta della telecamera è chiusa. Assicurati che la modalità LAN e la modalità sviluppatore siano attive nelle impostazioni della stampante.',
+        webrtc_endpoint_unavailable: 'Impossibile raggiungere l’endpoint WebRTC. Controlla l’URL, le impostazioni HTTPS/CORS e che il lettore della videocamera Fluidd sia disponibile in questo browser.',
         no_frame: 'Connessione alla telecamera riuscita ma nessun frame ricevuto. Riprova o verifica che la telecamera sia abilitata nelle impostazioni della stampante.',
         unknown_failure: 'Diagnostica della telecamera fallita per motivo sconosciuto. Controlla il log di supporto per i dettagli.',
       },

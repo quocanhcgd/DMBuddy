@@ -29,6 +29,10 @@ from backend.app.services.bambu_ftp import (
     with_ftp_retry,
 )
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
+from backend.app.services.flashforge.creator5_tool_requirements import (
+    extract_creator5_required_tools,
+    validate_creator5_mapping_completeness,
+)
 from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import printer_manager, supports_drying
 from backend.app.services.printer_providers.factory import normalize_provider
@@ -66,6 +70,30 @@ def _canonical_filament_type(ftype: str) -> str:
     """Return canonical type for equivalence matching."""
     upper = ftype.upper()
     return _FILAMENT_EQUIV_MAP.get(upper, upper)
+
+
+def _creator5_tool_count_from_file(file_path: Path, plate_id: int | None) -> int:
+    """Resolve Creator 5 upload tool count from slicer-owned 3MF metadata.
+
+    ``slice_info.config`` is the only source accepted here. A plain G-code
+    file, an unreadable archive, or metadata without used filament entries
+    falls back to the provider's single-tool default. Filename conventions and
+    the printer's four-tool capacity are never used as evidence.
+    """
+    if file_path.suffix.lower() != ".3mf":
+        return 1
+
+    from backend.app.services.filament_requirements import extract_filament_requirements
+
+    requirements = extract_filament_requirements(file_path, plate_id=plate_id)
+    if not requirements:
+        return 1
+    slot_ids = {int(entry["slot_id"]) for entry in requirements if entry.get("slot_id") is not None}
+    if not slot_ids:
+        return 1
+    if any(slot_id < 1 or slot_id > 4 for slot_id in slot_ids):
+        raise ValueError("Creator 5 queue file metadata references a tool outside slots 1-4")
+    return len(slot_ids)
 
 
 class PrintScheduler:
@@ -324,7 +352,8 @@ class PrintScheduler:
                             continue
 
                     # Compute AMS mapping if not already set
-                    if not item.ams_mapping:
+                    provider_name = normalize_provider(getattr(await self._get_printer(db, item.printer_id), "provider", None))
+                    if provider_name != "flashforge_creator5" and not item.ams_mapping:
                         computed_mapping = await self._compute_ams_mapping_for_printer(db, item.printer_id, item)
                         if computed_mapping:
                             item.ams_mapping = json.dumps(computed_mapping)
@@ -337,7 +366,7 @@ class PrintScheduler:
                     # assigned spool can't satisfy any required slot grams,
                     # promote the item to manual_start so the user must
                     # acknowledge via the ▶ button (which re-checks live).
-                    if await self._block_on_filament_deficit(db, item):
+                    if provider_name != "flashforge_creator5" and await self._block_on_filament_deficit(db, item):
                         continue
 
                     # Start the print
@@ -454,7 +483,7 @@ class PrintScheduler:
 
                         # Compute AMS mapping for the assigned printer if not already set
                         # This is critical for model-based jobs where mapping wasn't computed upfront
-                        if not item.ams_mapping:
+                        if normalize_provider(getattr(printer, "provider", None)) != "flashforge_creator5" and not item.ams_mapping:
                             computed_mapping = await self._compute_ams_mapping_for_printer(db, printer_id, item)
                             if computed_mapping:
                                 item.ams_mapping = json.dumps(computed_mapping)
@@ -464,7 +493,7 @@ class PrintScheduler:
                                 await db.commit()
 
                         # Filament-deficit pre-dispatch check (#1496).
-                        if await self._block_on_filament_deficit(db, item):
+                        if normalize_provider(getattr(printer, "provider", None)) != "flashforge_creator5" and await self._block_on_filament_deficit(db, item):
                             continue
 
                         await self._start_print(db, item)
@@ -1988,6 +2017,7 @@ class PrintScheduler:
         ftp_retry_delay: float | int,
         ftp_timeout: float | int,
         operation_name: str,
+        tool_count: int | None = None,
     ) -> bool:
         if provider == "bambu":
             if ftp_retry_enabled:
@@ -2024,7 +2054,10 @@ class PrintScheduler:
             remote_path,
             file_path,
         )
-        return bool(await asyncio.to_thread(client.upload_file, file_path, remote_path))  # type: ignore[attr-defined]
+        upload_kwargs = {}
+        if provider == "flashforge_creator5" and tool_count is not None:
+            upload_kwargs["tool_count"] = tool_count
+        return bool(await asyncio.to_thread(client.upload_file, file_path, remote_path, **upload_kwargs))  # type: ignore[attr-defined]
 
     async def _start_print(self, db: AsyncSession, item: PrintQueueItem):
         """Upload file and start print for a queue item.
@@ -2167,6 +2200,56 @@ class PrintScheduler:
                 logger.warning("Queue item %s: G-code injection failed, using original: %s", item.id, e)
 
         provider = normalize_provider(getattr(printer, "provider", None))
+        creator5_material_mappings = None
+        if item.creator5_material_mappings:
+            try:
+                creator5_material_mappings = json.loads(item.creator5_material_mappings)
+            except json.JSONDecodeError:
+                creator5_material_mappings = None
+            if provider != "flashforge_creator5" or creator5_material_mappings is None:
+                item.status = "failed"
+                item.error_message = "Creator 5 material mapping requires a valid Creator 5 queue item"
+                item.completed_at = datetime.now(timezone.utc)
+                item.dispatching_at = None
+                await db.commit()
+                logger.warning("Queue item %s rejected: invalid Creator 5 material mapping target/data", item.id)
+                return
+            try:
+                from backend.app.services.printer_providers.flashforge_creator5 import _creator5_material_mappings
+
+                creator5_material_mappings = _creator5_material_mappings(creator5_material_mappings)
+                required_tool_ids = extract_creator5_required_tools(file_path, item.plate_id)
+                validate_creator5_mapping_completeness(creator5_material_mappings, required_tool_ids)
+            except ValueError as exc:
+                item.status = "failed"
+                item.error_message = str(exc)
+                item.completed_at = datetime.now(timezone.utc)
+                item.dispatching_at = None
+                await db.commit()
+                logger.warning("Queue item %s rejected: %s", item.id, exc)
+                return
+        if provider == "flashforge_creator5" and (
+            item.ams_mapping is not None or item.print_platform_type is not None
+        ):
+            item.status = "failed"
+            item.error_message = "FlashForge Creator 5 does not support Bambu AMS mapping or platform selection"
+            item.completed_at = datetime.now(timezone.utc)
+            item.dispatching_at = None
+            await db.commit()
+            logger.warning("Queue item %s rejected: Creator 5 received Bambu-only print options", item.id)
+            return
+        creator5_tool_count = None
+        if provider == "flashforge_creator5":
+            try:
+                creator5_tool_count = _creator5_tool_count_from_file(file_path, item.plate_id)
+            except ValueError as exc:
+                item.status = "failed"
+                item.error_message = str(exc)
+                item.completed_at = datetime.now(timezone.utc)
+                item.dispatching_at = None
+                await db.commit()
+                logger.warning("Queue item %s rejected: %s", item.id, exc)
+                return
         # Use a provider-correct printer-side name. Bambu keeps the historical
         # 3MF rewrite, while Moonraker/K-series must keep .gcode/.3mf intact.
         remote_filename = self._remote_filename_for_provider(filename, provider)
@@ -2217,6 +2300,7 @@ class PrintScheduler:
                 ftp_retry_delay=ftp_retry_delay,
                 ftp_timeout=ftp_timeout,
                 operation_name=f"Upload print to {printer.name}",
+                tool_count=creator5_tool_count,
             )
         except Exception as e:
             uploaded = False
@@ -2309,6 +2393,11 @@ class PrintScheduler:
             layer_inspect=item.layer_inspect,
             timelapse=item.timelapse,
             use_ams=item.use_ams,
+            **(
+                {"creator5_material_mappings": creator5_material_mappings}
+                if creator5_material_mappings is not None
+                else {}
+            ),
         )
 
         if started:

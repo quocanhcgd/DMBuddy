@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from httpx import AsyncClient
 
@@ -21,6 +23,8 @@ class _FakeProviderClient:
         self.start_options: list[dict[str, object]] = []
         self.file_info: dict[str, object] | None = None
         self.file_info_paths: list[str] = []
+        self.upload_tool_counts: list[int | None] = []
+        self.state = SimpleNamespace(raw_data={})
 
     def get_file_info(self, path: str) -> dict[str, object] | None:
         self.file_info_paths.append(path)
@@ -31,9 +35,18 @@ class _FakeProviderClient:
         self.start_options.append(kwargs)
         return True
 
-    def upload_file(self, local_path, remote_path: str, *, overwrite: bool = False, storage: str | None = None) -> bool:  # noqa: ARG002
+    def upload_file(
+        self,
+        local_path,
+        remote_path: str,
+        *,
+        overwrite: bool = False,
+        storage: str | None = None,
+        tool_count: int | None = None,
+    ) -> bool:  # noqa: ARG002
         self.uploaded_paths.append(remote_path)
         self.upload_overwrite_flags.append(overwrite)
+        self.upload_tool_counts.append(tool_count)
         if self.upload_exception is not None:
             raise self.upload_exception
         if self.preserve_files_on_upload:
@@ -129,6 +142,159 @@ async def test_list_printer_files_delegates_elegoo_cc1_to_provider_client(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_list_flashforge_ad5m_rejects_nested_directory(
+    async_client: AsyncClient,
+    printer_factory,
+):
+    printer = await printer_factory(provider="flashforge_ad5m", model="Adventurer 5M")
+
+    response = await async_client.get(
+        f"/api/v1/printers/{printer.id}/files", params={"path": "/Metadata"}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "FlashForge AD5M only supports files in the printer root directory"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_list_flashforge_ad5m_exposes_recent_only_warning(
+    async_client: AsyncClient,
+    printer_factory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    printer = await printer_factory(provider="flashforge_ad5m", model="Adventurer 5M")
+    fake_client = _FakeProviderClient()
+    fake_client.state.raw_data["file_listing"] = {"complete": False, "source": "http-recent"}
+
+    from backend.app.api.routes import printers as printer_routes
+
+    monkeypatch.setattr(printer_routes, "_provider_for_printer", lambda _printer: fake_client)
+
+    response = await async_client.get(f"/api/v1/printers/{printer.id}/files")
+
+    assert response.status_code == 200
+    assert response.json()["listing"] == {
+        "completeness": "recent_only",
+        "source": "http-recent",
+        "warning": "The printer returned recent files only; a full listing is unavailable while TCP M661 cannot be reached.",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_flashforge_capabilities_report_runtime_and_reference_states(
+    async_client: AsyncClient,
+    printer_factory,
+):
+    ad5m = await printer_factory(provider="flashforge_ad5m", model="Adventurer 5M")
+    creator5 = await printer_factory(provider="flashforge_creator5", model="Creator 5")
+
+    ad5m_response = await async_client.get(f"/api/v1/printers/{ad5m.id}/capabilities")
+    creator5_response = await async_client.get(f"/api/v1/printers/{creator5.id}/capabilities")
+
+    assert ad5m_response.status_code == 200
+    assert ad5m_response.json()["capabilities"]["local_files"] == "partial"
+    assert ad5m_response.json()["capabilities"]["status"] == "implemented"
+    assert ad5m_response.json()["capabilities"]["bed_leveling"] == "planned"
+    assert ad5m_response.json()["capabilities"]["bed_leveling_before_print"] == "implemented"
+    assert ad5m_response.json()["hardware_verified"] is False
+    assert creator5_response.status_code == 200
+    assert creator5_response.json()["provider_implemented"] is True
+    assert creator5_response.json()["capabilities"]["status"] == "implemented"
+    assert creator5_response.json()["capabilities"]["local_files"] == "partial"
+    assert creator5_response.json()["capabilities"]["nozzle_temperature"] == "implemented"
+    assert creator5_response.json()["capabilities"]["tool_temperatures"] == "implemented"
+    assert creator5_response.json()["capabilities"]["bed_temperature"] == "implemented"
+    assert creator5_response.json()["capabilities"]["material_status"] == "implemented"
+    assert creator5_response.json()["capabilities"]["filament_type_control"] == "implemented"
+    assert creator5_response.json()["capabilities"]["filament_color_control"] == "implemented"
+    assert creator5_response.json()["capabilities"]["file_upload"] == "implemented"
+    assert creator5_response.json()["capabilities"]["print_local_file"] == "implemented"
+    assert creator5_response.json()["capabilities"]["job_control"] == "implemented"
+
+    creator5_pro = await printer_factory(provider="flashforge_creator5", model="Creator 5 Pro")
+    creator5_pro_response = await async_client.get(f"/api/v1/printers/{creator5_pro.id}/capabilities")
+    assert creator5_pro_response.status_code == 200
+    assert creator5_pro_response.json()["capabilities"]["chamber_temperature"] == "implemented"
+
+    connector_ad5m = await printer_factory(
+        provider="flashforge_ad5m", model="Adventurer 5M", connection_mode="connector", connector_id="cap-connector"
+    )
+    connector_ad5m_response = await async_client.get(f"/api/v1/printers/{connector_ad5m.id}/capabilities")
+    assert connector_ad5m_response.status_code == 200
+    connector_caps = connector_ad5m_response.json()["capabilities"]
+    assert connector_caps["status"] == "implemented"
+    assert connector_caps["file_upload"] == "implemented"
+    assert connector_caps["job_control"] == "implemented"
+    assert connector_caps["camera"] == "unavailable"
+
+    connector_creator5 = await printer_factory(
+        provider="flashforge_creator5", model="Creator 5 Pro",
+        connection_mode="connector", connector_id="cap-connector",
+    )
+    connector_creator5_response = await async_client.get(f"/api/v1/printers/{connector_creator5.id}/capabilities")
+    assert connector_creator5_response.status_code == 200
+    assert connector_creator5_response.json()["capabilities"]["chamber_temperature"] == "implemented"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_creator5_status_and_file_routes_expose_four_tools_and_recent_only_listing(
+    async_client: AsyncClient,
+    printer_factory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from backend.app.services.printer_providers.flashforge_creator5 import FlashForgeCreator5PrinterClient
+
+    class _Http:
+        def detail(self):
+            return {
+                "detail": {
+                    "status": "ready",
+                    "nozzleTemps": [201, 202, 203, 204],
+                    "nozzleTargetTemps": [0, 210, 0, 0],
+                    "currentSlot": 3,
+                    "platTemp": 55,
+                    "platTargetTemp": 60,
+                }
+            }
+
+        def gcode_list(self):
+            return {"gcodeList": ["recent.gcode"]}
+
+        def close(self):
+            pass
+
+    printer = await printer_factory(provider="flashforge_creator5", model="Creator 5")
+    client = FlashForgeCreator5PrinterClient(
+        host="creator.local",
+        model="Creator 5",
+        serial_number="C5-SN",
+        check_code="secret",
+        http_client=_Http(),
+    )
+    client.request_status_update()
+
+    from backend.app.api.routes import printers as printer_routes
+
+    monkeypatch.setattr(printer_routes.printer_manager, "get_status", lambda _printer_id: client.state)
+    monkeypatch.setattr(printer_routes, "_provider_for_printer", lambda _printer: client)
+
+    status = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+    files = await async_client.get(f"/api/v1/printers/{printer.id}/files")
+
+    assert status.status_code == 200
+    assert status.json()["temperatures"]["nozzle_4"] == 204
+    assert status.json()["active_extruder"] == 1
+    assert len(status.json()["nozzles"]) == 4
+    assert files.status_code == 200
+    assert files.json()["files"][0]["name"] == "recent.gcode"
+    assert files.json()["listing"]["completeness"] == "recent_only"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_start_printer_file_delegates_to_provider_client(
     async_client: AsyncClient,
     printer_factory,
@@ -150,6 +316,35 @@ async def test_start_printer_file_delegates_to_provider_client(
     assert response.json() == {"status": "started", "path": "/Love Paw Print.gcode"}
     assert fake_client.started_paths == ["/Love Paw Print.gcode"]
     assert fake_client.start_options == [{}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_start_flashforge_ad5m_rejects_nested_path_and_unsupported_options(
+    async_client: AsyncClient,
+    printer_factory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    printer = await printer_factory(provider="flashforge_ad5m", model="Adventurer 5M")
+    fake_client = _FakeProviderClient()
+
+    from backend.app.api.routes import printers as printer_routes
+
+    monkeypatch.setattr(printer_routes, "_provider_for_printer", lambda _printer: fake_client)
+
+    nested = await async_client.post(
+        f"/api/v1/printers/{printer.id}/files/start", params={"path": "/Metadata/cube.gcode"}
+    )
+    mapped = await async_client.post(
+        f"/api/v1/printers/{printer.id}/files/start",
+        params={"path": "/cube.gcode", "ams_mapping": [1]},
+    )
+
+    assert nested.status_code == 400
+    assert nested.json()["detail"] == "FlashForge AD5M only supports files in the printer root directory"
+    assert mapped.status_code == 400
+    assert mapped.json()["detail"] == "FlashForge AD5M does not support AMS mapping or platform selection"
+    assert fake_client.started_paths == []
 
 
 @pytest.mark.asyncio
@@ -380,6 +575,57 @@ async def test_upload_printer_file_delegates_to_provider_client(
     assert fake_client.uploaded_paths == ["/Shoe_horn_thicker.gcode"]
     assert fake_client.upload_overwrite_flags == [False]
     assert fake_client.started_paths == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_creator5_upload_passes_explicit_tool_count_to_provider(
+    async_client: AsyncClient,
+    printer_factory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    printer = await printer_factory(provider="flashforge_creator5", model="Creator 5")
+    fake_client = _FakeProviderClient()
+
+    from backend.app.api.routes import printers as printer_routes
+
+    monkeypatch.setattr(printer_routes, "_provider_for_printer", lambda _printer: fake_client)
+
+    response = await async_client.post(
+        f"/api/v1/printers/{printer.id}/files/upload",
+        params={"tool_count": 3},
+        files={"file": ("multi.gcode", b"G28\n", "application/octet-stream")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "uploaded"
+    assert fake_client.uploaded_paths == ["/multi.gcode"]
+    assert fake_client.upload_tool_counts == [3]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_upload_flashforge_ad5m_rejects_nested_directory_before_upload(
+    async_client: AsyncClient,
+    printer_factory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    printer = await printer_factory(provider="flashforge_ad5m", model="Adventurer 5M")
+    fake_client = _FakeProviderClient()
+
+    from backend.app.api.routes import printers as printer_routes
+
+    monkeypatch.setattr(printer_routes, "_provider_for_printer", lambda _printer: fake_client)
+
+    response = await async_client.post(
+        f"/api/v1/printers/{printer.id}/files/upload",
+        params={"path": "/Metadata"},
+        files={"file": ("cube.gcode", b"G28\n", "application/octet-stream")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "FlashForge AD5M only supports files in the printer root directory"
+    assert fake_client.uploaded_paths == []
 
 
 @pytest.mark.asyncio
@@ -636,3 +882,116 @@ async def test_upload_printer_file_reports_existing_provider_file_without_strate
     assert response.status_code == 409
     assert "already exists" in response.json()["detail"]
     assert fake_client.uploaded_paths == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_connector_start_delivery_unknown_includes_read_only_reconciliation(
+    async_client: AsyncClient,
+    printer_factory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from unittest.mock import AsyncMock
+
+    from backend.app.api.routes import printers as printer_routes
+    from backend.app.services.connector_gateway import ConnectorRequestDeliveryUnknown
+
+    printer = await printer_factory(
+        provider="flashforge_ad5m", model="Adventurer 5M",
+        connection_mode="connector", connector_id="connector-start-unknown",
+    )
+    request = AsyncMock(side_effect=[
+        ConnectorRequestDeliveryUnknown("start-request-1"),
+        {
+            "request_id": "status-readback-1", "status": "completed", "connected": True,
+            "state": "RUNNING", "telemetry": {"state": "RUNNING", "filename": "cube.gcode", "progress": 0.0},
+        },
+    ])
+    monkeypatch.setattr(printer_routes.connector_gateway, "request", request)
+
+    response = await async_client.post(
+        f"/api/v1/printers/{printer.id}/files/start", params={"path": "/cube.gcode"}
+    )
+
+    assert response.status_code == 504
+    detail = response.json()["detail"]
+    assert detail["outcome"] == "delivery_unknown"
+    assert detail["request_id"] == "start-request-1"
+    assert detail["reconciliation"]["status"] == "observed"
+    assert detail["reconciliation"]["state"] == "RUNNING"
+    assert detail["reconciliation"]["filename"] == "cube.gcode"
+    assert request.await_count == 2
+    assert request.await_args_list[1].args[1] == "printer.status.request"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("provider", "completeness", "source", "files", "expected_listing_status"),
+    [
+        (
+            "flashforge_ad5m",
+            "complete",
+            "tcp-m661",
+            [{"name": "part.gcode", "path": "/part.gcode", "size": None}],
+            "observed",
+        ),
+        (
+            "flashforge_creator5",
+            "recent_only",
+            "http-recent",
+            [{"name": "part.gcode", "path": "/part.gcode", "size": None}],
+            "observed",
+        ),
+        ("flashforge_creator5", "recent_only", "http-recent", [], "not_observed"),
+    ],
+)
+async def test_connector_upload_delivery_unknown_reports_file_observation_without_confirmation(
+    async_client: AsyncClient,
+    printer_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+    completeness: str,
+    source: str,
+    files: list[dict[str, object]],
+    expected_listing_status: str,
+):
+    from backend.app.api.routes import printers as printer_routes
+    from backend.app.services.printer_transport import ConnectorDeliveryUnknownError
+
+    printer = await printer_factory(
+        provider=provider,
+        model="Adventurer 5M" if provider == "flashforge_ad5m" else "Creator 5",
+        connection_mode="connector",
+        connector_id=f"connector-upload-unknown-{provider}",
+    )
+
+    async def upload_file(*_args, **_kwargs):
+        raise ConnectorDeliveryUnknownError("upload-request-1")
+
+    async def list_files(*_args, **_kwargs):
+        return {
+            "status": "completed",
+            "completeness": completeness,
+            "source": source,
+            "files": files,
+        }
+
+    monkeypatch.setattr(printer_routes.ConnectorPrinterTransport, "upload_file", upload_file)
+    monkeypatch.setattr(printer_routes.ConnectorPrinterTransport, "files", list_files)
+    monkeypatch.setattr(printer_routes, "_provider_for_printer", lambda _printer: None)
+
+    response = await async_client.post(
+        f"/api/v1/printers/{printer.id}/files/upload",
+        params={"path": "/"},
+        files={"file": ("part.gcode", b"G28\n", "application/octet-stream")},
+    )
+
+    assert response.status_code == 504
+    detail = response.json()["detail"]
+    assert detail["outcome"] == "delivery_unknown"
+    assert detail["request_id"] == "upload-request-1"
+    assert detail["reconciliation"]["status"] == expected_listing_status
+    assert detail["reconciliation"]["completeness"] == completeness
+    assert detail["reconciliation"]["source"] == source
+    assert detail["reconciliation"]["integrity"] == "unverified"

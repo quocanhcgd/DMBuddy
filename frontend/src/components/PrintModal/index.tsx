@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, AlertTriangle, Calendar, Code, Layers, Loader2, Pencil, Printer, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { PrintQueueItemCreate, PrintQueueItemUpdate, SpoolAssignment } from '../../api/client';
+import type { Creator5MaterialMapping, PrintQueueItemCreate, PrintQueueItemUpdate, SpoolAssignment } from '../../api/client';
 import { api } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardContent } from '../Card';
@@ -17,6 +17,7 @@ import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
 import { getGlobalTrayId, isPlaceholderDate } from '../../utils/amsHelpers';
 import { FilamentMapping } from './FilamentMapping';
 import { FilamentOverride } from './FilamentOverride';
+import { Creator5MaterialMappingEditor, isCreator5MappingComplete } from './Creator5MaterialMappingEditor';
 import { PlateSelector } from './PlateSelector';
 import { PrinterSelector } from './PrinterSelector';
 import { PrintOptionsPanel } from './PrintOptions';
@@ -159,6 +160,10 @@ export function PrintModal({
     return {};
   });
 
+  const [creator5Mappings, setCreator5Mappings] = useState<Creator5MaterialMapping[]>(() =>
+    mode === 'edit-queue-item' ? queueItem?.creator5_material_mappings ?? [] : [],
+  );
+
   // Per-printer override configs (for multi-printer selection)
   const [perPrinterConfigs, setPerPrinterConfigs] = useState<Record<number, PerPrinterConfig>>({});
 
@@ -274,6 +279,9 @@ export function PrintModal({
     () => printers?.filter((printer) => selectedPrinters.includes(printer.id)) ?? [],
     [printers, selectedPrinters]
   );
+  const selectedCreator5Printer = selectedPrinterRecords.length === 1
+    && selectedPrinterRecords[0].provider === 'flashforge_creator5';
+  const hasSelectedCreator5Printer = selectedPrinterRecords.some((printer) => printer.provider === 'flashforge_creator5');
   const hasSelectedElegooCc1 = useMemo(
     () =>
       selectedPrinterRecords.some((printer) => isElegooCc1Printer(printer.provider, printer.model)) ||
@@ -328,7 +336,7 @@ export function PrintModal({
   const platesData = isLibraryFile ? libraryPlatesData : archivePlatesData;
 
   // Fetch filament requirements for archives
-  const { data: archiveFilamentReqs, isError: archiveFilamentReqsError } = useQuery({
+  const { data: archiveFilamentReqs, isError: archiveFilamentReqsError, isLoading: archiveFilamentReqsLoading } = useQuery({
     queryKey: ['archive-filaments', archiveId, selectedPlate],
     queryFn: () => api.getArchiveFilamentRequirements(archiveId!, selectedPlate ?? undefined),
     enabled: !!archiveId && !isLibraryFile && (selectedPlate !== null || !platesData?.is_multi_plate),
@@ -336,7 +344,7 @@ export function PrintModal({
   });
 
   // Fetch filament requirements for library files (with plate support)
-  const { data: libraryFilamentReqs } = useQuery({
+  const { data: libraryFilamentReqs, isLoading: libraryFilamentReqsLoading } = useQuery({
     queryKey: ['library-file-filaments', libraryFileId, selectedPlate],
     queryFn: () => api.getLibraryFileFilamentRequirements(libraryFileId!, selectedPlate ?? undefined),
     enabled: isLibraryFile && !!libraryFileId && (selectedPlate !== null || !platesData?.is_multi_plate),
@@ -347,6 +355,7 @@ export function PrintModal({
 
   // Combine filament requirements from either source
   const effectiveFilamentReqs = isLibraryFile ? libraryFilamentReqs : archiveFilamentReqs;
+  const effectiveFilamentReqsLoading = isLibraryFile ? libraryFilamentReqsLoading : archiveFilamentReqsLoading;
   const selectedPlateName = useMemo(() => {
     if (selectedPlate === null || !platesData?.plates?.length) {
       return undefined;
@@ -414,11 +423,13 @@ export function PrintModal({
       const printersChanged = JSON.stringify(selectedPrinters.sort()) !== JSON.stringify(initialPrinterIds.sort());
       if (printersChanged || selectedPlate !== initialPlateId) {
         setManualMappings({});
+        setCreator5Mappings([]);
         setPerPrinterConfigs({});
         setInitialExpandApplied(new Set());
       }
     } else {
       setManualMappings({});
+      setCreator5Mappings([]);
       setPerPrinterConfigs({});
       setInitialExpandApplied(new Set());
     }
@@ -534,8 +545,26 @@ export function PrintModal({
 
   const willUseStagger = scheduleOptions.staggerEnabled && selectedPrinters.length > 1;
 
+  const creator5MappingReady = useMemo(() => {
+    if (mode === 'reprint' || !hasSelectedCreator5Printer) return true;
+    if (effectiveFilamentReqsLoading || (isMultiPlate && selectedPlates.size > 1)) return false;
+    const tools = effectiveFilamentReqs?.creator5_tools ?? [];
+    if (tools.length <= 1) return true;
+    return selectedPrinters.length === 1
+      && selectedCreator5Printer
+      && isCreator5MappingComplete(
+        tools,
+        printerStatus?.creator5_material_slots ?? [],
+        creator5Mappings,
+      );
+  }, [mode, hasSelectedCreator5Printer, effectiveFilamentReqsLoading, isMultiPlate, selectedPlates.size,
+    effectiveFilamentReqs?.creator5_tools, selectedPrinters.length, selectedCreator5Printer,
+    printerStatus?.creator5_material_slots, creator5Mappings]);
+
   const handleSubmit = async (e?: React.FormEvent, options?: { skipFilamentCheck?: boolean; skipMissingSpoolConfirmation?: boolean }) => {
     e?.preventDefault();
+
+    if (!creator5MappingReady) return;
 
     if (
       !options?.skipMissingSpoolConfirmation &&
@@ -713,6 +742,9 @@ export function PrintModal({
       gcode_injection: scheduleOptions.gcodeInjection,
       manual_start: scheduleOptions.scheduleType === 'manual',
       ams_mapping: printerId ? getMappingForPrinter(printerId) : undefined,
+      creator5_material_mappings: printerId && getPrinterById(printerId)?.provider === 'flashforge_creator5'
+        ? creator5Mappings.length > 1 ? creator5Mappings : null
+        : null,
       plate_id: plateOverride !== undefined ? plateOverride : selectedPlate,
       scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
         ? new Date(scheduleOptions.scheduledTime).toISOString()
@@ -749,6 +781,7 @@ export function PrintModal({
               gcode_injection: scheduleOptions.gcodeInjection,
               manual_start: scheduleOptions.scheduleType === 'manual',
               ams_mapping: undefined,
+              creator5_material_mappings: null,
               plate_id: plateId,
               scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
                 ? new Date(scheduleOptions.scheduledTime).toISOString()
@@ -834,6 +867,9 @@ export function PrintModal({
                 gcode_injection: scheduleOptions.gcodeInjection,
                 manual_start: scheduleOptions.scheduleType === 'manual',
                 ams_mapping: printerMapping,
+                creator5_material_mappings: printers?.find((printer) => printer.id === printerId)?.provider === 'flashforge_creator5'
+                  ? creator5Mappings.length > 1 ? creator5Mappings : null
+                  : null,
                 plate_id: plateId,
                 scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
                   ? new Date(scheduleOptions.scheduledTime).toISOString()
@@ -912,8 +948,12 @@ export function PrintModal({
     // For multi-plate files, need at least one plate selected
     if (isMultiPlate && selectedPlates.size === 0) return false;
 
+    if (!creator5MappingReady) return false;
+    if (mode === 'reprint' && selectedCreator5Printer && quantity > 1) return false;
+
     return true;
-  }, [selectedPrinters.length, assignmentMode, targetModel, mode, isMultiPlate, selectedPlates.size, isPending]);
+  }, [selectedPrinters.length, assignmentMode, targetModel, mode, isMultiPlate, selectedPlates.size, isPending,
+    selectedCreator5Printer, creator5MappingReady, quantity]);
 
   // Quantity only applies for single-printer or model-based assignment (not multi-printer)
   const effectiveQuantity = (assignmentMode === 'printer' && selectedPrinters.length > 1) ? 1 : quantity;
@@ -1130,6 +1170,37 @@ export function PrintModal({
                 currencySymbol={currencySymbol}
                 defaultCostPerKg={defaultCostPerKg}
               />
+            )}
+
+            {mode !== 'reprint' && assignmentMode === 'printer' && selectedCreator5Printer && selectedPrinters.length === 1 && (
+              <Creator5MaterialMappingEditor
+                tools={effectiveFilamentReqs?.creator5_tools ?? []}
+                slots={printerStatus?.creator5_material_slots ?? []}
+                warning={effectiveFilamentReqs?.creator5_tool_warning}
+                mappings={creator5Mappings}
+                onChange={setCreator5Mappings}
+              />
+            )}
+
+            {mode !== 'reprint' && selectedCreator5Printer && isMultiPlate && selectedPlates.size > 1 && (
+              <div className="flex items-start gap-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-300">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{t('printModal.creator5Mapping.onePlate', 'Queue one Creator 5 plate at a time so each material mapping matches its G-code.')}</span>
+              </div>
+            )}
+
+            {mode !== 'reprint' && hasSelectedCreator5Printer && !selectedCreator5Printer && (effectiveFilamentReqs?.creator5_tools?.length ?? 0) > 1 && (
+              <div className="flex items-start gap-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-300">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{t('printModal.creator5Mapping.singlePrinter', 'Creator 5 multi-tool mapping requires one explicitly selected printer.')}</span>
+              </div>
+            )}
+
+            {mode === 'reprint' && selectedCreator5Printer && effectiveQuantity > 1 && (
+              <div className="flex items-start gap-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-300">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{t('printModal.creator5Mapping.reprintCopies', 'Creator 5 copies must be queued from Printbuddy-owned files to use material mapping.')}</span>
+              </div>
             )}
 
             {hasSelectedElegooCc1 && (

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.printer import Printer
 from backend.app.services.bambu_mqtt import BambuMQTTClient, MQTTLogEntry, PrinterState, get_stage_name
+from backend.app.services.flashforge.errors import FlashForgeAuthenticationError, FlashForgeCommandBusyError
 from backend.app.services.printer_providers.factory import create_printer_client, normalize_provider
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,15 @@ logger = logging.getLogger(__name__)
 def _provider_connection_error(provider: str, exc: Exception) -> str:
     """Return a safe, actionable connection diagnostic without response bodies."""
     import httpx
+
+    if provider in {"flashforge_ad5m", "flashforge_creator5"}:
+        if isinstance(exc, FlashForgeAuthenticationError):
+            return "FlashForge rejected the request; verify the serial number, LAN check code, and printer LAN mode."
+        if isinstance(exc, FlashForgeCommandBusyError):
+            return "FlashForge command channel is busy; wait for the current printer command and retry."
+        if isinstance(exc, httpx.TimeoutException):
+            return "FlashForge request timed out; verify the host, HTTP port, LAN mode, and network route."
+        return "FlashForge connection failed; verify the host, HTTP port, serial number, LAN check code, and LAN mode."
 
     provider_label = "Moonraker" if provider in {"klipper", "mainsail", "fluidd"} else provider
     if isinstance(exc, httpx.TimeoutException):
@@ -547,6 +557,7 @@ class PrinterManager:
         filename: str,
         plate_id: int = 1,
         ams_mapping: list[int] | None = None,
+        creator5_material_mappings: list[dict] | None = None,
         bed_levelling: bool = True,
         print_platform_type: int | None = None,
         flow_cali: bool = False,
@@ -577,6 +588,11 @@ class PrinterManager:
                 vibration_cali=vibration_cali,
                 layer_inspect=layer_inspect,
                 use_ams=use_ams,
+                **(
+                    {"creator5_material_mappings": creator5_material_mappings}
+                    if creator5_material_mappings is not None
+                    else {}
+                ),
             )
         return False
 
@@ -698,6 +714,8 @@ class PrinterManager:
         provider: str = "bambu",
         api_url: str | None = None,
         auth_token: str | None = None,
+        model: str | None = None,
+        provider_options: str | None = None,
     ) -> dict:
         """Test connection to a printer without persisting.
 
@@ -715,13 +733,16 @@ class PrinterManager:
                     "provider": provider_name,
                     "api_url": api_url,
                     "auth_token": auth_token,
+                    "serial_number": serial_number,
                     "ip_address": ip_address,
-                    "provider_options": None,
+                    "provider_options": provider_options,
+                    "model": model,
                 },
             )()
-            client = create_printer_client(probe_printer)
             detected_provider_options: dict[str, str] = {}
+            client = None
             try:
+                client = create_printer_client(probe_printer)
                 if provider_name == "prusalink" and hasattr(client, "detect_api_auth_mode"):
                     detected_provider_options = await asyncio.to_thread(client.detect_api_auth_mode)
                 await asyncio.to_thread(client.connect)
@@ -729,6 +750,8 @@ class PrinterManager:
                     "prusalink": "PrusaLink",
                     "prusaconnect": "Prusa Connect Mobile",
                     "elegoo_sdcp": "Elegoo SDCP",
+                    "flashforge_ad5m": "FlashForge Adventurer 5M",
+                    "flashforge_creator5": "FlashForge Creator 5",
                 }.get(provider_name, "Klipper/Moonraker")
                 result = {
                     "success": True,
@@ -743,6 +766,8 @@ class PrinterManager:
                     "prusalink": "PrusaLink",
                     "prusaconnect": "Prusa Connect Mobile",
                     "elegoo_sdcp": "Elegoo SDCP",
+                    "flashforge_ad5m": "FlashForge Adventurer 5M",
+                    "flashforge_creator5": "FlashForge Creator 5",
                 }.get(provider_name, "Klipper/Moonraker")
                 return {
                     "success": False,
@@ -752,9 +777,10 @@ class PrinterManager:
                     "error_type": type(exc).__name__,
                 }
             finally:
-                disconnect = getattr(client, "disconnect", None)
-                if disconnect:
-                    await asyncio.to_thread(disconnect)
+                if client is not None:
+                    disconnect = getattr(client, "disconnect", None)
+                    if disconnect:
+                        await asyncio.to_thread(disconnect)
 
         client = BambuMQTTClient(
             ip_address=ip_address,
@@ -937,6 +963,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
                 trays.append(
                     {
                         "id": int(tray.get("id", 0)),
+                        "slot": tray.get("slot"),
                         "tray_color": tray.get("tray_color"),
                         "tray_type": tray.get("tray_type"),
                         "tray_sub_brands": tray.get("tray_sub_brands"),
@@ -952,6 +979,14 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
                         "drying_temp": tray.get("drying_temp"),
                         "drying_time": tray.get("drying_time"),
                         "state": state_val,
+                        "active": tray.get("active"),
+                        "loaded_to_feeder": tray.get("loaded_to_feeder"),
+                        "loaded_to_extruder": tray.get("loaded_to_extruder"),
+                        "filament_detected": tray.get("filament_detected"),
+                        "channel_state": tray.get("channel_state"),
+                        "channel_action_state": tray.get("channel_action_state"),
+                        "channel_error": tray.get("channel_error"),
+                        "filament_source": tray.get("filament_source"),
                     }
                 )
             # Prefer humidity_raw (actual percentage) over humidity (index 1-5)
@@ -1067,6 +1102,9 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         # AMS data for filament colors
         "ams": ams_units if ams_units else None,
         "vt_tray": vt_tray,
+        "cfs_nano": (raw_data.get("creality_k3") or {}).get("cfs_nano")
+        if isinstance(raw_data.get("creality_k3"), dict)
+        else None,
         # AMS status for filament change tracking
         "ams_status_main": state.ams_status_main,
         "ams_status_sub": state.ams_status_sub,
@@ -1089,6 +1127,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         "heatbreak_fan_speed": state.heatbreak_fan_speed,
         # Chamber light state
         "chamber_light": state.chamber_light,
+        "chamber_light_available": getattr(state, "chamber_light_available", False),
         # Active extruder for dual-nozzle printers (0=right, 1=left)
         "active_extruder": state.active_extruder,
         # Print speed mode (1=silent, 2=standard, 3=sport, 4=ludicrous)

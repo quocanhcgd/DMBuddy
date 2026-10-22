@@ -192,6 +192,32 @@ class TestTemperatureControlAPI:
             mock_client.set_nozzle_temperature.assert_called_once_with(215)
 
     @pytest.mark.asyncio
+    async def test_set_u1_nozzle_temperature_targets_selected_extruder(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="Snapmaker U1", provider="klipper", model="Snapmaker U1")
+        mock_client = MagicMock()
+        mock_client.set_nozzle_temperature.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/temperature/nozzle?target=215&extruder=2"
+            )
+            assert response.status_code == 200
+            mock_client.set_nozzle_temperature.assert_called_once_with(215, 2)
+
+    @pytest.mark.asyncio
+    async def test_set_k3_nozzle_temperature_targets_selected_extruder(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="Creality K3", provider="fluidd", model="Creality K3")
+        mock_client = MagicMock()
+        mock_client.set_nozzle_temperature.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/temperature/nozzle?target=215&extruder=2"
+            )
+            assert response.status_code == 200
+            mock_client.set_nozzle_temperature.assert_called_once_with(215, 2)
+
+    @pytest.mark.asyncio
     async def test_set_bed_temperature_uses_provider_helper(self, async_client: AsyncClient, printer_factory):
         printer = await printer_factory(name="Klipper", provider="klipper", model="Klipper/Moonraker")
         mock_client = MagicMock()

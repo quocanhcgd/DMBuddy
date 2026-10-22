@@ -1,18 +1,33 @@
+import json
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 from backend.app.services.elegoo_camera import (
     build_elegoo_sdcp_camera_url,
     get_effective_camera_source,
 )
+from backend.app.services.printer_providers.flashforge_contract import (
+    FLASHFORGE_PROVIDERS,
+    contract_for,
+    validate_flashforge_options,
+)
 
-PrinterProvider = Literal["bambu", "klipper", "mainsail", "fluidd", "prusalink", "prusaconnect", "elegoo_sdcp"]
+PrinterProvider = Literal[
+    "bambu", "klipper", "mainsail", "fluidd", "prusalink", "prusaconnect", "elegoo_sdcp",
+    "flashforge_ad5m", "flashforge_creator5",
+]
 PrinterConnectionMode = Literal["direct", "vpn", "connector"]
 MOONRAKER_PROVIDERS = {"klipper", "mainsail", "fluidd"}
 HTTP_PROVIDERS = MOONRAKER_PROVIDERS | {"prusalink", "prusaconnect", "elegoo_sdcp"}
 PRUSA_CONNECT_MOBILE_BASE_URL = "https://connect-mobile-api.prusa3d.com"
+
+
+class Creator5FilamentConfigRequest(BaseModel):
+    tool_index: int = Field(..., ge=0, le=3)
+    material: str | None = Field(None, max_length=32)
+    color: str | None = Field(None, max_length=16)
 
 
 def _synthetic_moonraker_serial(value: object) -> str:
@@ -125,6 +140,11 @@ class PrinterBase(BaseModel):
                 data["external_camera_type"] = "mjpeg"
                 data["external_camera_enabled"] = bool(data["external_camera_url"])
                 return data
+        elif provider in FLASHFORGE_PROVIDERS:
+            if not str(data.get("serial_number") or "").strip():
+                raise ValueError("serial_number is required for FlashForge printers")
+            if not str(data.get("access_code") or "").strip():
+                data["access_code"] = "flashforge"
         if provider in HTTP_PROVIDERS:
             camera_url = str(data.get("external_camera_url") or "").strip()
             if not camera_url:
@@ -179,9 +199,25 @@ class PrinterBase(BaseModel):
     external_camera_snapshot_url: str | None = None  # Optional single-frame override; #1177
     camera_rotation: int = 0  # 0, 90, 180, 270 degrees
 
+    @model_validator(mode="after")
+    def _validate_flashforge_model_and_options(self):
+        if self.provider not in FLASHFORGE_PROVIDERS:
+            return self
+        if self.auth_token is None and self.access_code is None:
+            return self
+        _, canonical_model = contract_for(self.provider, self.model)
+        self.model = canonical_model
+        options = validate_flashforge_options(self.provider, canonical_model, self.provider_options)
+        self.provider_options = json.dumps(options, separators=(",", ":"))
+        return self
+
 
 class PrinterCreate(PrinterBase):
-    pass
+    @model_validator(mode="after")
+    def _require_flashforge_check_code(self):
+        if self.provider in FLASHFORGE_PROVIDERS and not str(self.auth_token or "").strip():
+            raise ValueError("auth_token (FlashForge check code) is required")
+        return self
 
 
 class PlateDetectionROI(BaseModel):
@@ -223,6 +259,10 @@ class PrinterUpdate(BaseModel):
 
 
 class PrinterResponse(PrinterBase):
+    access_code: str | None = None
+    auth_token: str | None = None
+    access_code_set: bool = False
+    auth_token_set: bool = False
     id: int
     is_active: bool
     nozzle_count: int = 1  # 1 or 2, auto-detected from MQTT
@@ -239,6 +279,27 @@ class PrinterResponse(PrinterBase):
     created_at: datetime
     updated_at: datetime
 
+    @model_validator(mode="before")
+    @classmethod
+    def _scrub_orm_credentials(cls, value):
+        if isinstance(value, dict):
+            data = dict(value)
+        else:
+            data = {
+                field: getattr(value, field, None)
+                for field in cls.model_fields
+                if hasattr(value, field)
+            }
+        data["access_code_set"] = bool(data.get("access_code_set", bool(data.get("access_code"))))
+        data["auth_token_set"] = bool(data.get("auth_token_set", bool(data.get("auth_token"))))
+        data["access_code"] = None
+        data["auth_token"] = None
+        return data
+
+    @field_serializer("access_code", "auth_token")
+    def _scrub_credentials(self, value: str | None) -> None:
+        return None
+
     class Config:
         from_attributes = True
 
@@ -251,10 +312,12 @@ class PrinterResponse(PrinterBase):
             "name": printer.name,
             "serial_number": printer.serial_number,
             "ip_address": printer.ip_address,
-            "access_code": printer.access_code,
+            "access_code": None,
             "provider": getattr(printer, "provider", "bambu"),
             "api_url": getattr(printer, "api_url", None),
-            "auth_token": getattr(printer, "auth_token", None),
+            "auth_token": None,
+            "access_code_set": bool(getattr(printer, "access_code", None)),
+            "auth_token_set": bool(getattr(printer, "auth_token", None)),
             "provider_options": getattr(printer, "provider_options", None),
             "connection_mode": getattr(printer, "connection_mode", "direct") or "direct",
             "connector_id": getattr(printer, "connector_id", None),
@@ -276,6 +339,8 @@ class PrinterResponse(PrinterBase):
             "created_at": printer.created_at,
             "updated_at": printer.updated_at,
         }
+        data["access_code_set"] = bool(getattr(printer, "access_code", None))
+        data["auth_token_set"] = bool(getattr(printer, "auth_token", None))
         # Build ROI object if any ROI field is set
         if any(
             [
@@ -303,6 +368,7 @@ class HMSErrorResponse(BaseModel):
 
 class AMSTray(BaseModel):
     id: int
+    slot: str | None = None
     tray_color: str | None = None
     tray_type: str | None = None
     tray_sub_brands: str | None = None  # Full name like "PLA Basic", "PETG HF"
@@ -318,6 +384,14 @@ class AMSTray(BaseModel):
     drying_temp: int | None = None  # RFID-recommended drying temp
     drying_time: int | None = None  # RFID-recommended drying time (hours)
     state: int | None = None  # AMS tray state: 9=empty, 10=spool present not loaded, 11=loaded
+    active: bool | None = None
+    loaded_to_feeder: bool | None = None
+    loaded_to_extruder: bool | None = None
+    filament_detected: bool | None = None
+    channel_state: str | None = None
+    channel_action_state: str | None = None
+    channel_error: str | None = None
+    filament_source: str | None = None
 
 
 class AMSUnit(BaseModel):
@@ -401,6 +475,26 @@ class PrintOptionsResponse(BaseModel):
     filament_tangle_detect: bool = False
 
 
+class Creator5MaterialSlotResponse(BaseModel):
+    slot_id: int = Field(ge=1, le=4)
+    material_name: str = Field(max_length=32)
+    material_color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class CrealityCfsNanoSlotResponse(BaseModel):
+    slot: str = Field(pattern=r"^T[1-4][A-D]$")
+    material_name: str | None = Field(default=None, max_length=64)
+    material_code: str | None = Field(default=None, max_length=32)
+    color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class CrealityCfsNanoStatusResponse(BaseModel):
+    station_type: str = Field(default="CFS-Nano", max_length=32)
+    state: str | None = Field(default=None, max_length=32)
+    online: bool | None = None
+    slots: list[CrealityCfsNanoSlotResponse] = Field(default_factory=list, max_length=16)
+
+
 class PrinterStatus(BaseModel):
     id: int
     name: str
@@ -425,6 +519,10 @@ class PrinterStatus(BaseModel):
     ams: list[AMSUnit] = []
     ams_exists: bool = False
     vt_tray: list[AMSTray] = []  # Virtual tray / external spool(s)
+    # Sanitized physical material-station slots for Creator 5 queue mapping.
+    creator5_material_slots: list[Creator5MaterialSlotResponse] | None = None
+    # Read-only K3 accessory status; kept separate from generic AMS/VT trays.
+    cfs_nano: CrealityCfsNanoStatusResponse | None = None
     sdcard: bool = False  # SD card inserted
     store_to_sdcard: bool = False  # Store sent files on SD card
     timelapse: bool = False  # Timelapse recording active
@@ -445,6 +543,7 @@ class PrinterStatus(BaseModel):
     speed_level: int = 2
     # Chamber light on/off
     chamber_light: bool = False
+    chamber_light_available: bool = False
     # Active extruder for dual nozzle (0=right, 1=left)
     active_extruder: int = 0
     # AMS mapping for dual nozzle: which AMS is connected to which nozzle

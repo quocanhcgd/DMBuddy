@@ -1,6 +1,7 @@
 """HTTP and response schemas for Connector management."""
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -101,6 +102,8 @@ class ConnectorPrinterStatusCreate(BaseModel):
     ip_address: str = Field(min_length=1, max_length=253)
     port: int = Field(default=8883, ge=1, le=65535)
     provider: str = Field(default="bambu", min_length=1, max_length=32)
+    serial_number: str | None = Field(default=None, max_length=64)
+    access_code: str | None = Field(default=None, max_length=256)
     timeout_ms: int = Field(default=1000, ge=100, le=5000)
 
 
@@ -109,4 +112,33 @@ class ConnectorPrinterStatusResponse(BaseModel):
     status: str
     connected: bool
     state: str
+    telemetry: dict[str, Any] | None = None
+    error: str | None = None
+
+
+class ConnectorPrinterFilesCreate(BaseModel):
+    ip_address: str = Field(min_length=1, max_length=253)
+    provider: str = Field(min_length=1, max_length=32)
+    http_port: int = Field(default=8898, ge=1, le=65535)
+    tcp_port: int | None = Field(default=None, ge=1, le=65535)
+    serial_number: str | None = Field(default=None, max_length=64)
+    access_code: str | None = Field(default=None, max_length=256)
+    path: str = Field(default="/", min_length=1, max_length=256)
+    timeout_ms: int = Field(default=3000, ge=100, le=10000)
+
+
+class ConnectorPrinterFileResponse(BaseModel):
+    name: str
+    path: str
+    type: str = "file"
+    size: int | None = None
+
+
+class ConnectorPrinterFilesResponse(BaseModel):
+    request_id: str
+    status: str
+    path: str = "/"
+    files: list[ConnectorPrinterFileResponse] = Field(default_factory=list, max_length=256)
+    completeness: str = "recent_only"
+    source: str | None = None
     error: str | None = None

@@ -246,6 +246,23 @@ export default {
     camera: 'カメラ',
     skipObject: 'オブジェクトスキップ',
     reconnect: '再接続',
+    klipper: {
+      manualControls: '手動操作', manualControlsDescription: 'Klipperの移動、押出、温度制御', collapsed: '折りたたみ', homeAll: '全軸を原点復帰',
+      extrusionLength: '押出量', extrusionSpeed: '押出速度', retract: 'フィラメントを戻す', extrude: 'フィラメントを押し出す',
+      nozzle: 'ノズル', bed: 'ベッド', set: '設定', zOffset: 'Zオフセット', saveZOffset: 'Zオフセットを設定に保存',
+      stepperMotors: 'ステッピングモーター', disableSteppers: 'ステッピングモーターを無効化', millimeters: 'mm', millimetersPerSecond: 'mm/秒',
+      nozzleTemperatureTarget: 'ノズル目標温度', bedTemperatureTarget: 'ベッド目標温度',
+      increaseZOffset: 'Zオフセットを{{step}} mm増やす', decreaseZOffset: 'Zオフセットを{{step}} mm減らす',
+      homeXY: 'X・Y軸を原点に戻す', homeAxis: '{{axis}}軸を原点に戻す',
+    },
+    u1FilamentInExtruder: 'エクストルーダー内',
+    u1FilamentInExtruderHelp: 'フィラメントはフィーダーを通ってエクストルーダーまで装填されています',
+    u1FilamentPreloaded: 'フィーダーに装填済み',
+    u1FilamentPreloadedHelp: 'フィラメントはフィーダーに装填されていますが、エクストルーダーには届いていません',
+    u1FilamentDetected: '検出済み',
+    u1FilamentDetectedHelp: 'このフィーダーチャンネルでフィラメントを検出しました',
+    u1FilamentEmpty: '空',
+    u1FilamentEmptyHelp: 'このフィーダーチャンネルでフィラメントは検出されませんでした',
     forceRefresh: '強制更新',
     forceRefreshSuccess: '更新をリクエストしました',
     mqttDebug: 'MQTTデバッグ',
@@ -316,6 +333,7 @@ export default {
       failedToStopPrint: '印刷の停止に失敗しました',
       failedToPausePrint: '印刷の一時停止に失敗しました',
       failedToResumePrint: '印刷の再開に失敗しました',
+      deliveryUnknown: 'プリンターがこのコマンドを受信した可能性があります。再試行する前に現在の状態を確認してください。',
       failedToControlChamberLight: 'チャンバーライトの制御に失敗しました',
       failedToSetSpeed: '印刷速度の設定に失敗しました',
       failedToUpdateSetting: '設定の更新に失敗しました',
@@ -504,9 +522,9 @@ export default {
       scanningNetwork: 'ネットワークをスキャン中...',
       noPrintersFoundSubnetMoonraker: '指定したサブネットでMoonrakerが見つかりませんでした。',
       moonrakerNeedsAuth: 'このMoonrakerにはAPIトークンが必要です。下に入力してください。',
-      moonrakerSubnetNote: '下のポートでMoonraker/Klipper APIのJSONを探します（既定は7125、次にCosmOS/Fluidd用の80）。Bambuと同じサブネット一覧（DISCOVERY_EXTRA_SUBNETS含む）を使います。',
+      moonrakerSubnetNote: '下のポートでMoonraker/Klipper API JSONを検索します（既定は7125、80、一部CrealityのWeb UI用4408）。Bambuと同じサブネット一覧（DISCOVERY_EXTRA_SUBNETS含む）を使います。',
       moonrakerPorts: 'スキャンするポート',
-      moonrakerPortsNote: 'カンマ区切り。CosmOS / プロキシ済みMoonrakerには80を指定。Moonraker APIのJSONを返すホストだけが一覧されます。',
+      moonrakerPortsNote: 'カンマ区切り。CosmOS / プロキシ済みMoonrakerには80を指定。4408は一部Crealityファームウェア向けの候補で、K3では未確認です。Moonraker API JSONを返すホストだけを一覧します。',
       serialRequired: 'シリアル番号が必要です',
       unknown: '不明',
       failedToStart: '印刷の開始に失敗しました',
@@ -2170,6 +2188,7 @@ export default {
     cameraTypeRtsp: 'RTSPストリーム',
     cameraTypeSnapshot: 'HTTPスナップショット',
     cameraTypeUsb: 'USBカメラ (V4L2)',
+    cameraTypeWebrtc: 'WebRTCカメラ (Fluidd/Moonraker)',
     cameraSnapshotUrl: 'スナップショットURL（任意）',
     cameraSnapshotUrlPlaceholder: 'http://192.168.1.61:1984/api/frame.jpeg?src=printer',
     cameraSnapshotUrlHelp: '通知サムネイル、終了写真、レイヤータイムラプスフレーム、プレート検出に使用される単一フレームURL。タイムラプスとプレート検出はそれぞれプリンターごとのトグルが必要 — このURLはアクティブ時の画像ソースに過ぎません。上記のライブストリームから取得する場合は空のままにします。go2rtc（/api/frame.jpeg）や専用スナップショットエンドポイントを持つIPカメラに便利です。',
@@ -2470,6 +2489,7 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    root: 'ルート',
     title: 'ファイル管理',
     storageUsed: '使用中:',
     storageFree: '空き:',
@@ -2484,6 +2504,7 @@ export default {
     toast: {
       filesDeleted: '{{count}}件のファイルを削除しました',
       deleteFailed: '削除に失敗: {{error}}',
+      uploadOutcomeUnknown: 'プリンターがアップロードを受信した可能性があります。ファイル一覧を更新しました。再試行する前にファイルを確認してください。',
     },
   },
 
@@ -2677,6 +2698,7 @@ export default {
       stage: {
         tcp_reachable: 'ネットワーク到達性',
         first_frame: 'フレーム取得',
+        signaling_endpoint: 'WebRTCシグナリングエンドポイント',
         live_stream_active: 'ライブストリーム動作中',
       },
       summary: {
@@ -2684,6 +2706,7 @@ export default {
         live_stream_active_healthy: 'カメラは現在新しいフレームを配信しています — テストは不要です。',
         printer_unreachable: 'プリンターに到達できません。IPアドレス、ネットワーク接続、プリンターの電源が入っていることを確認してください。',
         camera_port_closed: 'プリンターには到達できますが、カメラポートが閉じています。プリンター設定でLANのみモードと開発者モードが有効になっていることを確認してください。',
+        webrtc_endpoint_unavailable: 'WebRTCエンドポイントに接続できません。URL、HTTPS/CORS設定、このブラウザーからFluiddのカメラプレーヤーにアクセスできることを確認してください。',
         no_frame: 'カメラに接続できましたがフレームを受信できませんでした。再試行するか、プリンター設定でカメラが有効になっていることを確認してください。',
         unknown_failure: 'カメラ診断が不明な理由で失敗しました。詳細はサポートログを確認してください。',
       },

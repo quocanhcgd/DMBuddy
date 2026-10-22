@@ -10,9 +10,9 @@ import {
   Save,
   Thermometer,
 } from 'lucide-react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { api } from '../api/client';
+import { ApiError, api } from '../api/client';
 import type { Printer, PrinterStatus } from '../api/client';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading';
@@ -34,15 +34,25 @@ interface Props {
 
 export function KlipperControlPanel({ printer, status, showToast }: Props) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [xyStep, setXyStep] = useState(10);
   const [zOffsetStep, setZOffsetStep] = useState(0.01);
   const [extrudeLength, setExtrudeLength] = useState(10);
   const [extrudeSpeed, setExtrudeSpeed] = useState(5);
-  const [nozzleInput, setNozzleInput] = useState('');
+  const [nozzleInputs, setNozzleInputs] = useState<Record<number, string>>({});
   const [bedInput, setBedInput] = useState('');
 
-  const onError = () =>
-    showToast(t('printers.toast.failedToSendCommand', 'Command failed'), 'error');
+  const onError = (error: Error) => {
+    if (error instanceof ApiError && error.detail?.outcome === 'delivery_unknown') {
+      void queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
+      showToast(t(
+        'printers.toast.deliveryUnknown',
+        'The printer may have received this command. Check its current status before trying again.',
+      ), 'warning');
+      return;
+    }
+    showToast(error.message || t('printers.toast.failedToSendCommand', 'Command failed'), 'error');
+  };
 
   const moveMut = useMutation({
     mutationFn: ({ axis, distance }: { axis: 'x' | 'y' | 'z'; distance: number }) =>
@@ -81,8 +91,9 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
   });
 
   const nozzleMut = useMutation({
-    mutationFn: (target: number) => api.setNozzleTemperature(printer.id, target),
-    onSuccess: () => setNozzleInput(''),
+    mutationFn: ({ target, extruder }: { target: number; extruder?: number }) =>
+      api.setNozzleTemperature(printer.id, target, extruder),
+    onSuccess: (_, variables) => setNozzleInputs((current) => ({ ...current, [variables.extruder ?? 0]: '' })),
     onError,
   });
 
@@ -100,6 +111,9 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
   const pos = status?.position ?? {};
   const zOffset = status?.z_offset ?? 0;
   const temps = status?.temperatures ?? {};
+  const isSnapmakerU1 = /snapmaker\s+u1/i.test(printer.model || '');
+  const isCrealityK3 = /^(?:creality\s+)?k3\b/i.test((printer.model || '').trim());
+  const isMultiExtruder = isSnapmakerU1 || isCrealityK3;
   const busy = moveMut.isPending || homeMut.isPending;
 
   const accentControlBtn =
@@ -130,9 +144,9 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
               <ArrowUp size={16} />
             </button>
             <div className="w-10" />
-            <button className={homeBtn} disabled={prusaBusy} onClick={() => homeMut.mutate(undefined)} title="Home All">
+            <button className={homeBtn} disabled={prusaBusy} onClick={() => homeMut.mutate(undefined)} title={t('printers.klipper.homeAll', 'Home all axes')}>
               <Home size={13} />
-              <span>ALL</span>
+              <span>{t('common.all')}</span>
             </button>
           </div>
 
@@ -140,13 +154,13 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
             <button className={joyBtn} disabled={prusaBusy} onClick={() => moveMut.mutate({ axis: 'x', distance: -xyStep })} title="X−">
               <ArrowLeft size={16} />
             </button>
-            <button className={homeBtn} disabled={prusaBusy} onClick={() => homeMut.mutate(['x', 'y'])} title="Home XY">
+            <button className={homeBtn} disabled={prusaBusy} onClick={() => homeMut.mutate(['x', 'y'])} title={t('printers.klipper.homeXY', 'Home X and Y axes')}>
               <Home size={13} />
             </button>
             <button className={joyBtn} disabled={prusaBusy} onClick={() => moveMut.mutate({ axis: 'x', distance: xyStep })} title="X+">
               <ArrowRight size={16} />
             </button>
-            <button className={homeBtn} disabled={prusaBusy} onClick={() => homeMut.mutate(['x'])} title="Home X">
+            <button className={homeBtn} disabled={prusaBusy} onClick={() => homeMut.mutate(['x'])} title={t('printers.klipper.homeAxis', { axis: 'X', defaultValue: 'Home X axis' })}>
               <Home size={13} />
               <span>X</span>
             </button>
@@ -158,7 +172,7 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
             </button>
             <div className="w-10" />
             <div className="w-10" />
-            <button className={homeBtn} disabled={prusaBusy} onClick={() => homeMut.mutate(['y'])} title="Home Y">
+            <button className={homeBtn} disabled={prusaBusy} onClick={() => homeMut.mutate(['y'])} title={t('printers.klipper.homeAxis', { axis: 'Y', defaultValue: 'Home Y axis' })}>
               <Home size={13} />
               <span>Y</span>
             </button>
@@ -208,14 +222,14 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
                 {t('printers.klipper.extrusionLength', 'Extrusion length')}
               </label>
               <input type="number" className={inputClass} value={extrudeLength} min={0.1} step={1} onChange={(e) => setExtrudeLength(Number(e.target.value))} />
-              <span className="text-xs text-[var(--text-muted)]">mm</span>
+              <span className="text-xs text-[var(--text-muted)]">{t('printers.klipper.millimeters', 'mm')}</span>
             </div>
             <div className="flex items-center gap-2">
               <label className="text-xs text-[var(--text-muted)] w-32 shrink-0">
                 {t('printers.klipper.extrusionSpeed', 'Extrusion speed')}
               </label>
               <input type="number" className={inputClass} value={extrudeSpeed} min={1} step={1} onChange={(e) => setExtrudeSpeed(Number(e.target.value))} />
-              <span className="text-xs text-[var(--text-muted)]">mm/s</span>
+              <span className="text-xs text-[var(--text-muted)]">{t('printers.klipper.millimetersPerSecond', 'mm/s')}</span>
             </div>
             <div className="flex gap-2">
               <button className={`flex-1 flex items-center justify-center gap-1 px-3 py-1.5 rounded text-sm font-medium ${secondaryControlBtn}`} disabled={extrudeMut.isPending} onClick={() => extrudeMut.mutate(-extrudeLength)}>
@@ -230,30 +244,60 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-2">
-              <Thermometer size={14} className="text-orange-400 shrink-0" />
-              <label className="text-xs text-[var(--text-muted)] w-16 shrink-0">{t('printers.klipper.nozzle', 'Nozzle')}</label>
-              <span className="text-xs font-mono tabular-nums text-[var(--text-secondary)] w-12">{Math.round(temps.nozzle ?? 0)}°C</span>
-              <input type="number" aria-label="Nozzle temperature target" className={inputClass} value={nozzleInput} min={0} max={350} placeholder={String(Math.round(temps.nozzle_target ?? 0) || '—')} onChange={(e) => setNozzleInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && nozzleInput !== '') nozzleMut.mutate(Number(nozzleInput)); }} />
-              <button aria-label="Nozzle" className={`px-2 py-1 rounded text-xs ${secondaryControlBtn}`} disabled={nozzleMut.isPending || nozzleInput === ''} onClick={() => nozzleMut.mutate(Number(nozzleInput))}>Set</button>
-            </div>
+            {Array.from({ length: isMultiExtruder ? 4 : 1 }, (_, extruder) => {
+              const suffix = extruder === 0 ? '' : `_${extruder + 1}`;
+              const temperature = (temps as Record<string, number | boolean | undefined>)[`nozzle${suffix}`];
+              const target = (temps as Record<string, number | boolean | undefined>)[`nozzle${suffix}_target`];
+              const input = nozzleInputs[extruder] ?? '';
+              const active = status?.active_extruder === extruder;
+              return (
+                <div key={extruder} className="flex items-center gap-2">
+                  <Thermometer size={14} className="text-orange-400 shrink-0" />
+                  <label className={`text-xs w-10 shrink-0 ${active ? 'text-[var(--accent)] font-semibold' : 'text-[var(--text-muted)]'}`}>
+                    {isSnapmakerU1 ? `E${extruder}` : isCrealityK3 ? `Nozzle ${extruder + 1}` : t('printers.klipper.nozzle', 'Nozzle')}
+                  </label>
+                  <span className="text-xs font-mono tabular-nums text-[var(--text-secondary)] w-12">{Math.round(typeof temperature === 'number' ? temperature : 0)}°C</span>
+                  <input
+                    type="number"
+                    aria-label={`${t('printers.klipper.nozzleTemperatureTarget', 'Nozzle temperature target')} ${isSnapmakerU1 ? `E${extruder}` : isCrealityK3 ? `${extruder + 1}` : ''}`.trim()}
+                    className={inputClass}
+                    value={input}
+                    min={0}
+                    max={350}
+                    placeholder={String(Math.round(typeof target === 'number' ? target : 0) || '—')}
+                    onChange={(e) => setNozzleInputs((current) => ({ ...current, [extruder]: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && input !== '') nozzleMut.mutate({ target: Number(input), extruder: isMultiExtruder ? extruder : undefined });
+                    }}
+                  />
+                  <button
+                    aria-label={`${t('printers.klipper.set', 'Set')} ${isSnapmakerU1 ? `E${extruder}` : isCrealityK3 ? `Nozzle ${extruder + 1}` : t('printers.klipper.nozzle', 'Nozzle')}`}
+                    className={`px-2 py-1 rounded text-xs ${secondaryControlBtn}`}
+                    disabled={nozzleMut.isPending || input === ''}
+                    onClick={() => nozzleMut.mutate({ target: Number(input), extruder: isMultiExtruder ? extruder : undefined })}
+                  >
+                    {t('printers.klipper.set', 'Set')}
+                  </button>
+                </div>
+              );
+            })}
             <div className="flex items-center gap-2">
               <Thermometer size={14} className="text-blue-400 shrink-0" />
               <label className="text-xs text-[var(--text-muted)] w-16 shrink-0">{t('printers.klipper.bed', 'Bed')}</label>
               <span className="text-xs font-mono tabular-nums text-[var(--text-secondary)] w-12">{Math.round(temps.bed ?? 0)}°C</span>
-              <input type="number" aria-label="Bed temperature target" className={inputClass} value={bedInput} min={0} max={140} placeholder={String(Math.round(temps.bed_target ?? 0) || '—')} onChange={(e) => setBedInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && bedInput !== '') bedMut.mutate(Number(bedInput)); }} />
-              <button aria-label="Bed" className={`px-2 py-1 rounded text-xs ${secondaryControlBtn}`} disabled={bedMut.isPending || bedInput === ''} onClick={() => bedMut.mutate(Number(bedInput))}>Set</button>
+              <input type="number" aria-label={t('printers.klipper.bedTemperatureTarget', 'Bed temperature target')} className={inputClass} value={bedInput} min={0} max={140} placeholder={String(Math.round(temps.bed_target ?? 0) || '—')} onChange={(e) => setBedInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && bedInput !== '') bedMut.mutate(Number(bedInput)); }} />
+              <button aria-label={t('printers.klipper.bed', 'Bed')} className={`px-2 py-1 rounded text-xs ${secondaryControlBtn}`} disabled={bedMut.isPending || bedInput === ''} onClick={() => bedMut.mutate(Number(bedInput))}>{t('printers.klipper.set', 'Set')}</button>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs text-[var(--text-muted)] flex-1">Stepper motors</span>
+            <span className="text-xs text-[var(--text-muted)] flex-1">{t('printers.klipper.stepperMotors', 'Stepper motors')}</span>
             <button
               className={`flex items-center justify-center gap-1 px-3 py-1.5 rounded text-sm font-medium ${secondaryControlBtn}`}
               disabled={disableSteppersMut.isPending}
               onClick={() => disableSteppersMut.mutate()}
             >
-              Disable steppers
+              {t('printers.klipper.disableSteppers', 'Disable steppers')}
             </button>
           </div>
         </div>
@@ -280,10 +324,10 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
             className={homeBtn}
             disabled={busy}
             onClick={() => homeMut.mutate(undefined)}
-            title="Home All"
+            title={t('printers.klipper.homeAll', 'Home all axes')}
           >
             <Home size={13} />
-            <span>ALL</span>
+            <span>{t('common.all')}</span>
           </button>
         </div>
 
@@ -301,7 +345,7 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
             className={homeBtn}
             disabled={busy}
             onClick={() => homeMut.mutate(['x', 'y'])}
-            title="Home XY"
+            title={t('printers.klipper.homeXY', 'Home X and Y axes')}
           >
             <Home size={13} />
           </button>
@@ -317,7 +361,7 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
             className={homeBtn}
             disabled={busy}
             onClick={() => homeMut.mutate(['x'])}
-            title="Home X"
+            title={t('printers.klipper.homeAxis', { axis: 'X', defaultValue: 'Home X axis' })}
           >
             <Home size={13} />
             <span>X</span>
@@ -340,7 +384,7 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
             className={homeBtn}
             disabled={busy}
             onClick={() => homeMut.mutate(['y'])}
-            title="Home Y"
+            title={t('printers.klipper.homeAxis', { axis: 'Y', defaultValue: 'Home Y axis' })}
           >
             <Home size={13} />
             <span>Y</span>
@@ -371,7 +415,7 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
           className={homeBtn}
           disabled={busy}
           onClick={() => homeMut.mutate(['z'])}
-          title="Home Z"
+          title={t('printers.klipper.homeAxis', { axis: 'Z', defaultValue: 'Home Z axis' })}
         >
           <Home size={13} />
           <span>Z</span>
@@ -416,7 +460,7 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
               step={1}
               onChange={(e) => setExtrudeLength(Number(e.target.value))}
             />
-            <span className="text-xs text-[var(--text-muted)]">mm</span>
+            <span className="text-xs text-[var(--text-muted)]">{t('printers.klipper.millimeters', 'mm')}</span>
           </div>
           <div className="flex items-center gap-2">
             <label className="text-xs text-[var(--text-muted)] w-32 shrink-0">
@@ -430,7 +474,7 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
               step={1}
               onChange={(e) => setExtrudeSpeed(Number(e.target.value))}
             />
-            <span className="text-xs text-[var(--text-muted)]">mm/s</span>
+            <span className="text-xs text-[var(--text-muted)]">{t('printers.klipper.millimetersPerSecond', 'mm/s')}</span>
           </div>
           <div className="flex gap-2">
             <button
@@ -454,36 +498,45 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
 
         {/* Temperature controls */}
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-center gap-2">
-            <Thermometer size={14} className="text-orange-400 shrink-0" />
-            <label className="text-xs text-[var(--text-muted)] w-16 shrink-0">
-              {t('printers.klipper.nozzle', 'Nozzle')}
-            </label>
-            <span className="text-xs font-mono tabular-nums text-[var(--text-secondary)] w-12">
-              {Math.round(temps.nozzle ?? 0)}°C
-            </span>
-            <input
-              type="number"
-              aria-label="Nozzle temperature target"
-              className={inputClass}
-              value={nozzleInput}
-              min={0}
-              max={350}
-              placeholder={String(Math.round(temps.nozzle_target ?? 0) || '—')}
-              onChange={(e) => setNozzleInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && nozzleInput !== '') nozzleMut.mutate(Number(nozzleInput));
-              }}
-            />
-            <button
-              aria-label="Nozzle"
-              className={`px-2 py-1 rounded text-xs ${secondaryControlBtn}`}
-              disabled={nozzleMut.isPending || nozzleInput === ''}
-              onClick={() => nozzleMut.mutate(Number(nozzleInput))}
-            >
-              Set
-            </button>
-          </div>
+          {Array.from({ length: isMultiExtruder ? 4 : 1 }, (_, extruder) => {
+            const suffix = extruder === 0 ? '' : `_${extruder + 1}`;
+            const temperature = (temps as Record<string, number | boolean | undefined>)[`nozzle${suffix}`];
+            const target = (temps as Record<string, number | boolean | undefined>)[`nozzle${suffix}_target`];
+            const input = nozzleInputs[extruder] ?? '';
+            const active = status?.active_extruder === extruder;
+            return (
+              <div key={extruder} className="flex items-center gap-2">
+                <Thermometer size={14} className="text-orange-400 shrink-0" />
+                <label className={`text-xs w-10 shrink-0 ${active ? 'text-[var(--accent)] font-semibold' : 'text-[var(--text-muted)]'}`}>
+                  {isSnapmakerU1 ? `E${extruder}` : isCrealityK3 ? `Nozzle ${extruder + 1}` : t('printers.klipper.nozzle', 'Nozzle')}
+                </label>
+                <span className="text-xs font-mono tabular-nums text-[var(--text-secondary)] w-12">
+                  {Math.round(typeof temperature === 'number' ? temperature : 0)}°C
+                </span>
+                <input
+                  type="number"
+                  aria-label={`${t('printers.klipper.nozzleTemperatureTarget', 'Nozzle temperature target')} ${isSnapmakerU1 ? `E${extruder}` : isCrealityK3 ? `${extruder + 1}` : ''}`.trim()}
+                  className={inputClass}
+                  value={input}
+                  min={0}
+                  max={350}
+                  placeholder={String(Math.round(typeof target === 'number' ? target : 0) || '—')}
+                  onChange={(e) => setNozzleInputs((current) => ({ ...current, [extruder]: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && input !== '') nozzleMut.mutate({ target: Number(input), extruder: isMultiExtruder ? extruder : undefined });
+                  }}
+                />
+                <button
+                  aria-label={`${t('printers.klipper.set', 'Set')} ${isSnapmakerU1 ? `E${extruder}` : isCrealityK3 ? `Nozzle ${extruder + 1}` : t('printers.klipper.nozzle', 'Nozzle')}`}
+                  className={`px-2 py-1 rounded text-xs ${secondaryControlBtn}`}
+                  disabled={nozzleMut.isPending || input === ''}
+                  onClick={() => nozzleMut.mutate({ target: Number(input), extruder: isMultiExtruder ? extruder : undefined })}
+                >
+                  {t('printers.klipper.set', 'Set')}
+                </button>
+              </div>
+            );
+          })}
           <div className="flex items-center gap-2">
             <Thermometer size={14} className="text-blue-400 shrink-0" />
             <label className="text-xs text-[var(--text-muted)] w-16 shrink-0">
@@ -494,7 +547,7 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
             </span>
             <input
               type="number"
-              aria-label="Bed temperature target"
+              aria-label={t('printers.klipper.bedTemperatureTarget', 'Bed temperature target')}
               className={inputClass}
               value={bedInput}
               min={0}
@@ -506,12 +559,12 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
               }}
             />
             <button
-              aria-label="Bed"
+              aria-label={t('printers.klipper.bed', 'Bed')}
               className={`px-2 py-1 rounded text-xs ${secondaryControlBtn}`}
               disabled={bedMut.isPending || bedInput === ''}
               onClick={() => bedMut.mutate(Number(bedInput))}
             >
-              Set
+              {t('printers.klipper.set', 'Set')}
             </button>
           </div>
         </div>
@@ -535,7 +588,7 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
                 className={homeBtn}
                 disabled={zOffsetMut.isPending}
                 onClick={() => zOffsetMut.mutate({ amount: zOffsetStep })}
-                title={`Z-Offset +${zOffsetStep}`}
+                title={t('printers.klipper.increaseZOffset', { step: zOffsetStep, defaultValue: `Increase Z-offset by ${zOffsetStep}` })}
               >
                 <ChevronUp size={14} />
               </button>
@@ -543,7 +596,7 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
                 className={homeBtn}
                 disabled={zOffsetMut.isPending}
                 onClick={() => zOffsetMut.mutate({ amount: -zOffsetStep })}
-                title={`Z-Offset −${zOffsetStep}`}
+                title={t('printers.klipper.decreaseZOffset', { step: zOffsetStep, defaultValue: `Decrease Z-offset by ${zOffsetStep}` })}
               >
                 <ChevronDown size={14} />
               </button>
@@ -560,13 +613,13 @@ export function KlipperControlPanel({ printer, status, showToast }: Props) {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-xs text-[var(--text-muted)] flex-1">Stepper motors</span>
+            <span className="text-xs text-[var(--text-muted)] flex-1">{t('printers.klipper.stepperMotors', 'Stepper motors')}</span>
           <button
             className={`flex items-center justify-center gap-1 px-3 py-1.5 rounded text-sm font-medium ${secondaryControlBtn}`}
             disabled={disableSteppersMut.isPending}
             onClick={() => disableSteppersMut.mutate()}
           >
-            Disable steppers
+            {t('printers.klipper.disableSteppers', 'Disable steppers')}
           </button>
         </div>
       </div>

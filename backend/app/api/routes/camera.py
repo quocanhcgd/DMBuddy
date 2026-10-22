@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 from collections.abc import AsyncGenerator
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
@@ -43,6 +44,10 @@ from backend.app.services.elegoo_camera import (
     get_effective_camera_source,
     is_elegoo_sdcp_camera_source,
     keep_elegoo_sdcp_camera_session,
+)
+from backend.app.services.printer_providers.flashforge_contract import (
+    FLASHFORGE_AD5M_PROVIDER,
+    FLASHFORGE_CREATOR5_PROVIDER,
 )
 
 logger = logging.getLogger(__name__)
@@ -138,6 +143,27 @@ async def get_printer_or_404(printer_id: int, db: AsyncSession) -> Printer:
     if not printer:
         raise HTTPException(status_code=404, detail="Printer not found")
     return printer
+
+
+async def _activate_flashforge_camera(printer: Printer, camera_source: Any) -> str | None:
+    if (
+        getattr(printer, "provider", None) not in {FLASHFORGE_AD5M_PROVIDER, FLASHFORGE_CREATOR5_PROVIDER}
+        or not getattr(camera_source, "derived", False)
+        or getattr(printer, "connection_mode", "direct") != "direct"
+    ):
+        return getattr(camera_source, "url", None)
+
+    from backend.app.services.printer_manager import printer_manager
+
+    client = printer_manager.get_client(printer.id)
+    activate = getattr(client, "activate_camera", None) if client else None
+    if not callable(activate):
+        return None
+    try:
+        return await asyncio.to_thread(activate)
+    except Exception as exc:  # noqa: BLE001 - provider errors may contain auth material
+        logger.warning("FlashForge camera activation failed for printer %s: %s", printer.id, type(exc).__name__)
+        return None
 
 
 async def generate_chamber_mjpeg_stream(
@@ -676,6 +702,7 @@ async def camera_stream(
             _active_external_streams.add(printer_id)
             activation_task: asyncio.Task[None] | None = None
             should_activate_elegoo = is_elegoo_sdcp_camera_source(getattr(printer, "provider", None), camera_url)
+            stream_url = camera_url
             try:
                 if should_activate_elegoo:
                     activation_task = asyncio.create_task(
@@ -689,7 +716,15 @@ async def camera_stream(
                         await asyncio.wait_for(disconnect_event.wait(), timeout=1.0)
                     except TimeoutError:
                         pass
-                async for chunk in generate_mjpeg_stream(camera_url, camera_type, fps):
+                elif effective_camera.derived and getattr(printer, "provider", None) in {
+                    FLASHFORGE_AD5M_PROVIDER,
+                    FLASHFORGE_CREATOR5_PROVIDER,
+                }:
+                    stream_url = await _activate_flashforge_camera(printer, effective_camera)
+                    if not stream_url:
+                        logger.warning("FlashForge camera activation unavailable for printer %s", printer_id)
+                        return
+                async for chunk in generate_mjpeg_stream(stream_url, camera_type, fps):
                     if disconnect_event.is_set():
                         break
                     frame_start = chunk.find(b"\xff\xd8")
@@ -709,6 +744,7 @@ async def camera_stream(
                         pass
                 _active_external_streams.discard(printer_id)
                 _stream_last_frame_times.pop(upstream_stream_id, None)
+                _stream_start_times.pop(printer_id, None)
                 logger.info("External/provider camera upstream ended for printer %s", printer_id)
 
         broadcaster: MjpegBroadcaster = await get_or_create_broadcaster(fanout_key, external_upstream)
@@ -970,8 +1006,12 @@ async def camera_snapshot(
         else:
             from backend.app.services.external_camera import capture_frame
 
+            camera_url = await _activate_flashforge_camera(printer, effective_camera)
+            if not camera_url:
+                raise HTTPException(status_code=503, detail="FlashForge camera could not be activated")
+
             frame_data = await capture_frame(
-                effective_camera.url,
+                camera_url,
                 effective_camera.camera_type or "mjpeg",
                 timeout=15,
                 snapshot_url=effective_camera.snapshot_url,
@@ -1060,7 +1100,10 @@ async def test_camera(
     if effective_camera.enabled and effective_camera.url:
         from backend.app.services.external_camera import test_connection
 
-        return await test_connection(effective_camera.url, effective_camera.camera_type or "mjpeg")
+        camera_url = await _activate_flashforge_camera(printer, effective_camera)
+        if not camera_url:
+            return {"success": False, "message": "FlashForge camera could not be activated"}
+        return await test_connection(camera_url, effective_camera.camera_type or "mjpeg")
 
     result = await test_camera_connection(
         ip_address=printer.ip_address,
@@ -1091,8 +1134,11 @@ async def diagnose_camera_route(
     effective_camera = get_effective_camera_source(printer)
 
     if effective_camera.enabled and effective_camera.url:
+        camera_url = await _activate_flashforge_camera(printer, effective_camera)
+        if not camera_url:
+            raise HTTPException(status_code=503, detail="FlashForge camera could not be activated")
         result = await diagnose_external_camera(
-            camera_url=effective_camera.url,
+            camera_url=camera_url,
             camera_type=effective_camera.camera_type,
             printer_id=printer_id,
             snapshot_url=effective_camera.snapshot_url,

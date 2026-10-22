@@ -2732,7 +2732,14 @@ async def get_library_file_filament_requirements(
 
     # Only 3MF files have parseable filament info
     if not lib_file.filename.lower().endswith(".3mf"):
-        return {"file_id": file_id, "filename": lib_file.filename, "plate_id": plate_id, "filaments": []}
+        return {
+            "file_id": file_id,
+            "filename": lib_file.filename,
+            "plate_id": plate_id,
+            "filaments": [],
+            "creator5_tools": [],
+            "creator5_tool_warning": "Creator 5 logical tools are only inspected for G-code and 3MF files.",
+        }
 
     filaments = []
 
@@ -2881,7 +2888,18 @@ async def get_library_file_filament_requirements(
         "filename": lib_file.filename,
         "plate_id": plate_id,
         "filaments": filaments,
+        **_creator5_tool_metadata_response(file_path, plate_id),
     }
+
+
+def _creator5_tool_metadata_response(file_path: Path, plate_id: int | None) -> dict:
+    """Expose only bounded, sanitized logical-tool metadata for queue mapping."""
+    from backend.app.services.flashforge.creator5_tool_requirements import extract_creator5_tool_metadata
+
+    try:
+        return {"creator5_tools": extract_creator5_tool_metadata(file_path, plate_id), "creator5_tool_warning": None}
+    except ValueError as exc:
+        return {"creator5_tools": [], "creator5_tool_warning": str(exc)}
 
 
 _STRIPPABLE_3MF_CONFIGS = frozenset(

@@ -49,6 +49,13 @@ const fluiddPrinter = {
   provider: 'fluidd',
 } as Printer;
 
+const crealityK3Printer = {
+  ...fluiddPrinter,
+  id: 8,
+  name: 'Creality K3',
+  model: 'Creality K3',
+} as Printer;
+
 describe('KlipperControlPanel PrusaLink controls', () => {
   beforeEach(() => {
     vi.mocked(api.axisJog).mockResolvedValue({ success: true, message: 'ok' });
@@ -90,5 +97,20 @@ describe('KlipperControlPanel PrusaLink controls', () => {
     await user.click(screen.getByRole('button', { name: /disable steppers/i }));
 
     await waitFor(() => expect(api.disableSteppers).toHaveBeenCalledWith(7));
+  });
+
+  it('shows four K3 nozzle controls and targets the selected extruder', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.setNozzleTemperature).mockResolvedValue({ success: true, message: 'ok' });
+
+    render(<KlipperControlPanel printer={crealityK3Printer} status={{ connected: true }} showToast={vi.fn()} />);
+
+    for (let nozzle = 1; nozzle <= 4; nozzle += 1) {
+      expect(screen.getByText(`Nozzle ${nozzle}`)).toBeInTheDocument();
+    }
+    await user.type(screen.getByRole('spinbutton', { name: /nozzle temperature target 3/i }), '215');
+    await user.click(screen.getByRole('button', { name: 'Set Nozzle 3' }));
+
+    await waitFor(() => expect(api.setNozzleTemperature).toHaveBeenCalledWith(8, 215, 2));
   });
 });

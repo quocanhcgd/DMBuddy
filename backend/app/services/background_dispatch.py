@@ -679,7 +679,14 @@ class BackgroundDispatchService:
             remote_path,
             file_path,
         )
-        return bool(await asyncio.to_thread(client.upload_file, file_path, remote_path))  # type: ignore[attr-defined]
+        upload_kwargs: dict[str, Any] = {}
+        if provider == "flashforge_creator5":
+            if job.options.get("ams_mapping") is not None or job.options.get("print_platform_type") is not None:
+                raise RuntimeError("FlashForge Creator 5 does not support Bambu AMS mapping or platform selection")
+            from backend.app.services.print_scheduler import _creator5_tool_count_from_file
+
+            upload_kwargs["tool_count"] = _creator5_tool_count_from_file(file_path, job.options.get("plate_id"))
+        return bool(await asyncio.to_thread(client.upload_file, file_path, remote_path, **upload_kwargs))  # type: ignore[attr-defined]
 
     async def _register_provider_file_info_estimate(
         self,

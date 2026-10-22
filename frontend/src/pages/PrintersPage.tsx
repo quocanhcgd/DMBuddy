@@ -30,6 +30,8 @@ import { PRINTER_MODEL_GROUPS, mapModelCode } from '../utils/printerModels';
 // original bug at #1447).
 const DRYING_POPOVER_WIDTH = 240;
 const DRYING_POPOVER_ESTIMATED_HEIGHT = 320;
+const EMPTY_AMS_UNITS: AMSUnit[] = [];
+const EMPTY_VT_TRAYS: NonNullable<PrinterStatus['vt_tray']> = [];
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
@@ -634,29 +636,37 @@ function snapmakerU1LoadState(tray: import('../api/client').AMSTray | undefined 
   const actionState = String(tray.channel_action_state || '').toLowerCase();
   if (tray.loaded_to_extruder || channelState === 'load_finish' || actionState === 'load_finish') {
     return {
-      label: 'In extruder',
+      labelKey: 'printers.u1FilamentInExtruder',
+      labelFallback: 'In extruder',
       className: 'bg-amber-500/20 text-amber-300 border-amber-400/40',
-      title: 'Filament is loaded through the feeder into the extruder',
+      titleKey: 'printers.u1FilamentInExtruderHelp',
+      titleFallback: 'Filament is loaded through the feeder into the extruder',
     };
   }
   if (channelState === 'preload_finish' || actionState === 'preload_finish' || tray.loaded_to_feeder) {
     return {
-      label: 'Preloaded',
+      labelKey: 'printers.u1FilamentPreloaded',
+      labelFallback: 'Preloaded',
       className: 'bg-sky-500/15 text-sky-300 border-sky-400/30',
-      title: 'Filament is loaded into the feeder, not into the extruder',
+      titleKey: 'printers.u1FilamentPreloadedHelp',
+      titleFallback: 'Filament is loaded into the feeder, not into the extruder',
     };
   }
   if (tray.filament_detected) {
     return {
-      label: 'Detected',
+      labelKey: 'printers.u1FilamentDetected',
+      labelFallback: 'Detected',
       className: 'bg-bambu-green/15 text-bambu-green border-bambu-green/30',
-      title: 'Filament is detected in this feeder channel',
+      titleKey: 'printers.u1FilamentDetectedHelp',
+      titleFallback: 'Filament is detected in this feeder channel',
     };
   }
   return {
-    label: 'Empty',
+    labelKey: 'printers.u1FilamentEmpty',
+    labelFallback: 'Empty',
     className: 'bg-bambu-dark-secondary text-bambu-gray border-bambu-dark-tertiary',
-    title: 'No filament detected in this feeder channel',
+    titleKey: 'printers.u1FilamentEmptyHelp',
+    titleFallback: 'No filament detected in this feeder channel',
   };
 }
 
@@ -2105,19 +2115,28 @@ function PrinterCard({
     obicoPrinterToggleMutation.mutate(!isObicoPrinterEnabled);
   };
 
+  const isPrusaModelPrinter = isPrusaPrinter(printer);
+  const isBambuProvider = !printer.provider || printer.provider === 'bambu';
+  const isMoonrakerProvider = printer.provider === 'klipper' || printer.provider === 'mainsail' || printer.provider === 'fluidd';
+  const isElegooSDCPProvider = printer.provider === 'elegoo_sdcp';
+  const isSnapmakerU1 = isMoonrakerProvider && /snapmaker\s+u1/i.test(printer.model || '');
+  const isCrealityK2Moonraker = isMoonrakerProvider && /creality\s+k2/i.test(printer.model || '');
+  const isCrealityK3Moonraker = isMoonrakerProvider && /^(?:creality\s+)?k3\b/i.test((printer.model || '').trim());
+  const filamentAmsData = isCrealityK3Moonraker ? EMPTY_AMS_UNITS : status?.ams ?? EMPTY_AMS_UNITS;
+  const filamentVtTray = isCrealityK3Moonraker ? EMPTY_VT_TRAYS : status?.vt_tray ?? EMPTY_VT_TRAYS;
+  const cfsNanoStatus = isCrealityK3Moonraker ? status?.cfs_nano : null;
+
   // Collect unique tray_info_idx values for cloud filament info lookup
   const trayInfoIds = useMemo(() => {
     const ids = new Set<string>();
-    if (status?.ams) {
-      for (const ams of status.ams) {
-        for (const tray of ams.tray || []) {
-          if (tray.tray_info_idx) {
-            ids.add(tray.tray_info_idx);
-          }
+    for (const ams of filamentAmsData) {
+      for (const tray of ams.tray || []) {
+        if (tray.tray_info_idx) {
+          ids.add(tray.tray_info_idx);
         }
       }
     }
-    for (const vt of status?.vt_tray ?? []) {
+    for (const vt of filamentVtTray) {
       if (vt.tray_info_idx) ids.add(vt.tray_info_idx);
     }
     if (status?.nozzle_rack) {
@@ -2128,13 +2147,7 @@ function PrinterCard({
       }
     }
     return Array.from(ids);
-  }, [status?.ams, status?.vt_tray, status?.nozzle_rack]);
-
-  const isPrusaModelPrinter = isPrusaPrinter(printer);
-  const isBambuProvider = !printer.provider || printer.provider === 'bambu';
-  const isMoonrakerProvider = printer.provider === 'klipper' || printer.provider === 'mainsail' || printer.provider === 'fluidd';
-  const isElegooSDCPProvider = printer.provider === 'elegoo_sdcp';
-  const isCrealityK2Moonraker = isMoonrakerProvider && /creality\s+k2/i.test(printer.model || '');
+  }, [filamentAmsData, filamentVtTray, status?.nozzle_rack]);
   // Loaded-spool assignment is local inventory state, not a provider control.
   // Keep unsupported provider/manual controls hidden, but allow single-spool
   // PrusaLink, Klipper/Moonraker, and Elegoo SDCP printers to select a loaded
@@ -2160,37 +2173,33 @@ function PrinterCard({
   // Collect loaded filament types for queue widget filtering
   const loadedFilamentTypes = useMemo(() => {
     const types = new Set<string>();
-    if (status?.ams) {
-      for (const ams of status.ams) {
-        for (const tray of ams.tray || []) {
-          if (tray.tray_type) types.add(tray.tray_type.toUpperCase());
-        }
+    for (const ams of filamentAmsData) {
+      for (const tray of ams.tray || []) {
+        if (tray.tray_type) types.add(tray.tray_type.toUpperCase());
       }
     }
-    for (const vt of status?.vt_tray ?? []) {
+    for (const vt of filamentVtTray) {
       if (vt.tray_type) types.add(vt.tray_type.toUpperCase());
     }
     if (loadedSpool?.material) {
       types.add(loadedSpool.material.toUpperCase());
     }
     return types;
-  }, [status?.ams, status?.vt_tray, loadedSpool?.material]);
+  }, [filamentAmsData, filamentVtTray, loadedSpool?.material]);
 
   // Collect loaded filament type+color pairs for queue widget override matching
   // Format: "TYPE:rrggbb" (e.g., "PETG:ffffff") — mirrors backend _count_override_color_matches()
   const loadedFilaments = useMemo(() => {
     const filaments = new Set<string>();
-    if (status?.ams) {
-      for (const ams of status.ams) {
-        for (const tray of ams.tray || []) {
-          if (tray.tray_type && tray.tray_color) {
-            const color = tray.tray_color.replace('#', '').toLowerCase().slice(0, 6);
-            filaments.add(`${tray.tray_type.toUpperCase()}:${color}`);
-          }
+    for (const ams of filamentAmsData) {
+      for (const tray of ams.tray || []) {
+        if (tray.tray_type && tray.tray_color) {
+          const color = tray.tray_color.replace('#', '').toLowerCase().slice(0, 6);
+          filaments.add(`${tray.tray_type.toUpperCase()}:${color}`);
         }
       }
     }
-    for (const vt of status?.vt_tray ?? []) {
+    for (const vt of filamentVtTray) {
       if (vt.tray_type && vt.tray_color) {
         const color = vt.tray_color.replace('#', '').toLowerCase().slice(0, 6);
         filaments.add(`${vt.tray_type.toUpperCase()}:${color}`);
@@ -2202,7 +2211,7 @@ function PrinterCard({
       filaments.add(`${loaded.material.toUpperCase()}:${color}`);
     }
     return filaments;
-  }, [status?.ams, status?.vt_tray, loadedSpool]);
+  }, [filamentAmsData, filamentVtTray, loadedSpool]);
 
   // Fetch cloud filament info for tooltips (name includes color, also has K value)
   const { data: filamentInfo } = useQuery({
@@ -2313,11 +2322,14 @@ function PrinterCard({
   // Cache AMS data to prevent it disappearing on idle/offline printers
   const cachedAmsData = useRef<AMSUnit[]>([]);
   useEffect(() => {
-    if (status?.ams && status.ams.length > 0) {
+    if (!isCrealityK3Moonraker && status?.ams && status.ams.length > 0) {
       cachedAmsData.current = status.ams;
     }
-  }, [status?.ams]);
-  const amsData = (status?.ams && status.ams.length > 0) ? status.ams : cachedAmsData.current;
+  }, [isCrealityK3Moonraker, status?.ams]);
+  const amsData = isCrealityK3Moonraker
+    ? []
+    : (status?.ams && status.ams.length > 0) ? status.ams : cachedAmsData.current;
+  const vtTrayData = filamentVtTray;
 
   // Cache tray_now to prevent flickering when undefined values come in
   // Valid tray IDs: 0-253 for AMS, 254 for external spool
@@ -2330,11 +2342,11 @@ function PrinterCard({
   } else if (currentTrayNow === 255) {
     cachedTrayNow.current = undefined;
   }
-  const effectiveTrayNow = (currentTrayNow !== undefined && currentTrayNow !== 255)
+  const effectiveTrayNow = !isCrealityK3Moonraker && currentTrayNow !== undefined && currentTrayNow !== 255
     ? currentTrayNow
-    : cachedTrayNow.current;
+    : isCrealityK3Moonraker ? undefined : cachedTrayNow.current;
 
-  const showLoadedSpoolPicker = supportsSpoolAssignment && !spoolmanLoading && (amsData.length === 0) && ((status?.vt_tray?.length ?? 0) === 0);
+  const showLoadedSpoolPicker = supportsSpoolAssignment && !isCrealityK3Moonraker && !spoolmanLoading && (amsData.length === 0) && (vtTrayData.length === 0);
   const loadedSpoolPicker = showLoadedSpoolPicker ? (
     <div className="flex items-center justify-between gap-3 rounded-lg bg-bambu-dark/70 border border-bambu-dark-tertiary px-3 py-2">
       <div className="min-w-0">
@@ -2571,13 +2583,25 @@ function PrinterCard({
   });
 
   // Print control mutations
+  const handlePrinterOperationError = (error: Error, fallback: string) => {
+    if (error instanceof ApiError && error.detail?.outcome === 'delivery_unknown') {
+      void queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
+      showToast(t(
+        'printers.toast.deliveryUnknown',
+        'The printer may have received this command. Check its current status before trying again.',
+      ), 'warning');
+      return;
+    }
+    showToast(error.message || fallback, 'error');
+  };
+
   const stopPrintMutation = useMutation({
     mutationFn: () => api.stopPrint(printer.id),
     onSuccess: () => {
       showToast(t('printers.toast.printStopped'));
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
-    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToStopPrint'), 'error'),
+    onError: (error: Error) => handlePrinterOperationError(error, t('printers.toast.failedToStopPrint')),
   });
 
   const pausePrintMutation = useMutation({
@@ -2586,7 +2610,7 @@ function PrinterCard({
       showToast(t('printers.toast.printPaused'));
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
-    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToPausePrint'), 'error'),
+    onError: (error: Error) => handlePrinterOperationError(error, t('printers.toast.failedToPausePrint')),
   });
 
   const resumePrintMutation = useMutation({
@@ -2595,7 +2619,7 @@ function PrinterCard({
       showToast(t('printers.toast.printResumed'));
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
-    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToResumePrint'), 'error'),
+    onError: (error: Error) => handlePrinterOperationError(error, t('printers.toast.failedToResumePrint')),
   });
 
   const clearPlateMutation = useMutation({
@@ -3053,7 +3077,7 @@ function PrinterCard({
     status?.connected && viewMode === 'expanded' && (status.temperatures || pandaBreathState) ? 'temperatures' : null,
     status?.connected && viewMode === 'expanded' && pandaBreathState ? 'panda-breath' : null,
     status?.connected && viewMode === 'expanded' ? 'indicators' : null,
-    status?.connected && viewMode === 'expanded' && ((amsData?.length ?? 0) > 0 || (status.vt_tray?.length ?? 0) > 0) ? 'filaments' : null,
+    status?.connected && viewMode === 'expanded' && ((amsData?.length ?? 0) > 0 || vtTrayData.length > 0 || cfsNanoStatus) ? 'filaments' : null,
     smartPlug && viewMode === 'expanded' ? 'smart-plug' : null,
     viewMode === 'expanded' ? 'actions' : null,
     (printer.provider === 'klipper' || printer.provider === 'mainsail' || printer.provider === 'fluidd') && !isPrusaModelPrinter && viewMode === 'expanded' ? 'manual-controls' : null,
@@ -4243,15 +4267,15 @@ function PrinterCard({
                         );
                       })}
 
-                      {isElegooSDCPProvider && (
+                      {(isElegooSDCPProvider || isSnapmakerU1 || isCrealityK3Moonraker) && (
                         <button
                           type="button"
                           onClick={() => chamberLightMutation.mutate(!status.chamber_light)}
-                          disabled={chamberLightMutation.isPending || !hasPermission('printers:control')}
+                          disabled={chamberLightMutation.isPending || !hasPermission('printers:control') || (isCrealityK3Moonraker && !status.chamber_light_available)}
                           className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors ${
                             status.chamber_light ? 'bg-yellow-500/10 hover:bg-yellow-500/20' : 'bg-bambu-dark hover:bg-bambu-dark-tertiary'
                           } disabled:opacity-50 disabled:cursor-not-allowed`}
-                          title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (status.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn'))}
+                          title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (isCrealityK3Moonraker && !status.chamber_light_available ? t('printers.chamberLightUnavailable', 'Light pin is disabled in printer configuration') : status.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn'))}
                         >
                           <ChamberLight on={status.chamber_light} className={`w-3.5 h-3.5 ${status.chamber_light ? 'text-yellow-400' : 'text-bambu-gray/50'}`} />
                           <span className={`text-[10px] ${status.chamber_light ? 'text-yellow-400' : 'text-bambu-gray/50'}`}>
@@ -4260,7 +4284,7 @@ function PrinterCard({
                         </button>
                       )}
 
-                      {(fanItems.length > 0 || isElegooSDCPProvider) && <div className="w-px h-5 bg-bambu-gray/30" />}
+                      {(fanItems.length > 0 || isElegooSDCPProvider || isSnapmakerU1 || isCrealityK3Moonraker) && <div className="w-px h-5 bg-bambu-gray/30" />}
 
                       {/* Airduct Mode (P2S / X2D / H2*) */}
                       {(['P2S', 'X2D', 'H2D', 'H2C', 'H2S'].includes(printer.model ?? '')) && (() => {
@@ -4419,7 +4443,7 @@ function PrinterCard({
 
             {/* AMS Units - 2-Column Grid Layout */}
             <SortablePrinterCardSection layoutEditing={layoutEditing} id="filaments" title={t('printers.filaments')} order={getCardSectionOrder('filaments')}>
-            {(amsData?.length > 0 || status.vt_tray.length > 0) && viewMode === 'expanded' && (() => {
+            {(amsData?.length > 0 || vtTrayData.length > 0 || cfsNanoStatus) && viewMode === 'expanded' && (() => {
               // Separate regular AMS (4-tray) from HT AMS (1-tray)
               const regularAms = amsData.filter(ams => ams.tray.length > 1);
               const htAms = amsData.filter(ams => ams.tray.length === 1);
@@ -4437,6 +4461,40 @@ function PrinterCard({
 
                   {/* AMS Content */}
                   <div className="space-y-3">
+                    {cfsNanoStatus && (
+                      <div className="grid grid-cols-2 gap-3">
+                      <div data-testid="cfs-nano-module" className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] text-white font-medium">{cfsNanoStatus.station_type}</span>
+                          <span className={`text-[9px] ${cfsNanoStatus.online === true || cfsNanoStatus.state?.toLowerCase() === 'connect' ? 'text-emerald-400' : cfsNanoStatus.online === false ? 'text-red-400' : 'text-bambu-gray'}`}>
+                            {cfsNanoStatus.online === true || cfsNanoStatus.state?.toLowerCase() === 'connect'
+                              ? 'Connected'
+                              : cfsNanoStatus.online === false
+                                ? 'Offline'
+                                : 'Status unknown'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {cfsNanoStatus.slots.map((slot, index) => (
+                            <div key={slot.slot} className="min-w-0 rounded border border-bambu-dark-tertiary/50 bg-bambu-dark-secondary/40 p-1 text-center">
+                              <FilamentSlotCircle
+                                trayColor={slot.color}
+                                trayType={slot.material_name}
+                                isEmpty={false}
+                                slotNumber={index + 1}
+                              />
+                              <div className="text-[9px] text-white font-bold truncate" title={slot.material_name || 'Unknown'}>
+                                {slot.material_name || 'Unknown'}
+                              </div>
+                              <div className="mt-1 px-1 py-0.5 rounded border border-bambu-dark-tertiary text-[8px] font-semibold leading-none text-bambu-gray truncate">
+                                {slot.slot}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      </div>
+                    )}
                     {/* Row 1-2: Regular AMS (4-tray) in 2-column grid */}
                     {regularAms.length > 0 && (
                       <div className="grid grid-cols-2 gap-3">
@@ -4673,9 +4731,9 @@ function PrinterCard({
                                     {snapmakerLoadState && (
                                       <div
                                         className={`mt-1 px-1 py-0.5 rounded border text-[8px] font-semibold leading-none truncate ${snapmakerLoadState.className}`}
-                                        title={snapmakerLoadState.title}
+                                        title={t(snapmakerLoadState.titleKey, snapmakerLoadState.titleFallback)}
                                       >
-                                        {snapmakerLoadState.label}
+                                        {t(snapmakerLoadState.labelKey, snapmakerLoadState.labelFallback)}
                                       </div>
                                     )}
                                     {/* Fill bar */}
@@ -4948,7 +5006,7 @@ function PrinterCard({
                   )}
 
                     {/* Row 3: HT AMS + External spools (same style as regular AMS, 4 across) */}
-                    {(htAms.length > 0 || status.vt_tray.length > 0) && (
+                    {(htAms.length > 0 || vtTrayData.length > 0) && (
                       <div className="grid grid-cols-4 gap-3">
                       {/* HT AMS units - name/badge top, slot left, stats right */}
                       {htAms.map((ams) => {
@@ -5374,13 +5432,13 @@ function PrinterCard({
                         );
                       })}
                       {/* External spool(s) - grouped in one card like regular AMS */}
-                      {status.vt_tray.length > 0 && (
-                        <div className={`p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30 ${status.vt_tray.length === 1 ? 'max-w-[50%]' : ''}`}>
+                      {vtTrayData.length > 0 && (
+                        <div className={`p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30 ${vtTrayData.length === 1 ? 'max-w-[50%]' : ''}`}>
                           <div className="flex items-center gap-1 mb-2">
                             <span className="text-[10px] text-white font-medium">{t('printers.external')}</span>
                           </div>
-                          <div className={`grid ${status.vt_tray.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} gap-1.5`}>
-                            {[...status.vt_tray].sort((a, b) => (a.id ?? 254) - (b.id ?? 254)).map((extTray) => {
+                          <div className={`grid ${vtTrayData.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} gap-1.5`}>
+                            {[...vtTrayData].sort((a, b) => (a.id ?? 254) - (b.id ?? 254)).map((extTray) => {
                               const extTrayId = extTray.id ?? 254;
                               // On dual-nozzle (H2C/H2D), tray_now=254 means "external spool"
                               // generically — use active_extruder to determine L vs R:
@@ -5797,15 +5855,15 @@ function PrinterCard({
         {viewMode === 'expanded' && (
           <SortablePrinterCardSection layoutEditing={layoutEditing} id="actions" title="Actions" order={getCardSectionOrder('actions')}>
           <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary flex items-center justify-end gap-2 flex-wrap">
-              {isBambuProvider && !isPrusaModelPrinter && (
+              {(isBambuProvider || isElegooSDCPProvider || isSnapmakerU1 || isCrealityK3Moonraker) && !isPrusaModelPrinter && (
                 <>
                   {/* Chamber Light */}
                   <Button
                     variant="secondary"
                     size="sm"
                     onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
-                    disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
-                    title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (status?.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn'))}
+                    disabled={(!status?.connected && !isSnapmakerU1) || chamberLightMutation.isPending || !hasPermission('printers:control') || (isCrealityK3Moonraker && !status?.chamber_light_available)}
+                    title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (isCrealityK3Moonraker && !status?.chamber_light_available ? t('printers.chamberLightUnavailable', 'Light pin is disabled in printer configuration') : status?.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn'))}
                     className={status?.chamber_light ? '!border-yellow-500 !text-yellow-400 hover:!bg-yellow-500/20' : ''}
                   >
                     <ChamberLight on={status?.chamber_light ?? false} className={`w-4 h-4 ${status?.chamber_light ? 'text-yellow-400' : ''}`} />
@@ -5903,7 +5961,7 @@ function PrinterCard({
 
         {/* Moonraker toolhead control panels */}
         {(isMoonrakerProvider) && !isPrusaModelPrinter && viewMode === 'expanded' && (
-          <SortablePrinterCardSection layoutEditing={layoutEditing} id="manual-controls" title="Manual controls" order={getCardSectionOrder('manual-controls')}>
+          <SortablePrinterCardSection layoutEditing={layoutEditing} id="manual-controls" title={t('printers.klipper.manualControls', 'Manual controls')} order={getCardSectionOrder('manual-controls')}>
           <Collapsible
             defaultOpen={false}
             className="mt-4 pt-3 border-t border-bambu-dark-tertiary"
@@ -5913,14 +5971,14 @@ function PrinterCard({
                 <div className="flex items-center gap-2 min-w-0">
                   <SlidersHorizontal className="w-4 h-4 text-bambu-green flex-shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-white truncate">Manual controls</p>
+                    <p className="text-xs font-semibold text-white truncate">{t('printers.klipper.manualControls', 'Manual controls')}</p>
                     <p className="text-[10px] text-bambu-gray truncate">
-                      Klipper movement, extrusion, and temperatures
+                      {t('printers.klipper.manualControlsDescription', 'Klipper movement, extrusion, and temperatures')}
                     </p>
                   </div>
                 </div>
                 <span className="hidden sm:inline text-[10px] uppercase tracking-wide text-bambu-gray bg-bambu-dark-secondary rounded px-2 py-1">
-                  collapsed
+                  {t('printers.klipper.collapsed', 'collapsed')}
                 </span>
               </div>
             }
@@ -6706,7 +6764,7 @@ function AddPrinterModal({
   const [detectedSubnets, setDetectedSubnets] = useState<string[]>([]);
   const [subnet, setSubnet] = useState('');
   const [customSubnet, setCustomSubnet] = useState(false);
-  const [moonrakerPorts, setMoonrakerPorts] = useState('7125,80');
+  const [moonrakerPorts, setMoonrakerPorts] = useState('7125,80,4408');
   const [scanProgress, setScanProgress] = useState({ scanned: 0, total: 0 });
   const [showDiagnostic, setShowDiagnostic] = useState(false);
   const [prusaLinkApiAuthMode, setPrusaLinkApiAuthMode] = useState<PrusaLinkApiAuthMode>('auto');
@@ -6829,8 +6887,18 @@ function AddPrinterModal({
       setDiscoveryError('');
       setConnectorVerification(null);
       try {
+        let verifyPort: number | undefined;
+        if (payload.provider?.startsWith('flashforge_')) {
+          try {
+            const options = payload.provider_options ? JSON.parse(payload.provider_options) as { http_port?: number } : {};
+            verifyPort = Number.isInteger(options.http_port) ? options.http_port : 8898;
+          } catch {
+            verifyPort = 8898;
+          }
+        }
         const verification = await api.verifyPrinterThroughConnector(selectedConnector.public_id, {
           ip_address: payload.ip_address,
+          ...(verifyPort ? { port: verifyPort } : {}),
           provider: payload.provider || 'bambu',
           serial_number: payload.serial_number || undefined,
           access_code: payload.access_code || undefined,
@@ -6891,7 +6959,7 @@ function AddPrinterModal({
     try {
       const response = await api.discoverThroughConnector(form.connector_id, {
         subnet: connectorSubnet.trim(),
-        ports: [80, 443, 7125, 8883, 990, 3030],
+        ports: [80, 443, 7125, 8883, 990, 3030, 8899, 19000, 48899],
         max_hosts: 256,
         timeout_ms: 500,
       });
@@ -6908,7 +6976,9 @@ function AddPrinterModal({
   };
 
   const selectConnectorEndpoint = (endpoint: ConnectorDiscoveryResultEntry) => {
-    const provider = endpoint.service === 'bambu-mqtt'
+    const provider = endpoint.provider === 'flashforge_ad5m' || endpoint.provider === 'flashforge_creator5'
+      ? endpoint.provider
+      : endpoint.service === 'bambu-mqtt'
       ? 'bambu'
       : endpoint.service === 'prusalink-api'
         ? 'prusalink'
@@ -6919,6 +6989,11 @@ function AddPrinterModal({
       ...current,
       ip_address: endpoint.ip_address,
       provider: provider as PrinterCreate['provider'],
+      ...(endpoint.model ? { model: endpoint.model } : {}),
+      ...(endpoint.serial_number ? { serial_number: endpoint.serial_number } : {}),
+      ...(endpoint.provider?.startsWith('flashforge_')
+        ? { provider_options: JSON.stringify({ http_port: endpoint.port }) }
+        : {}),
       api_url: provider === 'klipper' ? `http://${endpoint.ip_address}:${endpoint.port}` : current.api_url,
     }));
     setConnectorDiscovered([]);
@@ -7053,6 +7128,8 @@ function AddPrinterModal({
     }
     // Clear discovery results after selection
     setDiscovered([]);
+    setHasScanned(false);
+    setScanProgress({ scanned: 0, total: 0 });
   };
 
   // Cleanup discovery on unmount
@@ -7320,7 +7397,7 @@ function AddPrinterModal({
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none text-sm"
                       value={moonrakerPorts}
                       onChange={(e) => setMoonrakerPorts(e.target.value)}
-                      placeholder="7125,80"
+                      placeholder="7125,80,4408"
                       disabled={discovering}
                     />
                     <p className="mt-1 text-xs text-bambu-gray">

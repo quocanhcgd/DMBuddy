@@ -98,6 +98,9 @@ class TestMetricsAPI:
         assert "printbuddy_queue_pending" in content
         assert "printbuddy_connector_sessions_active" in content
         assert "printbuddy_connector_auth_failures_total" in content
+        assert "printbuddy_connector_request_timeouts_total" in content
+        assert "printbuddy_connector_request_delivery_unknown_total" in content
+        assert "printbuddy_connector_late_or_unknown_responses_total" in content
 
     @pytest.mark.asyncio
     @pytest.mark.integration

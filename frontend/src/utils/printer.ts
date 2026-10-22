@@ -32,6 +32,16 @@ const MODEL_IMAGE_ALIASES: Array<[RegExp, string]> = [
   [/^elegooneptune4plus$/, 'elegoo-neptune-4-plus'],
   [/^elegooneptune4max$/, 'elegoo-neptune-4-max'],
   [/^elegoocentauricarbon$/, 'elegoo-centauri-carbon'],
+  [/^(?:creality)?ender3$/, 'creality-ender-3'],
+  [/^(?:creality)?ender3pro$/, 'creality-ender-3-pro'],
+  [/^(?:creality)?ender3v2$/, 'creality-ender-3-pro-v2'],
+  [/^(?:creality)?ender3s1$/, 'creality-ender-3-pro-s1'],
+  [/^(?:creality)?ender5plus$/, 'creality-ender-5-plus'],
+  [/^(?:creality)?cr10spro$/, 'creality-cr10s-pro'],
+  [/^(?:creality)?cr10sprov2$/, 'creality-cr10s-pro-v2'],
+  [/^(?:creality)?k3(?:pro|plus|combo)?$/, 'creality-k3-v2'],
+  [/^(?:creality)?k2pro(?:combo)?$/, 'creality-k2-pro'],
+  [/^(?:creality)?k2(?:combo)?$/, 'creality-k2'],
   [/^crealityk2plus$/, 'creality-k2-plus'],
   [/^crealityk1c$/, 'creality-k1c'],
   [/^crealityk1$/, 'creality-k1'],
@@ -65,7 +75,9 @@ export function getPrinterImage(model: string | null | undefined): string {
   if (!model) return getDefaultPrinterImage();
   const normalizedModel = normalizePrinterModel(model);
   const imageKey = MODEL_IMAGE_ALIASES.find(([pattern]) => pattern.test(normalizedModel))?.[1];
-  return imageKey ? printerImagePath(`${imageKey}.png`) : getDefaultPrinterImage();
+  if (!imageKey) return getDefaultPrinterImage();
+  const cacheVersion = imageKey.startsWith('creality-k') ? '?v=2' : '';
+  return printerImagePath(`${imageKey}.png${cacheVersion}`);
 }
 
 export function getWifiStrength(rssi: number): { labelKey: string; color: string; bars: number } {

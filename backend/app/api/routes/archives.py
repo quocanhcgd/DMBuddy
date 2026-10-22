@@ -3590,7 +3590,18 @@ async def get_filament_requirements(
         "filename": archive.filename,
         "plate_id": plate_id,
         "filaments": filaments,
+        **_creator5_tool_metadata_response(file_path, plate_id),
     }
+
+
+def _creator5_tool_metadata_response(file_path: Path, plate_id: int | None) -> dict:
+    """Expose only bounded, sanitized logical-tool metadata for queue mapping."""
+    from backend.app.services.flashforge.creator5_tool_requirements import extract_creator5_tool_metadata
+
+    try:
+        return {"creator5_tools": extract_creator5_tool_metadata(file_path, plate_id), "creator5_tool_warning": None}
+    except ValueError as exc:
+        return {"creator5_tools": [], "creator5_tool_warning": str(exc)}
 
 
 @router.post("/{archive_id}/slice", status_code=202)

@@ -11,6 +11,17 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from backend.app.models.connector import Connector
+from backend.app.models.printer import Printer
+from backend.app.services.flashforge.secrets import decrypt_check_code, encrypt_check_code
+
+
+def _configure_flashforge_encryption(monkeypatch):
+    from cryptography.fernet import Fernet
+
+    import backend.app.core.encryption as encryption
+
+    monkeypatch.setenv("MFA_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    monkeypatch.setattr(encryption, "_fernet_instance", None)
 
 
 @pytest.fixture(autouse=True)
@@ -83,6 +94,62 @@ class TestPrintersAPI:
         assert result["name"] == "New Printer"
         assert result["serial_number"] == "00M09A111111111"
         assert result["model"] == "X1C"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_flashforge_create_update_and_read_scrub_check_code(
+        self, async_client: AsyncClient, db_session, _mock_printer_test_connection, monkeypatch
+    ):
+        _configure_flashforge_encryption(monkeypatch)
+        _mock_printer_test_connection.return_value = {"success": True, "state": "IDLE", "model": "FlashForge"}
+        monkeypatch.setattr(
+            "backend.app.api.routes.printers.printer_manager.connect_printer", AsyncMock(return_value=True)
+        )
+        payload = {
+            "name": "AD5M integration",
+            "serial_number": "ff-ad5m-integration",
+            "ip_address": "192.168.1.80",
+            "access_code": "flashforge",
+            "auth_token": "first-check-code",
+            "provider": "flashforge_ad5m",
+            "model": "Adventurer 5M",
+            "provider_options": '{"http_port":9000,"tcp_port":9001}',
+            "is_active": False,
+        }
+
+        created = await async_client.post("/api/v1/printers/", json=payload)
+
+        assert created.status_code == 200, created.text
+        created_data = created.json()
+        assert created_data["auth_token"] is None
+        assert created_data["access_code"] is None
+        assert created_data["auth_token_set"] is True
+        _mock_printer_test_connection.assert_awaited_once()
+        probe = _mock_printer_test_connection.await_args.kwargs
+        assert probe["model"] == "Adventurer 5M"
+        assert probe["provider_options"] == '{"http_port":9000,"camera_port":8080,"tcp_port":9001}'
+
+        printer = await db_session.get(Printer, created_data["id"])
+        assert printer.auth_token.startswith("fernet:")
+        assert decrypt_check_code(printer.auth_token) == "first-check-code"
+
+        updated = await async_client.patch(
+            f"/api/v1/printers/{printer.id}", json={"auth_token": "rotated-check-code"}
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["auth_token"] is None
+        assert updated.json()["auth_token_set"] is True
+        await db_session.refresh(printer)
+        assert printer.auth_token.startswith("fernet:")
+        assert decrypt_check_code(printer.auth_token) == "rotated-check-code"
+
+        for response in (
+            await async_client.get(f"/api/v1/printers/{printer.id}"),
+            await async_client.get("/api/v1/printers/"),
+        ):
+            assert response.status_code == 200
+            assert "rotated-check-code" not in response.text
+            assert "first-check-code" not in response.text
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -392,8 +459,11 @@ class TestPrintersAPI:
 
         assert response.status_code == 200
         result = response.json()
-        assert result["auth_token"] == "updated-token"
+        assert result["auth_token"] is None
+        assert result["auth_token_set"] is True
         assert result["provider_options"] == '{"prusalink_api_mode":"modern","prusalink_auth_mode":"digest"}'
+        await db_session.refresh(printer)
+        assert printer.auth_token == "updated-token"
 
     # ========================================================================
     # Delete endpoints
@@ -534,6 +604,218 @@ class TestPrintersAPI:
         assert result["state"] == "REACHABLE"
         request.assert_awaited_once()
         assert request.await_args.args[1] == "printer.status.request"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_connector_flashforge_files_uses_read_only_rpc_and_redacts_secret(
+        self, async_client: AsyncClient, printer_factory, db_session, monkeypatch
+    ):
+        connector = Connector(
+            public_id="files-connector",
+            name="Files Connector",
+            owner_user_id=None,
+            status="online",
+            credential_prefix="pc_files",
+            credential_hash="not-used-by-binding",
+        )
+        db_session.add(connector)
+        await db_session.commit()
+        printer = await printer_factory(
+            connection_mode="connector",
+            connector_id=connector.public_id,
+            provider="flashforge_ad5m",
+            model="Adventurer 5M",
+            serial_number="REMOTE-FILES-PRINTER",
+            ip_address="192.168.50.21",
+            auth_token=encrypt_check_code("secret-check-code"),
+            provider_options='{"http_port":8898,"tcp_port":8899}',
+        )
+
+        from backend.app.services.connector_gateway import connector_gateway
+
+        monkeypatch.setattr(connector_gateway, "is_online", lambda value: value == connector.public_id)
+        request = AsyncMock(
+            return_value={
+                "request_id": "files-remote-1",
+                "status": "completed",
+                "path": "/",
+                "files": [{"name": "cube.gcode", "path": "/cube.gcode", "type": "file"}],
+                "completeness": "complete",
+                "source": "tcp-m661",
+            }
+        )
+        monkeypatch.setattr(connector_gateway, "request", request)
+
+        response = await async_client.get(f"/api/v1/printers/{printer.id}/files")
+
+        assert response.status_code == 200, response.text
+        assert response.json()["files"][0]["name"] == "cube.gcode"
+        assert response.json()["listing"]["completeness"] == "complete"
+        assert "secret-check-code" not in response.text
+        assert request.await_args.args[1] == "printer.files.request"
+        assert request.await_args.args[2]["access_code"] == "secret-check-code"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_connector_flashforge_file_uses_chunked_rpc(
+        self, async_client: AsyncClient, printer_factory, db_session, monkeypatch
+    ):
+        connector = Connector(
+            public_id="upload-connector",
+            name="Upload Connector",
+            owner_user_id=None,
+            status="online",
+            credential_prefix="pc_upload",
+            credential_hash="not-used-by-binding",
+        )
+        db_session.add(connector)
+        await db_session.commit()
+        printer = await printer_factory(
+            connection_mode="connector",
+            connector_id=connector.public_id,
+            provider="flashforge_ad5m",
+            model="Adventurer 5M",
+            serial_number="REMOTE-UPLOAD-PRINTER",
+            ip_address="192.168.50.22",
+            auth_token=encrypt_check_code("secret-upload-code"),
+            provider_options='{"http_port":8898,"tcp_port":8899}',
+        )
+
+        from backend.app.services.connector_gateway import connector_gateway
+
+        monkeypatch.setattr(connector_gateway, "is_online", lambda value: value == connector.public_id)
+        calls = []
+
+        async def upload_response(_connector_id, message_type, payload, *, timeout):
+            calls.append((message_type, payload, timeout))
+            phase = payload["phase"]
+            return {
+                "request_id": payload["request_id"],
+                "upload_id": payload["upload_id"],
+                "status": "completed" if phase == "finish" else "accepted",
+                "received_bytes": payload.get("size", 0) if phase == "finish" else 0,
+            }
+
+        monkeypatch.setattr(connector_gateway, "request", upload_response)
+        response = await async_client.post(
+            f"/api/v1/printers/{printer.id}/files/upload",
+            files={"file": ("cube.gcode", b"hello connector", "text/plain")},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["filename"] == "cube.gcode"
+        assert len(calls) == 3
+        assert [call[1]["phase"] for call in calls] == ["begin", "chunk", "finish"]
+        assert calls[0][1]["filename"] == "cube.gcode"
+        assert calls[0][1]["access_code"] == "secret-upload-code"
+        assert "secret-upload-code" not in response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_pause_connector_flashforge_uses_control_rpc(
+        self, async_client: AsyncClient, printer_factory, db_session, monkeypatch
+    ):
+        connector = Connector(
+            public_id="control-connector",
+            name="Control Connector",
+            owner_user_id=None,
+            status="online",
+            credential_prefix="pc_control",
+            credential_hash="not-used-by-binding",
+        )
+        db_session.add(connector)
+        await db_session.commit()
+        printer = await printer_factory(
+            connection_mode="connector",
+            connector_id=connector.public_id,
+            provider="flashforge_ad5m",
+            model="Adventurer 5M",
+            serial_number="REMOTE-CONTROL-PRINTER",
+            ip_address="192.168.50.23",
+            auth_token=encrypt_check_code("secret-control-code"),
+        )
+
+        from backend.app.services.connector_gateway import connector_gateway
+
+        monkeypatch.setattr(connector_gateway, "is_online", lambda value: value == connector.public_id)
+        request = AsyncMock(
+            return_value={
+                "request_id": "control-remote-1",
+                "status": "completed",
+                "action": "pause",
+                "state_before": "RUNNING",
+                "state_after": "PAUSE",
+            }
+        )
+        monkeypatch.setattr(connector_gateway, "request", request)
+        with patch("backend.app.api.routes.printers.printer_manager.get_client", side_effect=AssertionError("local control")):
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/print/pause")
+
+        assert response.status_code == 200, response.text
+        assert response.json()["state"] == "PAUSE"
+        assert request.await_args.args[1] == "printer.control.request"
+        assert request.await_args.args[2]["access_code"] == "secret-control-code"
+        assert "secret-control-code" not in response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_temperature_connector_flashforge_uses_rpc_without_local_manager(
+        self, async_client: AsyncClient, printer_factory, db_session, monkeypatch
+    ):
+        _configure_flashforge_encryption(monkeypatch)
+        connector = Connector(
+            public_id="temperature-connector", name="Temperature Connector", status="online",
+            credential_prefix="pc_temperature", credential_hash="not-used",
+        )
+        db_session.add(connector)
+        await db_session.commit()
+        printer = await printer_factory(
+            connection_mode="connector", connector_id=connector.public_id,
+            provider="flashforge_creator5", model="Creator 5 Pro", serial_number="TEMP-PRINTER",
+            ip_address="192.168.50.24", auth_token=encrypt_check_code("secret-temperature-code"),
+        )
+        from backend.app.services.connector_gateway import connector_gateway
+
+        request = AsyncMock(return_value={
+            "request_id": "temperature-remote-1", "status": "completed", "heater": "nozzle",
+            "target": 215, "observed": 215,
+        })
+        monkeypatch.setattr(connector_gateway, "request", request)
+        with patch("backend.app.api.routes.printers.printer_manager.get_client", side_effect=AssertionError("local temperature")):
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/nozzle?target=215&extruder=2")
+
+        assert response.status_code == 200, response.text
+        assert response.json()["observed"] == 215
+        assert request.await_args.args[1] == "printer.temperature.request"
+        assert request.await_args.args[2]["extruder"] == 2
+        assert request.await_args.args[2]["access_code"] == "secret-temperature-code"
+        assert "secret-temperature-code" not in response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_temperature_connector_flashforge_rejects_non_pro_chamber(
+        self, async_client: AsyncClient, printer_factory, db_session, monkeypatch
+    ):
+        _configure_flashforge_encryption(monkeypatch)
+        connector = Connector(
+            public_id="temperature-connector-nonpro", name="Temperature Connector", status="online",
+            credential_prefix="pc_temperature_nonpro", credential_hash="not-used",
+        )
+        db_session.add(connector)
+        await db_session.commit()
+        printer = await printer_factory(
+            connection_mode="connector", connector_id=connector.public_id,
+            provider="flashforge_creator5", model="Creator 5", serial_number="TEMP-PRINTER-NONPRO",
+            ip_address="192.168.50.25", auth_token=encrypt_check_code("secret-temperature-code"),
+        )
+        from backend.app.services.connector_gateway import connector_gateway
+
+        request = AsyncMock()
+        monkeypatch.setattr(connector_gateway, "request", request)
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/chamber?target=45")
+
+        assert response.status_code == 400
+        request.assert_not_awaited()
 
     @pytest.mark.asyncio
     @pytest.mark.integration

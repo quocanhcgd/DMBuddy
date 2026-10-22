@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import httpx
@@ -16,7 +17,36 @@ from backend.app.services.printer_providers.prusalink import PrusaLinkPrinterCli
 
 
 def test_supported_printbuddy_providers_are_registered():
-    assert {"bambu", "klipper", "mainsail", "fluidd", "prusalink", "prusaconnect", "elegoo_sdcp"} == SUPPORTED_PROVIDERS
+    assert {
+        "bambu", "klipper", "mainsail", "fluidd", "prusalink", "prusaconnect", "elegoo_sdcp",
+        "flashforge_ad5m", "flashforge_creator5",
+    } == SUPPORTED_PROVIDERS
+
+
+def test_flashforge_creator5_connection_probe_uses_creator_provider(monkeypatch):
+    from types import SimpleNamespace
+
+    fake_client = SimpleNamespace(
+        state=SimpleNamespace(connected=False, state="unknown"),
+        connect=lambda: setattr(fake_client.state, "connected", True),
+        disconnect=lambda: None,
+    )
+    monkeypatch.setattr(
+        "backend.app.services.printer_manager.create_printer_client", lambda *_args, **_kwargs: fake_client
+    )
+    result = asyncio.run(
+        PrinterManager().test_connection(
+            ip_address="creator.local",
+            serial_number="FF-SN",
+            access_code="",
+            provider="flashforge_creator5",
+            auth_token="check-code",
+            model="Creator 5 Pro",
+        )
+    )
+
+    assert result["success"] is True
+    assert result["model"] == "FlashForge Creator 5"
 
 
 @pytest.mark.parametrize("provider", ["klipper", "mainsail", "fluidd"])
@@ -52,6 +82,56 @@ def test_moonraker_stop_print_posts_cancel_endpoint(monkeypatch):
 
     assert client.stop_print() is True
     assert posted == [("http://elegoo.local:7125/printer/print/cancel", {})]
+
+
+@pytest.mark.parametrize(
+    ("method_name", "endpoint"),
+    [("pause_print", "pause"), ("resume_print", "resume")],
+)
+def test_moonraker_print_controls_post_standard_endpoints(monkeypatch, method_name, endpoint):
+    posted: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(url, *, json, headers, timeout):  # noqa: ARG001
+        posted.append((str(url), json))
+        return httpx.Response(200, json={"result": "ok"}, request=httpx.Request("POST", str(url)))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    client = MoonrakerPrinterClient("http://snapmaker.local:7125")
+
+    assert getattr(client, method_name)() is True
+    assert posted == [(f"http://snapmaker.local:7125/printer/print/{endpoint}", {})]
+
+
+@pytest.mark.parametrize(
+    ("call", "expected_script"),
+    [
+        (lambda client: client.home_axes(["x", "y"]), "G28 X Y"),
+        (lambda client: client.home_axes(), "G28"),
+        (lambda client: client.extrude(10, 300), "M83\nG1 E10.00 F300\nM82"),
+        (lambda client: client.extrude(-10, 300), "M83\nG1 E-10.00 F300\nM82"),
+        (lambda client: client.set_nozzle_temperature(215), "M104 S215"),
+        (lambda client: client.set_bed_temperature(60), "M140 S60"),
+        (lambda client: client.adjust_z_offset(0.01), "SET_GCODE_OFFSET Z_ADJUST=0.01 MOVE=1"),
+        (lambda client: client.save_config(), "SAVE_CONFIG"),
+    ],
+)
+def test_moonraker_manual_controls_send_klipper_gcode(monkeypatch, call, expected_script):
+    posted: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(url, *, json, headers, timeout):  # noqa: ARG001
+        posted.append((str(url), json))
+        return httpx.Response(200, json={"result": "ok"}, request=httpx.Request("POST", str(url)))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    client = MoonrakerPrinterClient("http://snapmaker.local:7125")
+
+    assert call(client) is True
+    assert posted == [
+        (
+            "http://snapmaker.local:7125/printer/gcode/script",
+            {"script": expected_script},
+        )
+    ]
 
 
 def test_moonraker_start_print_treats_verified_timeout_as_success(monkeypatch):

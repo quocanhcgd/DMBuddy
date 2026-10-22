@@ -315,7 +315,7 @@ async def _migrate_encrypt_legacy_secrets() -> None:
         logger.error("_migrate_encrypt_legacy_secrets: phase 1 read failed", exc_info=True)
         raise  # B3
 
-    oidc_count = totp_count = error_count = 0
+    oidc_count = totp_count = flashforge_count = error_count = 0
 
     # Phase 2 (write): each row in its own AsyncSession + transaction.
     # Failure of one row does NOT block the others.
@@ -361,12 +361,48 @@ async def _migrate_encrypt_legacy_secrets() -> None:
             )
             error_count += 1
 
+    from backend.app.models.printer import Printer
+    from backend.app.services.flashforge.secrets import encrypt_check_code
+    from backend.app.services.printer_providers.flashforge_contract import FLASHFORGE_PROVIDERS
+
+    try:
+        async with async_session() as ro:
+            printer_rows = await ro.execute(
+                select(Printer.id, Printer.auth_token).where(
+                    Printer.provider.in_(FLASHFORGE_PROVIDERS),
+                    Printer.auth_token.is_not(None),
+                    not_(Printer.auth_token.like("fernet:%")),
+                )
+            )
+            printer_candidates = [(row[0], row[1]) for row in printer_rows.all()]
+    except Exception:
+        logger.error("_migrate_encrypt_legacy_secrets: FlashForge read failed", exc_info=True)
+        raise
+
+    for printer_id, stored in printer_candidates:
+        if not stored:
+            continue
+        try:
+            encrypted = encrypt_check_code(stored)
+            async with async_session() as wr:
+                printer = await wr.get(Printer, printer_id)
+                if printer is None:
+                    continue
+                if printer.provider in FLASHFORGE_PROVIDERS and not (printer.auth_token or "").startswith("fernet:"):
+                    printer.auth_token = encrypted
+                    await wr.commit()
+                    flashforge_count += 1
+        except Exception:
+            logger.error("Failed to encrypt FlashForge check code for printer id=%s", printer_id, exc_info=True)
+            error_count += 1
+
     _migration_error_count = error_count
-    if oidc_count or totp_count:
+    if oidc_count or totp_count or flashforge_count:
         logger.info(
-            "Re-encrypted legacy plaintext secrets: %d OIDC client_secret(s), %d TOTP secret(s)",
+            "Re-encrypted legacy plaintext secrets: %d OIDC client_secret(s), %d TOTP secret(s), %d FlashForge check code(s)",
             oidc_count,
             totp_count,
+            flashforge_count,
         )
     elif error_count == 0:
         logger.debug("_migrate_encrypt_legacy_secrets: no rows needed re-encryption")
@@ -1250,6 +1286,8 @@ async def run_migrations(conn):
                 await conn.execute(text("ALTER TABLE print_queue_new2 RENAME TO print_queue"))
         except (OperationalError, ProgrammingError):
             pass  # Already applied
+
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN creator5_material_mappings TEXT")
 
     # Migration: Add HA energy sensor entity columns to smart_plugs
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN ha_power_entity VARCHAR(100)")

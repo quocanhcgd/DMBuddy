@@ -87,6 +87,7 @@ export const PRINTER_MODEL_GROUPS: PrinterModelOptionGroup[] = [
       { value: 'Creality K2', label: 'K2' },
       { value: 'Creality K2 Pro', label: 'K2 Pro' },
       { value: 'Creality K2 Plus', label: 'K2 Plus' },
+      { value: 'Creality K3', label: 'K3' },
     ],
   },
   {

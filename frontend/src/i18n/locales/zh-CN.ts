@@ -247,6 +247,23 @@ export default {
     camera: '摄像头',
     skipObject: '跳过对象',
     reconnect: '重新连接',
+    klipper: {
+      manualControls: '手动控制', manualControlsDescription: 'Klipper 移动、挤出和温度控制', collapsed: '已收起', homeAll: '所有轴归零',
+      extrusionLength: '挤出长度', extrusionSpeed: '挤出速度', retract: '回抽', extrude: '挤出',
+      nozzle: '喷嘴', bed: '热床', set: '设置', zOffset: 'Z 轴偏移', saveZOffset: '将 Z 轴偏移保存到配置',
+      stepperMotors: '步进电机', disableSteppers: '禁用步进电机', millimeters: 'mm', millimetersPerSecond: '毫米/秒',
+      nozzleTemperatureTarget: '喷嘴目标温度', bedTemperatureTarget: '热床目标温度',
+      increaseZOffset: '增加 Z 轴偏移 {{step}} mm', decreaseZOffset: '减少 Z 轴偏移 {{step}} mm',
+      homeXY: '将 X、Y 轴归零', homeAxis: '将 {{axis}} 轴归零',
+    },
+    u1FilamentInExtruder: '已进入挤出机',
+    u1FilamentInExtruderHelp: '耗材已通过送料器送入挤出机',
+    u1FilamentPreloaded: '已预装入送料器',
+    u1FilamentPreloadedHelp: '耗材已装入送料器，但尚未进入挤出机',
+    u1FilamentDetected: '已检测到耗材',
+    u1FilamentDetectedHelp: '此送料通道检测到了耗材',
+    u1FilamentEmpty: '空',
+    u1FilamentEmptyHelp: '此送料通道未检测到耗材',
     forceRefresh: '强制刷新',
     forceRefreshSuccess: '已请求刷新',
     mqttDebug: 'MQTT 调试',
@@ -317,6 +334,7 @@ export default {
       failedToStopPrint: '停止打印失败',
       failedToPausePrint: '暂停打印失败',
       failedToResumePrint: '继续打印失败',
+      deliveryUnknown: '打印机可能已收到此命令。请先检查当前状态，再决定是否重试。',
       failedToControlChamberLight: '控制腔室灯失败',
       failedToSetSpeed: '设置打印速度失败',
       failedToUpdateSetting: '更新设置失败',
@@ -505,9 +523,9 @@ export default {
       scanningNetwork: '正在扫描网络...',
       noPrintersFoundSubnetMoonraker: '在指定子网中未找到 Moonraker 实例。',
       moonrakerNeedsAuth: '此 Moonraker 实例需要 API 令牌 — 请在下方输入。',
-      moonrakerSubnetNote: '在下方端口扫描 Moonraker/Klipper API JSON（默认先 7125，再 80 以支持 CosmOS/Fluidd）。使用与拓竹相同的子网列表，包括 DISCOVERY_EXTRA_SUBNETS。',
+      moonrakerSubnetNote: '在下方端口扫描 Moonraker/Klipper API JSON（默认 7125、80，以及部分 Creality 网页界面的 4408）。使用与拓竹相同的子网列表，包括 DISCOVERY_EXTRA_SUBNETS。',
       moonrakerPorts: '要扫描的端口',
-      moonrakerPortsNote: '逗号分隔。CosmOS / 反向代理 Moonraker 请使用 80。仅列出返回 Moonraker API JSON 的主机。',
+      moonrakerPortsNote: '逗号分隔。CosmOS / 反向代理 Moonraker 请使用 80。4408 仅是部分 Creality 固件的候选端口，尚未确认 K3 支持。仅列出返回 Moonraker API JSON 的主机。',
       serialRequired: '需要序列号',
       unknown: '未知',
       failedToStart: '启动发现失败',
@@ -2167,6 +2185,7 @@ export default {
     cameraTypeRtsp: 'RTSP 流',
     cameraTypeSnapshot: 'HTTP 快照',
     cameraTypeUsb: 'USB 摄像头 (V4L2)',
+    cameraTypeWebrtc: 'WebRTC 摄像头 (Fluidd/Moonraker)',
     cameraSnapshotUrl: '快照 URL（可选）',
     cameraSnapshotUrlPlaceholder: 'http://192.168.1.61:1984/api/frame.jpeg?src=printer',
     cameraSnapshotUrlHelp: '用于通知缩略图、完成照片、层延时摄影帧和打印板检测的单帧 URL。延时摄影和打印板检测各自需要自己的每打印机开关 — 此 URL 只是它们激活时拉取的图像源。留空以从上方实时流捕获。适用于 go2rtc（/api/frame.jpeg）和具有专用快照端点的 IP 摄像头。',
@@ -2457,6 +2476,7 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    root: '根目录',
     title: '文件管理器',
     storageUsed: '已用：',
     storageFree: '剩余：',
@@ -2471,6 +2491,7 @@ export default {
     toast: {
       filesDeleted: '已删除 {{count}} 个文件',
       deleteFailed: '删除失败：{{error}}',
+      uploadOutcomeUnknown: '打印机可能已收到上传文件。文件列表已刷新；重试前请先确认文件状态。',
     },
   },
 
@@ -2664,6 +2685,7 @@ export default {
       stage: {
         tcp_reachable: '网络可达性',
         first_frame: '画面捕获',
+        signaling_endpoint: 'WebRTC 信令端点',
         live_stream_active: '直播流正在进行',
       },
       summary: {
@@ -2671,6 +2693,7 @@ export default {
         live_stream_active_healthy: '摄像头正在传输最新画面 — 无需测试。',
         printer_unreachable: '无法访问打印机。请检查 IP 地址、网络连接以及打印机是否已开机。',
         camera_port_closed: '打印机可访问，但摄像头端口已关闭。请确保打印机设置中已启用仅 LAN 模式和开发者模式。',
+        webrtc_endpoint_unavailable: '无法访问 WebRTC 端点。请检查 URL、HTTPS/CORS 设置，以及此浏览器是否可以访问 Fluidd 摄像头播放器。',
         no_frame: '已连接到摄像头，但未收到画面。请重试或检查打印机设置中摄像头是否已启用。',
         unknown_failure: '摄像头诊断因未知原因失败。请查看支持日志了解详情。',
       },

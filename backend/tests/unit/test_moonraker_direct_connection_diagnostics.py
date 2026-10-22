@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from backend.app.services.flashforge.errors import FlashForgeAuthenticationError
 from backend.app.services.printer_manager import PrinterManager, _provider_connection_error
 from backend.app.services.printer_providers.factory import create_printer_client
 from backend.app.services.printer_providers.moonraker import _moonraker_url_candidates
@@ -56,3 +57,13 @@ def test_moonraker_connection_error_does_not_expose_response_body():
 
     assert "HTTP 401" in diagnostic
     assert "sensitive server response" not in diagnostic
+
+
+def test_flashforge_authentication_diagnostic_is_actionable_and_never_echoes_secret():
+    diagnostic = _provider_connection_error(
+        "flashforge_ad5m",
+        FlashForgeAuthenticationError("rejected-private-credential"),
+    )
+
+    assert "LAN check code" in diagnostic
+    assert "rejected-private-credential" not in diagnostic

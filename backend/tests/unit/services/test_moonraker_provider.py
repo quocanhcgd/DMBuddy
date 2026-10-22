@@ -1,4 +1,21 @@
+import pytest
+
 from backend.app.services.printer_providers.moonraker import MoonrakerPrinterClient
+from backend.app.services.gcode_thumbnail import extract_gcode_thumbnail
+
+
+def test_moonraker_sets_temperature_for_selected_extruder(monkeypatch):
+    client = MoonrakerPrinterClient("http://u1.local:7125", printer_model="Snapmaker U1")
+    commands = []
+    monkeypatch.setattr(client, "send_gcode", lambda script: commands.append(script) or True)
+
+    for extruder in range(4):
+        assert client.set_nozzle_temperature(215, extruder) is True
+
+    assert commands == [
+        f"SET_HEATER_TEMPERATURE HEATER={'extruder' if extruder == 0 else f'extruder{extruder}'} TARGET=215"
+        for extruder in range(4)
+    ]
 
 
 def _moonraker_status_with_cfs(active_filament="A"):
@@ -69,6 +86,7 @@ def _moonraker_status_with_snapmaker_u1():
         "heater_bed": {"temperature": 60.0, "target": 65.0},
         "toolhead": {"extruder": "extruder2"},
         "temperature_sensor cavity": {"temperature": 34.5},
+        "led cavity_led": {"color_data": [[0.0, 0.0, 0.0, 1.0]]},
         "extruder": {"temperature": 205.0, "target": 210.0, "nozzle_diameter": 0.4},
         "extruder1": {"temperature": 35.0, "target": 0.0, "nozzle_diameter": 0.4},
         "extruder2": {"temperature": 215.0, "target": 220.0, "nozzle_diameter": 0.6},
@@ -231,6 +249,112 @@ def test_moonraker_keeps_cfs_trays_when_active_filament_is_none(monkeypatch):
     assert all(tray["state"] == 11 for tray in trays)
 
 
+def test_moonraker_normalizes_creality_k3_four_nozzles_without_assuming_selection(monkeypatch):
+    client = MoonrakerPrinterClient("http://k3.local:7125", printer_model="Creality K3")
+    status = {
+        "print_stats": {"state": "standby", "filename": ""},
+        "virtual_sdcard": {"progress": 0.0},
+        "display_status": {"progress": 0.0},
+        "toolhead": {"extruder": "extruder"},
+        "extruder": {"temperature": 32.95, "target": 0, "nozzle_diameter": 0.4},
+        "extruder1": {"temperature": 32.71, "target": 0, "nozzle_diameter": 0.4},
+        "extruder2": {"temperature": 33.01, "target": 0, "nozzle_diameter": 0.4},
+        "extruder3": {"temperature": 32.74, "target": 0, "nozzle_diameter": 0.4},
+        "output_pin fan0": {"value": 0.5},
+        "output_pin fan2": {"value": 0.75},
+        "heater_bed": {"temperature": 32.93, "target": 0},
+        "nozzle_manager": {
+            "selected": -1,
+            "nozzles": [
+                {
+                    "id": index,
+                    "diameter": 0.4,
+                    "loaded": 0,
+                    "material_loaded": int(index == 0),
+                    "movement": 0,
+                    "state": 1,
+                    "connection": 1,
+                    "offset_xyz": {"x": 0.01 * index, "y": 0.0, "z": -0.02 * index},
+                }
+                for index in range(4)
+            ],
+            "nozzle_temp": [{"id": index, "temperature": 33.0 + index, "target": 0} for index in range(4)],
+        },
+        "box": {
+            "state": "connect",
+            "is_online": True,
+            "same_material": [["101001", "00A2989", ["T1A"], "PLA"]],
+            "T1": {
+                "state": "connect",
+                "type": "CFS-Nano",
+                "filament": "A",
+                "material_type": ["101001", "-1", "-1", "-1"],
+                "color_value": ["00A2989", "-1", "-1", "-1"],
+            },
+            "T2": {"state": "connect", "type": "Other station"},
+        },
+    }
+    base_names = ["webhooks", "print_stats", "virtual_sdcard", "display_status", "extruder", "heater_bed"]
+    base_status = {key: status[key] for key in base_names if key in status}
+    k3_status = {
+        key: value
+        for key, value in status.items()
+        if key in {
+            "toolhead",
+            "nozzle_manager",
+            "extruder1",
+            "extruder2",
+            "extruder3",
+            "output_pin fan0",
+            "output_pin fan2",
+        }
+    }
+    monkeypatch.setattr(client, "_query_objects", lambda object_names: base_status)
+    monkeypatch.setattr(client, "_available_objects", lambda: list(status))
+    monkeypatch.setattr(client, "_query_cfs_status", lambda *args, **kwargs: {"box": status["box"]})
+    monkeypatch.setattr(client, "_query_creality_k3_status", lambda *args, **kwargs: k3_status)
+    monkeypatch.setattr(client, "_query_snapmaker_u1_status", lambda *args, **kwargs: {})
+    monkeypatch.setattr(client, "_query_fan_status", lambda *args, **kwargs: {})
+
+    assert client.request_status_update() is True
+
+    assert [client.state.temperatures[f"nozzle{suffix}"] for suffix in ("", "_2", "_3", "_4")] == [
+        32.95,
+        32.71,
+        33.01,
+        32.74,
+    ]
+    assert [nozzle.nozzle_diameter for nozzle in client.state.nozzles] == ["0.4"] * 4
+    assert client.state.active_extruder == -1
+    assert client.state.cooling_fan_speed == 50
+    assert client.state.big_fan1_speed == 75
+    assert client.state.raw_data["creality_k3"]["selected_nozzle"] == -1
+    assert len(client.state.raw_data["creality_k3"]["nozzles"]) == 4
+    assert client.state.raw_data["creality_k3"]["station_types"] == {"T1": "CFS-Nano", "T2": "Other station"}
+    cfs_nano = client.state.raw_data["creality_k3"]["cfs_nano"]
+    assert cfs_nano["station_type"] == "CFS-Nano"
+    assert cfs_nano["state"] == "connect"
+    assert cfs_nano["online"] is True
+    assert len(cfs_nano["slots"]) == 4
+    assert cfs_nano["slots"][0] == {
+        "slot": "T1A",
+        "material_name": "PLA",
+        "material_code": "101001",
+        "color": "#0A2989",
+    }
+    assert cfs_nano["slots"][1]["slot"] == "T1B"
+    assert cfs_nano["slots"][1]["material_name"] is None
+    assert [slot["slot"] for slot in cfs_nano["slots"]] == ["T1A", "T1B", "T1C", "T1D"]
+    assert "ams" not in client.state.raw_data
+    assert "cfs" not in client.state.raw_data
+
+
+def test_moonraker_creality_k3_nozzle_adapter_is_model_gated():
+    k2 = MoonrakerPrinterClient("http://k2.local:7125", printer_model="Creality K2 Plus")
+    assert k2._is_creality_k3() is False
+    assert k2._query_creality_k3_status(["nozzle_manager", "extruder1"]) == {}
+
+
 def test_moonraker_normalizes_snapmaker_u1_nozzles_chamber_and_feed_slots(monkeypatch):
     client = MoonrakerPrinterClient("http://snapmaker-u1.local:7125", printer_model="Snapmaker U1")
     status = _moonraker_status_with_snapmaker_u1()
@@ -243,6 +367,7 @@ def test_moonraker_normalizes_snapmaker_u1_nozzles_chamber_and_feed_slots(monkey
         if key
         in {
             "temperature_sensor cavity",
+            "led cavity_led",
             "extruder",
             "extruder1",
             "extruder2",
@@ -266,6 +391,7 @@ def test_moonraker_normalizes_snapmaker_u1_nozzles_chamber_and_feed_slots(monkey
     assert client.state.total_layers == 25
     assert client.state.active_extruder == 2
     assert client.state.temperatures["chamber"] == 34.5
+    assert client.state.chamber_light is True
     assert client.state.temperatures["nozzle"] == 205.0
     assert client.state.temperatures["nozzle_3"] == 215.0
     assert [nozzle.nozzle_diameter for nozzle in client.state.nozzles] == ["0.4", "0.4", "0.6", "0.8"]
@@ -276,14 +402,14 @@ def test_moonraker_normalizes_snapmaker_u1_nozzles_chamber_and_feed_slots(monkey
     assert ams[0]["module_type"] == "snapmaker_u1"
     assert [tray["slot"] for tray in ams[0]["tray"]] == ["U1-E0", "U1-E1", "U1-E2", "U1-E3"]
     assert ams[0]["tray"][0]["tray_type"] == "PLA"
-    assert ams[0]["tray"][0]["tray_sub_brands"] == "SnapSpeed"
-    assert ams[0]["tray"][0]["tray_color"] == "#E72F1D"
+    assert ams[0]["tray"][0]["tray_sub_brands"] == "Matte"
+    assert ams[0]["tray"][0]["tray_color"] == "#3366CC"
     assert ams[0]["tray"][0]["remain"] == 64
     assert ams[0]["tray"][0]["remaining_weight"] == 640
     assert ams[0]["tray"][0]["filament_source"] == "rfid"
-    assert ams[0]["tray"][2]["tray_type"] == "PLA"
+    assert ams[0]["tray"][2]["tray_type"] == "PETG"
     assert ams[0]["tray"][2]["tray_sub_brands"] == "PolyLite"
-    assert ams[0]["tray"][2]["tray_color"] == "#1E88E5"
+    assert ams[0]["tray"][2]["tray_color"] == "#ff8800"
     assert ams[0]["tray"][2]["filament_source"] == "manual"
     assert ams[0]["tray"][2]["loaded_to_extruder"] is True
     assert ams[0]["tray"][2]["active"] is True
@@ -329,6 +455,54 @@ def test_moonraker_controls_snapmaker_u1_cavity_fan(monkeypatch):
     assert sent == ["SET_FAN_SPEED FAN=cavity_fan SPEED=0.50"]
 
 
+def test_moonraker_controls_snapmaker_u1_case_light_with_fixed_led_command(monkeypatch):
+    client = MoonrakerPrinterClient("http://snapmaker-u1.local:7125", printer_model="Snapmaker U1")
+    sent: list[str] = []
+    monkeypatch.setattr(client, "_available_objects", lambda: (_ for _ in ()).throw(AssertionError("must not discover LEDs")))
+    monkeypatch.setattr(client, "send_gcode", lambda script: sent.append(script) or True)
+
+    assert client.set_chamber_light(True) is True
+    assert client.set_chamber_light(False) is True
+    assert sent == [
+        "SET_LED LED=cavity_led WHITE=1",
+        "SET_LED LED=cavity_led WHITE=0",
+    ]
+
+
+def test_moonraker_controls_creality_k3_chamber_light_only_when_pin_is_available(monkeypatch):
+    client = MoonrakerPrinterClient("http://k3.local:7125", printer_model="Creality K3")
+    sent: list[str] = []
+    monkeypatch.setattr(client, "send_gcode", lambda script: sent.append(script) or True)
+
+    with pytest.raises(ValueError, match="light pin is not enabled"):
+        client.set_chamber_light(True)
+    assert sent == []
+
+    client.state.chamber_light_available = True
+    assert client.set_chamber_light(True) is True
+    assert client.set_chamber_light(False) is True
+    assert sent == ["SET_PIN PIN=LED VALUE=1", "SET_PIN PIN=LED VALUE=0"]
+
+
+def test_moonraker_reads_creality_k3_chamber_light_state():
+    client = MoonrakerPrinterClient("http://k3.local:7125", printer_model="Creality K3")
+
+    client._apply_creality_k3_status({"output_pin LED": {"value": 1.0}})
+
+    assert client.state.chamber_light_available is True
+    assert client.state.chamber_light is True
+
+
+def test_moonraker_prefers_live_u1_feeder_color_over_print_task_config():
+    client = MoonrakerPrinterClient("http://snapmaker-u1.local:7125", printer_model="Snapmaker U1")
+    status = _moonraker_status_with_snapmaker_u1()
+    status["filament_feed left"]["extruder0"]["tray_color"] = "#00FF00"
+
+    client._apply_snapmaker_u1_status(status)
+
+    assert client.state.raw_data["ams"][0]["tray"][0]["tray_color"] == "#00FF00"
+
+
 def test_moonraker_controls_part_cooling_fan_with_m106(monkeypatch):
     client = MoonrakerPrinterClient("http://moonraker.local:7125", printer_model="Generic Klipper Printer")
     sent: list[str] = []
@@ -337,6 +511,59 @@ def test_moonraker_controls_part_cooling_fan_with_m106(monkeypatch):
 
     assert client.set_fan_speed("part", 50) is True
     assert sent == ["M106 S128"]
+
+
+def test_moonraker_controls_creality_k3_part_and_aux_fans(monkeypatch):
+    client = MoonrakerPrinterClient("http://k3.local:7125", printer_model="Creality K3")
+    sent: list[str] = []
+    monkeypatch.setattr(client, "send_gcode", lambda script: sent.append(script) or True)
+
+    assert client.set_fan_speed("part", 50) is True
+    assert client.set_fan_speed("aux", 100) is True
+    assert sent == ["M106 S128", "M106 P2 S255"]
+
+
+def test_moonraker_k3_queries_only_available_manual_fan_pins():
+    client = MoonrakerPrinterClient("http://k3.local:7125", printer_model="Creality K3")
+
+    assert client._available_creality_k3_objects(["extruder", "output_pin fan0", "output_pin fan2"]) == [
+        "extruder",
+        "output_pin fan0",
+        "output_pin fan2",
+    ]
+
+
+def test_moonraker_extracts_thumbnail_using_only_first_eight_megabytes(monkeypatch):
+    import base64
+
+    image = b"\x89PNG\r\n\x1a\nklipper-preview"
+    encoded = base64.b64encode(image)
+    source = b"; thumbnail begin 80x60 " + str(len(image)).encode() + b"\n; " + encoded + b"\n; thumbnail end\n"
+    client = MoonrakerPrinterClient("http://moonraker.local:7125", printer_model="Generic Klipper Printer")
+
+    class StreamResponse:
+        status_code = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        def iter_bytes(self, chunk_size):
+            assert chunk_size == 64 * 1024
+            yield source
+
+    monkeypatch.setattr("backend.app.services.printer_providers.moonraker.httpx.stream", lambda *args, **kwargs: StreamResponse())
+
+    thumbnail = client.download_gcode_thumbnail("/benchy.gcode")
+
+    assert thumbnail is not None
+    assert thumbnail.data == image
+    assert (thumbnail.width, thumbnail.height) == (80, 60)
 
 
 def test_moonraker_complete_state_clamps_progress_and_remaining_time(monkeypatch):

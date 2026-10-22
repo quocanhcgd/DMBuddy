@@ -247,6 +247,23 @@ export default {
     camera: 'Caméra',
     skipObject: 'Sauter l\'objet',
     reconnect: 'Reconnecter',
+    klipper: {
+      manualControls: 'Commandes manuelles', manualControlsDescription: 'Déplacement, extrusion et températures Klipper', collapsed: 'réduit', homeAll: 'Référencer tous les axes',
+      extrusionLength: 'Longueur d’extrusion', extrusionSpeed: 'Vitesse d’extrusion', retract: 'Rétracter', extrude: 'Extruder',
+      nozzle: 'Buse', bed: 'Plateau', set: 'Définir', zOffset: 'Décalage Z', saveZOffset: 'Enregistrer le décalage Z dans la configuration',
+      stepperMotors: 'Moteurs pas à pas', disableSteppers: 'Désactiver les moteurs pas à pas', millimeters: 'mm', millimetersPerSecond: 'mm par seconde',
+      nozzleTemperatureTarget: 'Température cible de la buse', bedTemperatureTarget: 'Température cible du plateau',
+      increaseZOffset: 'Augmenter le décalage Z de {{step}} mm', decreaseZOffset: 'Réduire le décalage Z de {{step}} mm',
+      homeXY: 'Référencer les axes X et Y', homeAxis: 'Référencer l’axe {{axis}}',
+    },
+    u1FilamentInExtruder: 'Dans l’extrudeur',
+    u1FilamentInExtruderHelp: 'Le filament a été acheminé par le chargeur jusqu’à l’extrudeur',
+    u1FilamentPreloaded: 'Préchargé',
+    u1FilamentPreloadedHelp: 'Le filament est dans le chargeur, mais pas encore dans l’extrudeur',
+    u1FilamentDetected: 'Détecté',
+    u1FilamentDetectedHelp: 'Filament détecté dans ce canal du chargeur',
+    u1FilamentEmpty: 'Vide',
+    u1FilamentEmptyHelp: 'Aucun filament détecté dans ce canal du chargeur',
     forceRefresh: 'Forcer l\'actualisation',
     forceRefreshSuccess: 'Actualisation demandée',
     mqttDebug: 'Débogage MQTT',
@@ -317,6 +334,7 @@ export default {
       failedToStopPrint: 'Échec de l\'arrêt',
       failedToPausePrint: 'Échec de la mise en pause',
       failedToResumePrint: 'Échec de la reprise',
+      deliveryUnknown: 'L’imprimante a peut-être reçu cette commande. Vérifiez son état avant de réessayer.',
       failedToControlChamberLight: 'Échec du contrôle de la lumière',
       failedToSetSpeed: 'Échec du réglage de la vitesse',
       failedToUpdateSetting: 'Échec de mise à jour du paramètre',
@@ -505,9 +523,9 @@ export default {
       scanningNetwork: 'Scan du réseau...',
       noPrintersFoundSubnetMoonraker: 'Aucune instance Moonraker trouvée dans le sous-réseau spécifié.',
       moonrakerNeedsAuth: 'Cette instance Moonraker nécessite un jeton API — saisissez-le ci-dessous.',
-      moonrakerSubnetNote: 'Recherche l’API Moonraker/Klipper sur les ports ci-dessous (défaut 7125 puis 80 pour CosmOS/Fluidd). Utilise la même liste de sous-réseaux que Bambu, y compris DISCOVERY_EXTRA_SUBNETS.',
+      moonrakerSubnetNote: 'Recherche l’API Moonraker/Klipper sur les ports ci-dessous (défaut 7125, 80 et 4408 pour certaines interfaces web Creality). Utilise la même liste de sous-réseaux que Bambu, y compris DISCOVERY_EXTRA_SUBNETS.',
       moonrakerPorts: 'Ports à scanner',
-      moonrakerPortsNote: 'Séparés par des virgules. Utilisez 80 pour CosmOS / Moonraker proxifié. Seuls les hôtes renvoyant du JSON Moonraker sont listés.',
+      moonrakerPortsNote: 'Séparés par des virgules. Utilisez 80 pour CosmOS / Moonraker proxifié. Le port 4408 est une piste pour certains firmwares Creality; K3 n’est pas confirmé. Seuls les hôtes renvoyant du JSON Moonraker sont listés.',
       serialRequired: 'Série requis',
       unknown: 'Inconnu',
       failedToStart: 'Échec du démarrage de la découverte',
@@ -2168,6 +2186,7 @@ export default {
     cameraTypeRtsp: 'Flux RTSP',
     cameraTypeSnapshot: 'Snapshot HTTP',
     cameraTypeUsb: 'Caméra USB (V4L2)',
+    cameraTypeWebrtc: 'Caméra WebRTC (Fluidd/Moonraker)',
     cameraSnapshotUrl: 'URL de capture (facultatif)',
     cameraSnapshotUrlPlaceholder: 'http://192.168.1.61:1984/api/frame.jpeg?src=printer',
     cameraSnapshotUrlHelp: 'URL d\'image unique utilisée pour les miniatures de notification, photos de fin, frames de timelapse par couche et détection de plaque. Le timelapse et la détection de plaque nécessitent chacun leur propre bascule par imprimante — cette URL est juste la source d\'image qu\'ils utilisent lorsqu\'activés. Laisser vide pour capturer depuis le flux en direct ci-dessus. Utile pour go2rtc (/api/frame.jpeg) et caméras IP avec un point de terminaison de capture dédié.',
@@ -2459,6 +2478,7 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    root: 'Dossier racine',
     title: 'Gestionnaire de fichiers',
     storageUsed: 'Utilisé :',
     storageFree: 'Libre :',
@@ -2473,6 +2493,7 @@ export default {
     toast: {
       filesDeleted: '{{count}} fichier(s) supprimé(s)',
       deleteFailed: 'Échec suppression : {{error}}',
+      uploadOutcomeUnknown: 'L’imprimante a peut-être reçu le fichier. La liste a été actualisée ; vérifiez le fichier avant de réessayer.',
     },
   },
 
@@ -2666,6 +2687,7 @@ export default {
       stage: {
         tcp_reachable: 'Accessibilité réseau',
         first_frame: 'Capture d\'image',
+        signaling_endpoint: 'Point de signalisation WebRTC',
         live_stream_active: 'Flux en direct actif',
       },
       summary: {
@@ -2673,6 +2695,7 @@ export default {
         live_stream_active_healthy: 'La caméra diffuse actuellement avec des images récentes — aucun test nécessaire.',
         printer_unreachable: 'L\'imprimante n\'est pas joignable. Vérifiez l\'adresse IP, la connexion réseau et que l\'imprimante est allumée.',
         camera_port_closed: 'L\'imprimante répond mais le port de la caméra est fermé. Assurez-vous que le mode LAN et le mode développeur sont activés dans les paramètres de l\'imprimante.',
+        webrtc_endpoint_unavailable: 'Le point de terminaison WebRTC est inaccessible. Vérifiez l’URL, les paramètres HTTPS/CORS et la disponibilité du lecteur de caméra Fluidd dans ce navigateur.',
         no_frame: 'Connexion à la caméra établie mais aucune image reçue. Réessayez ou vérifiez que la caméra est activée dans les paramètres de l\'imprimante.',
         unknown_failure: 'Le diagnostic de la caméra a échoué pour une raison inconnue. Consultez le journal de support pour plus de détails.',
       },

@@ -7,11 +7,19 @@ routes aware of WebSocket sessions or LAN sockets.
 
 from __future__ import annotations
 
+import asyncio
+import base64
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Protocol
+from uuid import uuid4
 
 from backend.app.schemas.connector import ConnectorDiscoveryResponse
-from backend.app.services.connector_gateway import ConnectorGateway, connector_gateway
+from backend.app.services.connector_gateway import (
+    ConnectorGateway,
+    ConnectorRequestDeliveryUnknown,
+    connector_gateway,
+)
 
 
 class PrinterTransportError(RuntimeError):
@@ -26,6 +34,15 @@ class ConnectorOfflineError(PrinterTransportError):
     """The bound Connector is not currently available."""
 
 
+class ConnectorDeliveryUnknownError(ConnectorOfflineError):
+    """A side-effect may have been delivered, but its result was not confirmed."""
+
+    def __init__(self, request_id: str) -> None:
+        super().__init__("Connector did not confirm the operation; delivery outcome is unknown")
+        self.request_id = request_id
+        self.outcome = "delivery_unknown"
+
+
 class PrinterTransport(Protocol):
     async def discover(
         self,
@@ -37,6 +54,14 @@ class PrinterTransport(Protocol):
     async def verify(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]: ...
 
     async def status(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]: ...
+
+    async def files(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]: ...
+
+    async def upload_file(
+        self, payload: Mapping[str, Any], local_path: Path, *, filename: str, timeout: float
+    ) -> Mapping[str, Any]: ...
+
+    async def temperature(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]: ...
 
 
 class DirectPrinterTransport:
@@ -58,6 +83,20 @@ class DirectPrinterTransport:
     async def status(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]:
         del payload, timeout
         raise CapabilityUnavailableError("direct printer status is not enabled by this transport")
+
+    async def files(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]:
+        del payload, timeout
+        raise CapabilityUnavailableError("direct printer file listing is not enabled by this transport")
+
+    async def upload_file(
+        self, payload: Mapping[str, Any], local_path: Path, *, filename: str, timeout: float
+    ) -> Mapping[str, Any]:
+        del payload, local_path, timeout
+        raise CapabilityUnavailableError("direct printer upload is not enabled by this transport")
+
+    async def temperature(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]:
+        del payload, timeout
+        raise CapabilityUnavailableError("direct printer temperature control is not enabled by this transport")
 
 
 class ConnectorPrinterTransport:
@@ -91,6 +130,64 @@ class ConnectorPrinterTransport:
     async def status(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]:
         return await self._request("printer.status.request", payload, timeout=timeout)
 
+    async def files(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]:
+        return await self._request("printer.files.request", payload, timeout=timeout)
+
+    async def upload_file(
+        self, payload: Mapping[str, Any], local_path: Path, *, filename: str, timeout: float
+    ) -> Mapping[str, Any]:
+        upload_id = str(uuid4())
+        size = local_path.stat().st_size
+        base = {**dict(payload), "upload_id": upload_id, "filename": filename, "size": size}
+        try:
+            result = await self._request(
+                "printer.upload.request", {**base, "request_id": str(uuid4()), "phase": "begin"}, timeout=timeout
+            )
+            if result.get("status") not in {"accepted", "completed"}:
+                return result
+            chunk_size = 96 * 1024
+            with local_path.open("rb") as stream:
+                index = 0
+                while chunk := stream.read(chunk_size):
+                    result = await self._request(
+                        "printer.upload.request",
+                        {
+                            **base,
+                            "request_id": str(uuid4()),
+                            "phase": "chunk",
+                            "chunk_index": index,
+                            "data_b64": base64.b64encode(chunk).decode("ascii"),
+                        },
+                        timeout=timeout,
+                    )
+                    if result.get("status") != "accepted":
+                        return result
+                    index += 1
+            return await self._request(
+                "printer.upload.request", {**base, "request_id": str(uuid4()), "phase": "finish"}, timeout=timeout
+            )
+        except (Exception, asyncio.CancelledError):
+            await self._abort_upload(base, timeout=timeout)
+            raise
+
+    async def _abort_upload(self, payload: Mapping[str, Any], *, timeout: float) -> None:
+        try:
+            await asyncio.shield(
+                self._request(
+                    "printer.upload.request",
+                    {**dict(payload), "request_id": str(uuid4()), "phase": "abort"},
+                    timeout=min(max(timeout, 0.1), 3.0),
+                )
+            )
+        except (Exception, asyncio.CancelledError):
+            return
+
+    async def control(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]:
+        return await self._request("printer.control.request", payload, timeout=timeout)
+
+    async def temperature(self, payload: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]:
+        return await self._request("printer.temperature.request", payload, timeout=timeout)
+
     async def _request(
         self,
         message_type: str,
@@ -98,7 +195,10 @@ class ConnectorPrinterTransport:
         *,
         timeout: float,
     ) -> Mapping[str, Any]:
-        response = await self.gateway.request(self.connector_id, message_type, dict(payload), timeout=timeout)
+        try:
+            response = await self.gateway.request(self.connector_id, message_type, dict(payload), timeout=timeout)
+        except ConnectorRequestDeliveryUnknown as exc:
+            raise ConnectorDeliveryUnknownError(exc.request_id) from exc
         if response is None:
             raise ConnectorOfflineError("Connector did not return a response")
         return response

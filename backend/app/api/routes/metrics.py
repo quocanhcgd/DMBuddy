@@ -444,6 +444,13 @@ async def get_metrics(
 
     for metric_name in (
         "send_failures_total",
+        "request_timeouts_total",
+        "request_delivery_unknown_total",
+        "request_cancellations_total",
+        "late_or_unknown_responses_total",
+        "response_session_mismatches_total",
+        "response_type_mismatches_total",
+        "duplicate_responses_total",
         "auth_failures_total",
         "heartbeat_timeouts_total",
         "protocol_errors_total",

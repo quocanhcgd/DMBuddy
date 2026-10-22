@@ -64,6 +64,15 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
+// Keep already-open tabs in sync with Remember Me login/logout changes.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'auth_token') {
+      authToken = event.newValue;
+    }
+  });
+}
+
 // Stream token for image/video URLs loaded via <img>/<video> tags
 // (these can't send Authorization headers, so a query param token is used)
 let streamToken: string | null = null;
@@ -109,9 +118,10 @@ async function request<T>(
     ...options.headers as Record<string, string>,
   };
 
-  // Add auth token if available
-  if (authToken) {
-    headers['Authorization'] = `Bearer ${authToken}`;
+  // Recover a persistent token written by another tab after this module loaded.
+  const requestAuthToken = authToken ?? sessionStorage.getItem('auth_token') ?? localStorage.getItem('auth_token');
+  if (requestAuthToken) {
+    headers['Authorization'] = `Bearer ${requestAuthToken}`;
   }
 
   const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -272,7 +282,7 @@ export interface LongLivedCameraToken {
 }
 
 // Printer types
-export type PrinterProvider = 'bambu' | 'klipper' | 'mainsail' | 'fluidd' | 'prusalink' | 'prusaconnect' | 'elegoo_sdcp';
+export type PrinterProvider = 'bambu' | 'klipper' | 'mainsail' | 'fluidd' | 'prusalink' | 'prusaconnect' | 'elegoo_sdcp' | 'flashforge_ad5m' | 'flashforge_creator5';
 export type PrinterConnectionMode = 'direct' | 'vpn' | 'connector';
 
 export interface Printer {
@@ -280,10 +290,12 @@ export interface Printer {
   name: string;
   serial_number: string;
   ip_address: string;
-  access_code: string;
+  access_code: string | null;
   provider: PrinterProvider;
   api_url: string | null;
   auth_token: string | null;
+  access_code_set?: boolean;
+  auth_token_set?: boolean;
   provider_options: string | null;
   connection_mode: PrinterConnectionMode;
   connector_id: string | null;
@@ -315,6 +327,7 @@ export interface HMSError {
 
 export interface AMSTray {
   id: number;
+  slot?: string | null;
   tray_color: string | null;
   tray_type: string | null;
   tray_sub_brands: string | null;  // Full name like "PLA Basic", "PETG HF"
@@ -448,6 +461,22 @@ export interface PrinterStatus {
   ams: AMSUnit[];
   ams_exists: boolean;
   vt_tray: AMSTray[];  // Virtual tray / external spool(s)
+  creator5_material_slots?: Array<{
+    slot_id: number;
+    material_name: string;
+    material_color: string;
+  }> | null;
+  cfs_nano?: {
+    station_type: string;
+    state: string | null;
+    online: boolean | null;
+    slots: Array<{
+      slot: string;
+      material_name: string | null;
+      material_code: string | null;
+      color: string | null;
+    }>;
+  } | null;
   store_to_sdcard: boolean;  // Store sent files on SD card
   timelapse: boolean;  // Timelapse recording active
   ipcam: boolean;  // Live view enabled
@@ -467,6 +496,7 @@ export interface PrinterStatus {
   speed_level: number;
   // Chamber light on/off
   chamber_light: boolean;
+  chamber_light_available: boolean;
   // Active extruder for dual nozzle (0=right, 1=left)
   active_extruder: number;
   // AMS mapping - which AMS is connected to which nozzle
@@ -1962,6 +1992,7 @@ export interface PrintQueueItem {
   filament_short: boolean;
   skip_filament_check: boolean;
   ams_mapping: number[] | null;  // AMS slot mapping for multi-color prints
+  creator5_material_mappings: Creator5MaterialMapping[] | null;
   filament_overrides: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;  // Filament overrides for model-based assignment
   plate_id: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
@@ -2000,6 +2031,14 @@ export interface PrintQueueItem {
   gcode_injection?: boolean;
 }
 
+export interface Creator5MaterialMapping {
+  toolId: number;
+  slotId: number;
+  materialName: string;
+  toolMaterialColor: string;
+  slotMaterialColor: string;
+}
+
 export interface PrintBatch {
   id: number;
   name: string;
@@ -2030,6 +2069,7 @@ export interface PrintQueueItemCreate {
   manual_start?: boolean;  // Requires manual trigger to start (staged)
   skip_filament_check?: boolean;
   ams_mapping?: number[] | null;  // AMS slot mapping for multi-color prints
+  creator5_material_mappings?: Creator5MaterialMapping[] | null;
   plate_id?: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
   bed_levelling?: boolean;
@@ -2058,6 +2098,7 @@ export interface PrintQueueItemUpdate {
   auto_off_after?: boolean;
   manual_start?: boolean;
   ams_mapping?: number[];
+  creator5_material_mappings?: Creator5MaterialMapping[] | null;
   plate_id?: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
   bed_levelling?: boolean;
@@ -3213,6 +3254,9 @@ export interface ConnectorDiscoveryResultEntry {
   protocol: string;
   service: string;
   reachable: boolean;
+  provider?: string | null;
+  model?: string | null;
+  serial_number?: string | null;
 }
 
 export interface ConnectorDiscoveryResponse {
@@ -3255,6 +3299,13 @@ export interface ConnectorPrinterStatusResponse {
   status: 'completed' | 'failed' | 'unavailable' | string;
   connected: boolean;
   state: 'reachable' | 'unreachable' | 'unknown' | string;
+  telemetry?: {
+    state?: string;
+    filename?: string;
+    progress?: number;
+    temperatures?: Record<string, number>;
+    firmware_version?: string;
+  } | null;
   error: string | null;
 }
 
@@ -3880,9 +3931,9 @@ export const api = {
       `/printers/${printerId}/axis-jog?axis=${axis}&distance=${distance}`,
       { method: 'POST' }
     ),
-  setNozzleTemperature: (printerId: number, target: number) =>
+  setNozzleTemperature: (printerId: number, target: number, extruder?: number) =>
     request<{ success: boolean; message: string }>(
-      `/printers/${printerId}/temperature/nozzle?target=${target}`,
+      `/printers/${printerId}/temperature/nozzle?target=${target}${extruder === undefined ? '' : `&extruder=${extruder}`}`,
       { method: 'POST' }
     ),
   setBedTemperature: (printerId: number, target: number) =>
@@ -3890,6 +3941,25 @@ export const api = {
       `/printers/${printerId}/temperature/bed?target=${target}`,
       { method: 'POST' }
     ),
+  setChamberTemperature: (printerId: number, target: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/temperature/chamber?target=${target}`,
+      { method: 'POST' }
+    ),
+  setCreator5FilamentConfig: (
+    printerId: number,
+    config: { tool_index: number; material?: string; color?: string }
+  ) => request<{
+    success: boolean;
+    tool_index: number;
+    slot: number;
+    material: string | null;
+    color: string | null;
+    verified: boolean;
+  }>(`/printers/${printerId}/filament-config`, {
+    method: 'POST',
+    body: JSON.stringify(config),
+  }),
   homeAxes: (printerId: number, axes: 'x' | 'y' | 'z' | 'xy' | 'all' = 'all') =>
     request<{ success: boolean; message: string }>(
       `/printers/${printerId}/home-axes?axes=${axes}`,
@@ -4020,7 +4090,13 @@ export const api = {
         size: number;
         path: string;
         mtime?: string;
+        thumbnail_url?: string | null;
       }>;
+      listing?: {
+        completeness: 'complete' | 'recent_only';
+        source: string | null;
+        warning: string | null;
+      };
     }>(`/printers/${printerId}/files?${params.toString()}`);
   },
   getPrinterFileDownloadUrl: (printerId: number, path: string) =>
@@ -4052,6 +4128,8 @@ export const api = {
     }>(`/printers/${printerId}/files/plates?path=${encodeURIComponent(path)}`),
   getPrinterFilePlateThumbnail: (printerId: number, plateIndex: number, path: string) =>
     withStreamToken(`${API_BASE}/printers/${printerId}/files/plate-thumbnail/${plateIndex}?path=${encodeURIComponent(path)}`),
+  getPrinterFileThumbnailUrl: (printerId: number, path: string) =>
+    withStreamToken(`${API_BASE}/printers/${printerId}/files/thumbnail?path=${encodeURIComponent(path)}`),
   downloadPrinterFile: async (printerId: number, path: string): Promise<void> => {
     const headers: Record<string, string> = {};
     if (authToken) {
@@ -4114,7 +4192,8 @@ export const api = {
     path = '/',
     overwrite = false,
     conflictStrategy: 'error' | 'rename' | 'delete_replace' = 'error',
-    storage?: string | null
+    storage?: string | null,
+    toolCount?: number
   ): Promise<{ status: string; path: string; filename: string; renamed?: boolean; replaced?: boolean; original_filename?: string }> => {
     const headers: Record<string, string> = {};
     if (authToken) {
@@ -4124,6 +4203,7 @@ export const api = {
     formData.append('file', file);
     const params = new URLSearchParams({ path, overwrite: String(overwrite), conflict_strategy: conflictStrategy });
     if (storage) params.set('storage', storage);
+    if (toolCount !== undefined) params.set('tool_count', String(toolCount));
     const response = await fetch(`${API_BASE}/printers/${printerId}/files/upload?${params.toString()}`, {
       method: 'POST',
       headers,
@@ -4749,6 +4829,12 @@ export const api = {
         used_meters: number;
         used_in_plate?: boolean;
       }>;
+      creator5_tools?: Array<{
+        tool_id: number;
+        material_name: string | null;
+        tool_material_color: string | null;
+      }>;
+      creator5_tool_warning?: string | null;
     }>(`/archives/${archiveId}/filament-requirements${qs.toString() ? `?${qs}` : ''}`);
   },
   reprintArchive: (
@@ -6438,6 +6524,12 @@ export const api = {
         used_meters: number;
         used_in_plate?: boolean;
       }>;
+      creator5_tools?: Array<{
+        tool_id: number;
+        material_name: string | null;
+        tool_material_color: string | null;
+      }>;
+      creator5_tool_warning?: string | null;
     }>(`/library/files/${fileId}/filament-requirements${qs.toString() ? `?${qs}` : ''}`);
   },
 

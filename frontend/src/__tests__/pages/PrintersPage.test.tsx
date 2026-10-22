@@ -158,6 +158,67 @@ describe('PrintersPage', () => {
       });
     });
 
+    it('does not reuse generic AMS data for a Creality K3 card', async () => {
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json([{
+          ...mockPrinters[0],
+          id: 8,
+          name: 'Creality K3',
+          provider: 'fluidd',
+          model: 'Creality K3',
+        }])),
+        http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+          ...mockPrinterStatus,
+          active_extruder: 2,
+          temperatures: {
+            nozzle: 33,
+            nozzle_2: 33,
+            nozzle_3: 34,
+            nozzle_4: 33,
+            bed: 33,
+          },
+          ams: [{
+            id: 0,
+            name: 'AMS-A',
+            tray: [
+              { id: 0, tray_type: 'PLA', tray_color: '#ffffff', state: 11 },
+              { id: 1, tray_type: null, tray_color: null, state: 9 },
+              { id: 2, tray_type: null, tray_color: null, state: 9 },
+              { id: 3, tray_type: null, tray_color: null, state: 9 },
+            ],
+          }],
+          vt_tray: [{ id: 254, tray_type: 'PETG', tray_color: '#000000' }],
+          cfs_nano: {
+            station_type: 'CFS-Nano',
+            state: 'connect',
+            online: true,
+            slots: [
+              { slot: 'T1A', material_name: 'PLA', material_code: '101001', color: '#0A2989' },
+              { slot: 'T1B', material_name: null, material_code: null, color: null },
+            ],
+          },
+        })),
+      );
+
+      render(<PrintersPage />);
+
+      const card = await screen.findByTestId('printer-card-8');
+      expect(within(card).getByText('E2 · Active')).toBeInTheDocument();
+      expect(within(card).queryByText('AMS-A')).toBeNull();
+      expect(within(card).queryByText('PLA')).toBeNull();
+      expect(within(card).queryByText('PETG')).toBeNull();
+      expect(within(card).queryByText('Loaded spool')).toBeNull();
+      expect(within(card).queryByText('No inventory spool selected')).toBeNull();
+      expect(within(card).getByTestId('printer-card-section-filaments')).toBeInTheDocument();
+      expect(within(card).queryByTestId('printer-card-section-cfs-nano')).toBeNull();
+      const cfsSection = within(card).getByTestId('cfs-nano-module');
+      expect(within(cfsSection).getByText('Connected')).toBeInTheDocument();
+      expect(within(cfsSection).getByText('T1A')).toBeInTheDocument();
+      expect(within(cfsSection).getByText('PLA')).toBeInTheDocument();
+      expect(within(cfsSection).getByText('T1B')).toBeInTheDocument();
+      expect(within(cfsSection).getByText('Unknown')).toBeInTheDocument();
+    });
+
     it('closes a printer card menu when clicking elsewhere in the UI', async () => {
       const user = userEvent.setup();
       render(<PrintersPage />);
@@ -1101,6 +1162,7 @@ describe('PrintersPage', () => {
       expect(optionValues).toContain('Creality K1C');
       expect(optionValues).toContain('Creality K2');
       expect(optionValues).toContain('Creality K2 Plus');
+      expect(optionValues).toContain('Creality K3');
       expect(optionValues).toContain('Snapmaker U1');
       expect(optionValues).toContain('Prusa MK4S');
       expect(optionValues).toContain('Generic Klipper Printer');

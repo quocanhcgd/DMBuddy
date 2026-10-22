@@ -33,6 +33,7 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }));
 afterEach(() => {
   server.resetHandlers();
   sessionStorageMock.clear();
+  vi.mocked(localStorage.getItem).mockReset();
   vi.mocked(localStorage.setItem).mockClear();
   vi.mocked(localStorage.removeItem).mockClear();
   setAuthToken(null);
@@ -149,6 +150,23 @@ describe('API Client Auth Header', () => {
 
     expect(capturedHeaders).not.toBeNull();
     expect(capturedHeaders!.get('Authorization')).toBeNull();
+  });
+
+  it('uses a persistent token stored after this tab loaded for printer deletion', async () => {
+    let capturedHeaders: Headers | null = null;
+
+    server.use(
+      http.delete('/api/v1/printers/:id', ({ request }) => {
+        capturedHeaders = request.headers;
+        return HttpResponse.json({ status: 'deleted', archives_deleted: true });
+      })
+    );
+
+    setAuthToken(null);
+    vi.mocked(localStorage.getItem).mockReturnValue('remembered-token-from-another-tab');
+    await api.deletePrinter(42);
+
+    expect(capturedHeaders?.get('Authorization')).toBe('Bearer remembered-token-from-another-tab');
   });
 
   it('clears token on 401 with invalid token message', async () => {

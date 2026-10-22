@@ -52,6 +52,86 @@ def test_elegoo_sdcp_existing_row_gets_effective_camera_source():
     assert camera.url == "http://192.168.1.181:3031/video"
 
 
+def test_flashforge_ad5m_derives_direct_mjpeg_source_and_custom_port():
+    row = SimpleNamespace(
+        provider="flashforge_ad5m",
+        connection_mode="direct",
+        ip_address="192.168.1.90",
+        model="Adventurer 5M Pro",
+        provider_options={"camera_port": 8081},
+        external_camera_enabled=False,
+        external_camera_url=None,
+        external_camera_type=None,
+        external_camera_snapshot_url=None,
+    )
+
+    camera = get_effective_camera_source(row)
+
+    assert camera.enabled is True
+    assert camera.derived is True
+    assert camera.camera_type == "mjpeg"
+    assert camera.url == "http://192.168.1.90:8081/?action=stream"
+
+
+def test_flashforge_creator5_derives_direct_mjpeg_source_and_custom_port():
+    row = SimpleNamespace(
+        provider="flashforge_creator5",
+        connection_mode="direct",
+        ip_address="192.168.1.91",
+        model="Creator 5 Pro",
+        provider_options={"camera_port": 8082},
+        external_camera_enabled=False,
+        external_camera_url=None,
+        external_camera_type=None,
+        external_camera_snapshot_url=None,
+    )
+
+    camera = get_effective_camera_source(row)
+
+    assert camera.enabled is True
+    assert camera.derived is True
+    assert camera.camera_type == "mjpeg"
+    assert camera.url == "http://192.168.1.91:8082/?action=stream"
+
+
+def test_flashforge_connector_camera_source_is_not_derived_directly():
+    row = SimpleNamespace(
+        provider="flashforge_ad5m",
+        connection_mode="connector",
+        ip_address="192.168.1.90",
+        model="Adventurer 5M Pro",
+        provider_options={},
+        external_camera_enabled=False,
+        external_camera_url=None,
+        external_camera_type=None,
+        external_camera_snapshot_url=None,
+    )
+
+    camera = get_effective_camera_source(row)
+
+    assert camera.enabled is False
+    assert camera.url is None
+
+
+def test_flashforge_creator5_invalid_camera_port_does_not_derive_source():
+    row = SimpleNamespace(
+        provider="flashforge_creator5",
+        connection_mode="direct",
+        ip_address="192.168.1.91",
+        model="Creator 5",
+        provider_options={"camera_port": 70000},
+        external_camera_enabled=False,
+        external_camera_url=None,
+        external_camera_type=None,
+        external_camera_snapshot_url=None,
+    )
+
+    camera = get_effective_camera_source(row)
+
+    assert camera.enabled is False
+    assert camera.url is None
+
+
 def test_elegoo_sdcp_camera_source_detects_manual_cc1_mjpeg_url():
     assert is_elegoo_sdcp_camera_source("elegoo_sdcp", "http://192.168.1.234:3031/video") is True
     assert is_elegoo_sdcp_camera_source("elegoo_sdcp", "http://192.168.1.234:3031/video/") is True

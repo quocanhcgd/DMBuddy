@@ -50,6 +50,9 @@ class PrintQueueItem(Base):
     # Format: "[5, -1, 2, -1]" where position = slot_id-1, value = global tray ID (-1 = unused)
     ams_mapping: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Creator 5 logical tool to material-station slot mapping; upstream-shaped JSON array.
+    creator5_material_mappings: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Filament overrides for model-based assignment: JSON array of override objects
     # Format: '[{"slot_id": 1, "type": "PLA", "color": "#FFFFFF"}]'
     # Only slots with overrides are included (sparse). null = use original 3MF values.

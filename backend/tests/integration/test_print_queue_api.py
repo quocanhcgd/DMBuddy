@@ -1,5 +1,7 @@
 """Integration tests for Print Queue API endpoints."""
 
+import json
+
 import pytest
 from httpx import AsyncClient
 
@@ -301,6 +303,127 @@ class TestPrintQueueAPI:
         assert result["printer_id"] == printer.id
         assert result["archive_id"] == archive.id
         assert result["ams_mapping"] == [5, -1, 2, -1]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_creator5_mapping_round_trips_through_queue_api_and_database(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        from sqlalchemy import select
+
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory(provider="flashforge_creator5", model="Creator 5")
+        archive = await archive_factory()
+        mappings = [
+            {
+                "toolId": 0,
+                "slotId": 3,
+                "materialName": "PLA",
+                "toolMaterialColor": "#FFFFFF",
+                "slotMaterialColor": "#F82D29",
+            },
+            {
+                "toolId": 2,
+                "slotId": 1,
+                "materialName": "PETG",
+                "toolMaterialColor": "#F82D29",
+                "slotMaterialColor": "#FFFFFF",
+            },
+        ]
+
+        created = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": archive.id,
+                "creator5_material_mappings": mappings,
+            },
+        )
+
+        assert created.status_code == 200
+        item_id = created.json()["id"]
+        assert created.json()["creator5_material_mappings"] == mappings
+        row = (
+            await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))
+        ).scalar_one()
+        assert json.loads(row.creator5_material_mappings) == mappings
+
+        updated_mappings = [
+            {**mappings[0], "slotId": 2, "slotMaterialColor": "#00FF00"},
+            {**mappings[1], "slotId": 4, "slotMaterialColor": "#0000FF"},
+        ]
+        updated = await async_client.patch(
+            f"/api/v1/queue/{item_id}",
+            json={"creator5_material_mappings": updated_mappings},
+        )
+
+        assert updated.status_code == 200
+        assert updated.json()["creator5_material_mappings"] == updated_mappings
+        await db_session.refresh(row)
+        row = (
+            await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))
+        ).scalar_one()
+        assert json.loads(row.creator5_material_mappings) == updated_mappings
+
+        fetched = await async_client.get(f"/api/v1/queue/{item_id}")
+        assert fetched.status_code == 200
+        assert fetched.json()["creator5_material_mappings"] == updated_mappings
+
+        cleared = await async_client.patch(
+            f"/api/v1/queue/{item_id}",
+            json={"creator5_material_mappings": None},
+        )
+        assert cleared.status_code == 200
+        assert cleared.json()["creator5_material_mappings"] is None
+        await db_session.refresh(row)
+        assert row.creator5_material_mappings is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_creator5_mapping_requires_creator5_printer_on_create_and_update(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory
+    ):
+        mappings = [
+            {
+                "toolId": 0,
+                "slotId": 1,
+                "materialName": "PLA",
+                "toolMaterialColor": "#FFFFFF",
+                "slotMaterialColor": "#FFFFFF",
+            },
+            {
+                "toolId": 1,
+                "slotId": 2,
+                "materialName": "PETG",
+                "toolMaterialColor": "#000000",
+                "slotMaterialColor": "#000000",
+            },
+        ]
+        non_creator5 = await printer_factory(provider="bambu_lab", model="X1C")
+        archive = await archive_factory()
+        create_response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": non_creator5.id,
+                "archive_id": archive.id,
+                "creator5_material_mappings": mappings,
+            },
+        )
+        assert create_response.status_code == 400
+        assert "Creator 5" in create_response.json()["detail"]
+
+        creator5 = await printer_factory(provider="flashforge_creator5", model="Creator 5")
+        item = await queue_item_factory(
+            printer_id=creator5.id,
+            creator5_material_mappings=json.dumps(mappings),
+        )
+        update_response = await async_client.patch(
+            f"/api/v1/queue/{item.id}",
+            json={"printer_id": non_creator5.id},
+        )
+        assert update_response.status_code == 400
+        assert "Creator 5" in update_response.json()["detail"]
 
     @pytest.mark.asyncio
     @pytest.mark.integration

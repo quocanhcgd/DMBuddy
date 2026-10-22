@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import math
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -10,6 +13,7 @@ from urllib.parse import quote, urljoin, urlparse, urlunparse
 import httpx
 
 from backend.app.services.bambu_mqtt import FilaSwitchState, NozzleInfo, PrintOptions
+from backend.app.services.gcode_thumbnail import GcodeThumbnail, extract_gcode_thumbnail
 
 
 @dataclass
@@ -44,6 +48,7 @@ class MoonrakerPrinterState:
     airduct_mode: int = 0
     speed_level: int = 2
     chamber_light: bool = False
+    chamber_light_available: bool = False
     active_extruder: int = 0
     tray_now: int = 255
     ams_status_main: int = 0
@@ -120,6 +125,17 @@ def _moonraker_fan_percent(values: Any) -> int | None:
     return max(0, min(100, round(percent)))
 
 
+def _moonraker_output_pin_percent(values: Any) -> int | None:
+    """Convert an output_pin value normalized to 0-1 into a fan percentage."""
+    if not isinstance(values, dict):
+        return None
+    try:
+        value = float(values.get("value"))
+    except (TypeError, ValueError):
+        return None
+    return max(0, min(100, round(value * 100 if value <= 1 else value)))
+
+
 def _safe_int(value: Any) -> int | None:
     try:
         return int(float(str(value).strip()))
@@ -129,9 +145,16 @@ def _safe_int(value: Any) -> int | None:
 
 def _safe_float(value: Any) -> float | None:
     try:
-        return float(str(value).strip())
+        result = float(str(value).strip())
     except (TypeError, ValueError):
         return None
+    return result if math.isfinite(result) else None
+
+
+def _snapmaker_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on", "loaded", "load_finish"}
+    return bool(value)
 
 
 def _list_value(values: Any, index: int, default: Any = None) -> Any:
@@ -276,28 +299,35 @@ def _snapmaker_u1_filament_metadata(values: dict[str, Any]) -> dict[str, Any]:
     source = values
     for key in ("filament", "filament_info", "spool", "tray", "rfid", "tag"):
         nested = values.get(key)
+        if isinstance(nested, str):
+            try:
+                nested = json.loads(nested)
+            except (TypeError, ValueError):
+                nested = None
         if isinstance(nested, dict):
-            source = {**values, **nested}
+            # Object-level fields are the freshest Moonraker sample; nested RFID
+            # data fills gaps without overwriting a live feeder update.
+            source = {**nested, **values}
             break
 
     material = _snapmaker_first_value(
         source,
         (
+            "tray_type",
+            "filament_type",
             "MAIN_TYPE",
             "main_type",
             "material",
-            "tray_type",
             "type",
-            "filament_type",
             "filament_material",
         ),
     )
-    subtype = _snapmaker_first_value(source, ("SUB_TYPE", "sub_type", "subtype", "tray_sub_brands"))
+    subtype = _snapmaker_first_value(source, ("tray_sub_brands", "SUB_TYPE", "sub_type", "subtype"))
     vendor = _snapmaker_first_value(source, ("VENDOR", "vendor", "MANUFACTURER", "manufacturer", "brand"))
     color = _normalize_snapmaker_u1_color(
         _snapmaker_first_value(
             source,
-            ("RGB_1", "rgb_1", "ARGB_COLOR", "argb_color", "color", "tray_color", "rgba", "filament_color"),
+            ("tray_color", "color", "RGB_1", "rgb_1", "ARGB_COLOR", "argb_color", "rgba", "filament_color"),
         )
     )
     weight = _safe_float(_snapmaker_first_value(source, ("WEIGHT", "weight", "label_weight", "initial_weight")))
@@ -593,6 +623,10 @@ class MoonrakerPrinterClient:
     def _is_elegoo_printer(self) -> bool:
         return "elegoo" in self.printer_model.lower()
 
+    def _is_creality_k3(self) -> bool:
+        normalized = "".join(character for character in self.printer_model.lower() if character.isalnum())
+        return normalized in {"k3", "crealityk3"}
+
     def _configured_gcodes_path_prefixes(self) -> list[str]:
         """Return absolute Klipper gcode storage paths for Elegoo/Moonraker aliases.
 
@@ -736,6 +770,12 @@ class MoonrakerPrinterClient:
             "toolhead",
         ]
         wanted.extend(["extruder", "extruder1", "extruder2", "extruder3"])
+        wanted.extend(
+            name
+            for name in available_set
+            if name.startswith(("output_pin ", "led ", "neopixel "))
+            and any(marker in name.lower() for marker in ("light", "led", "case"))
+        )
         wanted.extend(
             name
             for name in available_set
@@ -944,6 +984,10 @@ class MoonrakerPrinterClient:
         return normalized
 
     def _apply_creality_cfs_box(self, status: dict[str, Any]) -> None:
+        # K3's CFS-Nano reports a similarly shaped `box` object, but its
+        # slot/tool semantics are not verified against the K2 Plus CFS path.
+        if self._is_creality_k3():
+            return
         box = status.get("box") if isinstance(status, dict) else None
         if not isinstance(box, dict):
             return
@@ -1022,6 +1066,142 @@ class MoonrakerPrinterClient:
         if isinstance(filament_rack, dict):
             self.state.raw_data["filament_rack"] = filament_rack
 
+    def _available_creality_k3_objects(self, available: list[str] | None = None) -> list[str]:
+        if available is None:
+            available = self._available_objects()
+        available_set = set(available)
+        wanted = [
+            "toolhead",
+            "nozzle_manager",
+            "extruder",
+            "extruder1",
+            "extruder2",
+            "extruder3",
+            "output_pin fan0",
+            "output_pin fan2",
+            "output_pin LED",
+        ]
+        return [name for name in wanted if name in available_set]
+
+    def _query_creality_k3_status(self, available: list[str] | None = None) -> dict[str, Any]:
+        if not self._is_creality_k3():
+            return {}
+        try:
+            objects = self._available_creality_k3_objects(available)
+            return self._query_objects(objects) if objects else {}
+        except Exception:  # noqa: BLE001 - K3-specific objects are optional
+            return {}
+
+    def _apply_creality_k3_status(self, status: dict[str, Any]) -> None:
+        if not self._is_creality_k3() or not isinstance(status, dict):
+            return
+
+        light = status.get("output_pin LED")
+        self.state.chamber_light_available = isinstance(light, dict) and "value" in light
+        self.state.chamber_light = bool(_safe_float(light.get("value"))) if self.state.chamber_light_available else False
+
+        extruder_names = ["extruder", "extruder1", "extruder2", "extruder3"]
+        nozzle_info: list[NozzleInfo] = []
+        normalized_nozzles: list[dict[str, Any]] = []
+        for index, name in enumerate(extruder_names):
+            extruder = status.get(name)
+            if not isinstance(extruder, dict):
+                continue
+            diameter = _safe_float(extruder.get("nozzle_diameter"))
+            nozzle_info.append(NozzleInfo(nozzle_diameter=str(diameter) if diameter and diameter > 0 else ""))
+            suffix = "" if index == 0 else f"_{index + 1}"
+            self.state.temperatures[f"nozzle{suffix}"] = _heater_temperature(extruder)
+            self.state.temperatures[f"nozzle{suffix}_target"] = _heater_target(extruder)
+            self.state.temperatures[f"nozzle{suffix}_heating"] = _is_heating(extruder)
+        if nozzle_info:
+            self.state.nozzles = nozzle_info
+
+        manager = status.get("nozzle_manager")
+        manager = manager if isinstance(manager, dict) else {}
+        selected = _safe_int(manager.get("selected"))
+        if selected is not None and selected not in {-1, 0, 1, 2, 3}:
+            selected = None
+        self.state.active_extruder = selected if selected is not None else -1
+
+        manager_nozzles = manager.get("nozzles")
+        if isinstance(manager_nozzles, list):
+            for entry in manager_nozzles[:4]:
+                if not isinstance(entry, dict):
+                    continue
+                nozzle_id = _safe_int(entry.get("id"))
+                if nozzle_id is None or nozzle_id not in {0, 1, 2, 3}:
+                    continue
+                diameter = _safe_float(entry.get("diameter"))
+                offset = entry.get("offset_xyz")
+                safe_offset = {
+                    axis: value
+                    for axis in ("x", "y", "z")
+                    if isinstance(offset, dict)
+                    and (value := _safe_float(offset.get(axis))) is not None
+                    and abs(value) <= 1000
+                }
+                normalized_nozzles.append(
+                    {
+                        "id": nozzle_id,
+                        "diameter": diameter if diameter is not None and 0 < diameter <= 2 else None,
+                        "loaded": _safe_int(entry.get("loaded")),
+                        "material_loaded": _safe_int(entry.get("material_loaded")),
+                        "movement": _safe_int(entry.get("movement")),
+                        "state": _safe_int(entry.get("state")),
+                        "connection": _safe_int(entry.get("connection")),
+                        "offset_xyz": safe_offset or None,
+                    }
+                )
+
+        box = status.get("box") if isinstance(status.get("box"), dict) else {}
+        station_types = {
+            name: str(box[name].get("type") or "")
+            for name in ("T1", "T2", "T3", "T4")
+            if isinstance(box.get(name), dict) and box[name].get("type")
+        }
+        cfs_nano = None
+        cfs_nano_units = [
+            name for name, value in station_types.items() if value.strip().casefold() == "cfs-nano"
+        ]
+        if cfs_nano_units:
+            material_by_slot = _creality_cfs_material_lookup(box.get("same_material"))
+            slots: list[dict[str, Any]] = []
+            for unit_name in cfs_nano_units:
+                unit = box.get(unit_name) if isinstance(box.get(unit_name), dict) else {}
+                for slot_index, letter in enumerate("ABCD"):
+                    slot_name = f"{unit_name}{letter}"
+                    material_code = str(_list_value(unit.get("material_type"), slot_index, "") or "").strip()
+                    color = _normalize_creality_cfs_color(_list_value(unit.get("color_value"), slot_index))
+                    slots.append(
+                        {
+                            "slot": slot_name,
+                            "material_name": material_by_slot.get(slot_name) or None,
+                            "material_code": material_code[:32] if material_code not in {"", "-1"} else None,
+                            "color": color if isinstance(color, str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", color) else None,
+                        }
+                    )
+            raw_online = box.get("is_online")
+            if isinstance(raw_online, bool):
+                online: bool | None = raw_online
+            elif isinstance(raw_online, (int, str)):
+                online = str(raw_online).strip().casefold() in {"1", "true", "yes", "on"}
+            else:
+                online = None
+            raw_state = box.get("state")
+            station_state = str(raw_state).strip()[:32] if raw_state is not None else None
+            cfs_nano = {
+                "station_type": "CFS-Nano",
+                "state": station_state or None,
+                "online": online,
+                "slots": slots,
+            }
+        self.state.raw_data["creality_k3"] = {
+            "selected_nozzle": selected,
+            "nozzles": sorted(normalized_nozzles, key=lambda nozzle: nozzle["id"]),
+            "station_types": station_types,
+            "cfs_nano": cfs_nano,
+        }
+
     def _apply_snapmaker_u1_status(self, status: dict[str, Any]) -> None:
         if not isinstance(status, dict):
             return
@@ -1069,17 +1249,19 @@ class MoonrakerPrinterClient:
                     continue
                 metadata = _snapmaker_u1_filament_metadata(values)
                 task_metadata = _snapmaker_u1_task_filament_metadata(task_config, extruder_index)
-                detected = bool(values.get("filament_detected"))
+                detected = _snapmaker_bool(values.get("filament_detected"))
                 channel_state = str(values.get("channel_state") or "").strip().lower()
                 channel_action_state = str(values.get("channel_action_state") or "").strip().lower()
                 loaded_to_extruder = channel_state == "load_finish" or channel_action_state == "load_finish"
-                material = task_metadata.get("material") or metadata["material"] or ("Unknown" if detected else "")
+                # Feeder/RFID state follows the currently installed spool. The
+                # print task config can describe an earlier job or slicer mapping.
+                material = metadata["material"] or task_metadata.get("material") or ("Unknown" if detected else "")
                 feed_slots[extruder_index] = {
                     "id": extruder_index,
                     "slot": f"U1-E{extruder_index}",
                     "tray_type": material,
-                    "tray_sub_brands": task_metadata.get("subtype") or metadata["subtype"],
-                    "tray_color": task_metadata.get("color") or metadata["color"],
+                    "tray_sub_brands": metadata["subtype"] or task_metadata.get("subtype"),
+                    "tray_color": metadata["color"] or task_metadata.get("color"),
                     "remain": metadata["remain"],
                     "remaining_weight": metadata["remaining_weight"],
                     "weight": metadata["weight"],
@@ -1087,7 +1269,7 @@ class MoonrakerPrinterClient:
                     "state": 11 if detected else 9,
                     "tray_uuid": f"snapmaker-u1-e{extruder_index}",
                     "tag_uid": str(values.get("CARD_UID") or values.get("card_uid") or ""),
-                    "vendor": task_metadata.get("vendor") or metadata["vendor"],
+                    "vendor": metadata["vendor"] or task_metadata.get("vendor"),
                     "filament_detected": detected,
                     "loaded_to_feeder": detected,
                     "loaded_to_extruder": loaded_to_extruder,
@@ -1169,6 +1351,52 @@ class MoonrakerPrinterClient:
                     if isinstance(status.get(key), dict)
                 },
             }
+        self.state.chamber_light = self._snapmaker_u1_light_state(status)
+
+    @staticmethod
+    def _snapmaker_u1_light_object(available: list[str]) -> tuple[str, str] | None:
+        """Find the Klipper LED used by the U1 cavity light."""
+        candidates = [name for name in available if name.startswith("output_pin ")]
+        candidates += [name for name in available if name.startswith(("led ", "neopixel "))]
+        for name in candidates:
+            kind, _, object_name = name.partition(" ")
+            if kind in {"led", "neopixel"} and object_name.lower() == "cavity_led":
+                return kind, object_name
+        for name in candidates:
+            lowered = name.lower()
+            if not any(marker in lowered for marker in ("light", "led", "case")):
+                continue
+            kind, _, object_name = name.partition(" ")
+            if kind in {"output_pin", "led", "neopixel"}:
+                return kind, object_name
+        return None
+
+    @classmethod
+    def _snapmaker_u1_light_state(cls, status: dict[str, Any]) -> bool:
+        available = list(status)
+        target = cls._snapmaker_u1_light_object(available)
+        if target is None:
+            return False
+        values = status.get(f"{target[0]} {target[1]}")
+        if not isinstance(values, dict):
+            return False
+        value = _safe_float(values.get("value"))
+        if value is not None:
+            return value > 0
+        color_data = values.get("color_data")
+        if isinstance(color_data, list) and color_data:
+            colors = color_data[0] if isinstance(color_data[0], list) else color_data
+            if isinstance(colors, list):
+                return any((_safe_float(channel) or 0) > 0 for channel in colors)
+        return False
+
+    def set_chamber_light(self, on: bool) -> bool:
+        """Control a supported printer light using its provider-specific command."""
+        if self._is_creality_k3():
+            if not self.state.chamber_light_available:
+                raise ValueError("Creality K3 light pin is not enabled in its Klipper configuration")
+            return self.send_gcode(f"SET_PIN PIN=LED VALUE={1 if on else 0}")
+        return self.send_gcode(f"SET_LED LED=cavity_led WHITE={1 if on else 0}")
 
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         response = httpx.post(
@@ -1321,6 +1549,9 @@ class MoonrakerPrinterClient:
         cfs_status = self._query_cfs_status(available_objects)
         if cfs_status:
             status.update(cfs_status)
+        creality_k3_status = self._query_creality_k3_status(available_objects)
+        if creality_k3_status:
+            status.update(creality_k3_status)
         snapmaker_u1_status = self._query_snapmaker_u1_status(available_objects)
         if snapmaker_u1_status:
             status.update(snapmaker_u1_status)
@@ -1362,7 +1593,13 @@ class MoonrakerPrinterClient:
             self.state.remaining_time = _remaining_minutes(print_stats, self.state.progress)
         self.state.temperatures = _moonraker_temperatures(status)
         self._apply_snapmaker_u1_status(status)
+        self._apply_creality_k3_status(status)
         _apply_moonraker_fans(self.state, status)
+        if self._is_creality_k3():
+            if "output_pin fan0" in status:
+                self.state.cooling_fan_speed = _moonraker_output_pin_percent(status["output_pin fan0"])
+            if "output_pin fan2" in status:
+                self.state.big_fan1_speed = _moonraker_output_pin_percent(status["output_pin fan2"])
         self._emit_status_callbacks(previous_state)
         self._last_state = self.state.state
         self._has_status_sample = True
@@ -1379,6 +1616,26 @@ class MoonrakerPrinterClient:
             return None
         response.raise_for_status()
         return response.content
+
+    def download_gcode_thumbnail(self, remote_path: str) -> GcodeThumbnail | None:
+        """Scan only the first 8 MiB of a remote G-code file for its preview."""
+        normalized = self._normalize_gcodes_path(remote_path)
+        url = urljoin(self.base_url, f"server/files/gcodes/{normalized}")
+        chunks: list[bytes] = []
+        total = 0
+        with httpx.stream("GET", url, headers=self._headers, timeout=max(self.timeout, 30.0)) as response:
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            for chunk in response.iter_bytes(chunk_size=64 * 1024):
+                remaining = 8 * 1024 * 1024 - total
+                if remaining <= 0:
+                    break
+                chunks.append(chunk[:remaining])
+                total += min(len(chunk), remaining)
+                if total >= 8 * 1024 * 1024:
+                    break
+        return extract_gcode_thumbnail(b"".join(chunks))
 
     def delete_file(self, remote_path: str, *, storage: str | None = None) -> bool:
         root = str(storage or "gcodes").strip().strip("/") or "gcodes"
@@ -1399,8 +1656,11 @@ class MoonrakerPrinterClient:
             self.request_status_update()
         return True
 
-    def set_nozzle_temperature(self, target: int | float) -> bool:
-        return self.send_gcode(f"M104 S{int(target)}")
+    def set_nozzle_temperature(self, target: int | float, extruder: int | None = None) -> bool:
+        if extruder is None:
+            return self.send_gcode(f"M104 S{int(target)}")
+        heater = "extruder" if int(extruder) == 0 else f"extruder{int(extruder)}"
+        return self.send_gcode(f"SET_HEATER_TEMPERATURE HEATER={heater} TARGET={int(target)}")
 
     def set_bed_temperature(self, target: int | float) -> bool:
         return self.send_gcode(f"M140 S{int(target)}")
@@ -1408,6 +1668,12 @@ class MoonrakerPrinterClient:
     def set_fan_speed(self, fan: str, speed: int) -> bool:
         normalized_fan = fan.strip().lower().replace("-", "_")
         clamped_speed = max(0, min(100, int(speed)))
+        if self._is_creality_k3():
+            if normalized_fan in {"part", "model", "model_fan", "cooling"}:
+                return self.send_gcode(f"M106 S{round(clamped_speed * 255 / 100)}")
+            if normalized_fan in {"aux", "auxiliary", "auxiliary_fan"}:
+                return self.send_gcode(f"M106 P2 S{round(clamped_speed * 255 / 100)}")
+            raise ValueError(f"Fan '{fan}' is not available for this Creality K3 configuration")
         target_object = self._target_fan_object(normalized_fan)
         if target_object is None:
             raise ValueError(f"Fan '{fan}' is not available for this Moonraker printer")
@@ -1470,6 +1736,14 @@ class MoonrakerPrinterClient:
 
     def stop_print(self) -> bool:
         self._post("printer/print/cancel", {})
+        return True
+
+    def pause_print(self) -> bool:
+        self._post("printer/print/pause", {})
+        return True
+
+    def resume_print(self) -> bool:
+        self._post("printer/print/resume", {})
         return True
 
 

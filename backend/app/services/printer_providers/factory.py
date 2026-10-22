@@ -4,11 +4,16 @@ from typing import Any
 
 from backend.app.services.printer_providers.bambu import create_bambu_client
 from backend.app.services.printer_providers.elegoo_sdcp import create_elegoo_sdcp_client
+from backend.app.services.printer_providers.flashforge_ad5m import create_flashforge_ad5m_client
+from backend.app.services.printer_providers.flashforge_contract import FLASHFORGE_PROVIDERS
+from backend.app.services.printer_providers.flashforge_creator5 import create_flashforge_creator5_client
 from backend.app.services.printer_providers.moonraker import create_moonraker_client
 from backend.app.services.printer_providers.prusaconnect import create_prusa_connect_mobile_client
 from backend.app.services.printer_providers.prusalink import create_prusalink_client
 
-SUPPORTED_PROVIDERS = {"bambu", "klipper", "mainsail", "fluidd", "prusalink", "prusaconnect", "elegoo_sdcp"}
+SUPPORTED_PROVIDERS = {
+    "bambu", "klipper", "mainsail", "fluidd", "prusalink", "prusaconnect", "elegoo_sdcp", *FLASHFORGE_PROVIDERS
+}
 MOONRAKER_PROVIDERS = {"klipper", "mainsail", "fluidd"}
 
 
@@ -42,4 +47,8 @@ def create_printer_client(printer: Any, **callbacks: Any) -> Any:
         return create_prusa_connect_mobile_client(printer, **callbacks)
     if provider == "elegoo_sdcp":
         return create_elegoo_sdcp_client(printer, **callbacks)
+    if provider == "flashforge_ad5m":
+        return create_flashforge_ad5m_client(printer, **callbacks)
+    if provider == "flashforge_creator5":
+        return create_flashforge_creator5_client(printer, **callbacks)
     raise ValueError(f"Unsupported printer provider: {provider!r}")

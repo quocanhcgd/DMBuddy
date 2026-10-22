@@ -20,6 +20,12 @@ class FakeProviderClient:
         return True
 
 
+class FakeCreator5ProviderClient(FakeProviderClient):
+    def upload_file(self, local_path: Path, remote_path: str, *, tool_count: int = 1) -> bool:
+        self.uploads.append((local_path, remote_path, tool_count))
+        return True
+
+
 def _job() -> PrintDispatchJob:
     return PrintDispatchJob(
         id=42,
@@ -139,3 +145,62 @@ async def test_bambu_provider_upload_still_uses_ftp(monkeypatch, tmp_path):
     args, kwargs = calls[0]
     assert args[:4] == ("192.0.2.20", "secret", local_file, "/Cable_Holder.3mf")
     assert kwargs["printer_model"] == "x1c"
+
+
+@pytest.mark.asyncio
+async def test_creator5_provider_upload_uses_sliced_tool_count(monkeypatch, tmp_path):
+    local_file = tmp_path / "multi.3mf"
+    local_file.write_bytes(b"PK")
+    client = FakeCreator5ProviderClient()
+    monkeypatch.setattr(bg.printer_manager, "get_client", lambda printer_id: client)
+    from backend.app.services import print_scheduler as scheduler_module
+
+    monkeypatch.setattr(scheduler_module, "_creator5_tool_count_from_file", lambda *_args: 2)
+
+    uploaded = await background_dispatch._upload_file_for_provider(
+        job=_job(),
+        provider="flashforge_creator5",
+        printer_name="Creator 5 Pro",
+        printer_ip="192.0.2.11",
+        printer_access_code="unused",
+        file_path=local_file,
+        remote_path="/multi.3mf",
+        printer_model="Creator 5 Pro",
+        ftp_retry_enabled=False,
+        ftp_retry_count=0,
+        ftp_retry_delay=0,
+        ftp_timeout=1,
+        operation_name="Upload for Creator 5 Pro",
+        progress_callback=lambda uploaded, total: None,
+    )
+
+    assert uploaded is True
+    assert client.uploads == [(local_file, "/multi.3mf", 2)]
+
+
+@pytest.mark.asyncio
+async def test_creator5_provider_upload_rejects_bambu_mapping(monkeypatch, tmp_path):
+    local_file = tmp_path / "cube.gcode"
+    local_file.write_text("G28\n", encoding="ascii")
+    client = FakeCreator5ProviderClient()
+    monkeypatch.setattr(bg.printer_manager, "get_client", lambda printer_id: client)
+    job = _job()
+    job.options["ams_mapping"] = [0]
+
+    with pytest.raises(RuntimeError, match="does not support Bambu AMS mapping"):
+        await background_dispatch._upload_file_for_provider(
+            job=job,
+            provider="flashforge_creator5",
+            printer_name="Creator 5 Pro",
+            printer_ip="192.0.2.11",
+            printer_access_code="unused",
+            file_path=local_file,
+            remote_path="/cube.gcode",
+            printer_model="Creator 5 Pro",
+            ftp_retry_enabled=False,
+            ftp_retry_count=0,
+            ftp_retry_delay=0,
+            ftp_timeout=1,
+            operation_name="Upload for Creator 5 Pro",
+            progress_callback=lambda uploaded, total: None,
+        )

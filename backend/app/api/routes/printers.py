@@ -5,8 +5,10 @@ import re
 import secrets
 import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
+from typing import Any
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -26,6 +28,7 @@ from backend.app.schemas.printer import (
     AmsLabelBody,
     AMSTray,
     AMSUnit,
+    Creator5FilamentConfigRequest,
     DiagnosticRequest,
     FilaSwitchResponse,
     HMSErrorResponse,
@@ -51,6 +54,7 @@ from backend.app.services.bambu_ftp import (
     upload_file_async,
 )
 from backend.app.services.connector_gateway import connector_gateway
+from backend.app.services.flashforge.secrets import decrypt_check_code, encrypt_check_code
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_manager import (
     get_derived_status_name,
@@ -60,8 +64,19 @@ from backend.app.services.printer_manager import (
     supports_drying,
 )
 from backend.app.services.printer_providers.factory import create_printer_client, normalize_provider
+from backend.app.services.printer_providers.flashforge_contract import (
+    FLASHFORGE_PROVIDERS,
+    capability_snapshot,
+    contract_for,
+    validate_flashforge_options,
+)
 from backend.app.services.printer_providers.moonraker import create_moonraker_client
-from backend.app.services.printer_transport import ConnectorOfflineError, ConnectorPrinterTransport
+from backend.app.services.gcode_thumbnail import extract_gcode_thumbnail
+from backend.app.services.printer_transport import (
+    ConnectorDeliveryUnknownError,
+    ConnectorOfflineError,
+    ConnectorPrinterTransport,
+)
 from backend.app.utils.filament_ids import effective_bambu_material, generic_bambu_filament_id
 from backend.app.utils.http import build_content_disposition
 
@@ -102,7 +117,7 @@ def _safe_prusalink_firmware_upload_path(directory: str, filename: str) -> str:
 
 
 def _remote_path_with_filename(remote_path: str, filename: str) -> str:
-    parent = str(Path(remote_path).parent).replace(".", "/")
+    parent = str(PurePosixPath(remote_path).parent)
     normalized_dir = "/" + parent.strip("/") if parent.strip("/") else ""
     return f"{normalized_dir}/{filename}"
 
@@ -169,6 +184,16 @@ def _normalize_provider_file_entry(entry: dict) -> dict:
     }
 
 
+def _gcode_thumbnail_url(printer_id: int, entry: dict) -> str | None:
+    if bool(entry.get("is_directory")):
+        return None
+    name = str(entry.get("name") or "").lower()
+    if not (name.endswith((".gcode", ".gco", ".g", ".bgcode")) or ".gcode." in name):
+        return None
+    path = str(entry.get("path") or "")
+    return f"/api/v1/printers/{printer_id}/files/thumbnail?path={quote(path)}" if path else None
+
+
 def _provider_file_matches_path(entry: dict, remote_path: str) -> bool:
     expected_path = "/" + remote_path.strip("/")
     expected_name = Path(expected_path).name
@@ -181,7 +206,7 @@ def _provider_file_matches_path(entry: dict, remote_path: str) -> bool:
 
 def _provider_file_entry(provider_client, remote_path: str, *, storage: str | None = None) -> dict | None:
     try:
-        files = provider_client.list_files(str(Path(remote_path).parent).replace(".", "/"), storage=storage)
+        files = provider_client.list_files(str(PurePosixPath(remote_path).parent), storage=storage)
     except Exception as exc:  # noqa: BLE001 - reconciliation is best-effort after a side-effecting upload timeout
         logger.warning(
             "Could not reconcile printer upload state after provider exception: %s",
@@ -249,6 +274,203 @@ def _provider_for_printer(printer: Printer):
     return create_printer_client(printer)
 
 
+def _validate_ad5m_file_options(printer: Printer, *, path: str, storage: str | None = None) -> None:
+    if str(getattr(printer, "provider", "bambu") or "bambu").strip().lower() != "flashforge_ad5m":
+        return
+    normalized_path = str(path or "").replace("\\", "/").strip("/")
+    if normalized_path:
+        raise HTTPException(400, "FlashForge AD5M only supports files in the printer root directory")
+    if storage:
+        raise HTTPException(400, "FlashForge AD5M does not expose selectable file storage")
+
+
+async def _connector_delivery_unknown_detail(
+    exc: ConnectorDeliveryUnknownError,
+    printer: Printer,
+    provider: str,
+    options: dict,
+) -> dict:
+    """Attach a read-only snapshot while keeping the command outcome unknown."""
+    reconciliation: dict[str, Any] = {"status": "unavailable"}
+    try:
+        snapshot = await ConnectorPrinterTransport(printer.connector_id or "", connector_gateway).status(
+            {
+                "request_id": secrets.token_urlsafe(16),
+                "ip_address": printer.ip_address,
+                "port": int(options.get("http_port") or _connector_printer_port(provider)),
+                "provider": provider,
+                "serial_number": printer.serial_number,
+                "access_code": decrypt_check_code(printer.auth_token),
+                "timeout_ms": 2500,
+            },
+            timeout=4,
+        )
+        telemetry = snapshot.get("telemetry") if isinstance(snapshot.get("telemetry"), dict) else {}
+        reconciliation = {
+            "status": "observed" if snapshot.get("status") == "completed" and snapshot.get("connected") else "unavailable",
+            "connected": bool(snapshot.get("connected")),
+            "state": str(snapshot.get("state") or "unknown"),
+        }
+        for field in ("filename", "progress", "temperatures"):
+            value = telemetry.get(field)
+            if isinstance(value, (str, int, float, dict)) and not isinstance(value, bool):
+                reconciliation[field] = value
+    except (ConnectorOfflineError, ValueError, TypeError):
+        pass
+    return {
+        "outcome": exc.outcome,
+        "request_id": exc.request_id,
+        "message": str(exc),
+        "reconciliation": reconciliation,
+    }
+
+
+async def _connector_upload_delivery_unknown_detail(
+    exc: ConnectorDeliveryUnknownError,
+    printer: Printer,
+    provider: str,
+    options: dict,
+    filename: str,
+    expected_size: int,
+) -> dict:
+    """Report file-list observations without treating names as upload integrity proof."""
+    listing: dict[str, Any] = {"status": "unavailable"}
+    try:
+        result = await ConnectorPrinterTransport(printer.connector_id or "", connector_gateway).files(
+            {
+                "request_id": secrets.token_urlsafe(16),
+                "ip_address": printer.ip_address,
+                "provider": provider,
+                "http_port": int(options.get("http_port") or _connector_printer_port(provider)),
+                "tcp_port": int(options["tcp_port"]) if options.get("tcp_port") is not None else None,
+                "serial_number": printer.serial_number,
+                "access_code": decrypt_check_code(printer.auth_token),
+                "path": "/",
+                "timeout_ms": 2500,
+            },
+            timeout=4,
+        )
+        completeness = result.get("completeness")
+        source = result.get("source")
+        files = result.get("files") if isinstance(result.get("files"), list) else []
+        observed = any(
+            isinstance(item, dict)
+            and str(item.get("name") or "").casefold() == filename.casefold()
+            for item in files
+        )
+        listing = {
+            "status": "observed" if observed else "not_observed",
+            "completeness": completeness if completeness in {"complete", "recent_only"} else "unknown",
+            "source": source if isinstance(source, str) else "unknown",
+            "filename": filename if observed else None,
+            "expected_size": expected_size,
+            "integrity": "unverified",
+        }
+    except (ConnectorOfflineError, ValueError, TypeError):
+        pass
+    return {
+        "outcome": exc.outcome,
+        "request_id": exc.request_id,
+        "message": str(exc),
+        "reconciliation": listing,
+    }
+
+
+async def _connector_job_control(printer: Printer, action: str) -> dict:
+    provider = str(getattr(printer, "provider", "") or "").strip().lower()
+    if provider not in FLASHFORGE_PROVIDERS:
+        raise HTTPException(400, "Connector job control is currently available for FlashForge only")
+    options = getattr(printer, "provider_options", None)
+    if isinstance(options, str):
+        try:
+            options = json.loads(options)
+        except json.JSONDecodeError:
+            options = {}
+    options = options if isinstance(options, dict) else {}
+    transport = ConnectorPrinterTransport(printer.connector_id or "", connector_gateway)
+    try:
+        result = await transport.control(
+            {
+                "request_id": secrets.token_urlsafe(16),
+                "ip_address": printer.ip_address,
+                "provider": provider,
+                "http_port": int(options.get("http_port") or 8898),
+                "serial_number": printer.serial_number,
+                "access_code": decrypt_check_code(printer.auth_token),
+                "action": action,
+                "timeout_ms": 8000,
+            },
+            timeout=12,
+        )
+    except ConnectorDeliveryUnknownError as exc:
+        raise HTTPException(504, detail=await _connector_delivery_unknown_detail(exc, printer, provider, options)) from exc
+    except ConnectorOfflineError as exc:
+        raise HTTPException(504, str(exc)) from exc
+    if result.get("status") != "completed":
+        raise HTTPException(502, result.get("error") or f"Connector could not {action} print")
+    return {
+        "success": True,
+        "message": f"Print {action} command sent",
+        "state": result.get("state_after"),
+    }
+
+
+async def _connector_temperature_control(
+    printer: Printer,
+    *,
+    heater: str,
+    target: int,
+    extruder: int | None = None,
+) -> dict:
+    provider = str(getattr(printer, "provider", "") or "").strip().lower()
+    if provider not in FLASHFORGE_PROVIDERS:
+        raise HTTPException(400, "Connector temperature control is currently available for FlashForge only")
+    contract, model = contract_for(provider, printer.model)
+    maximum = {"nozzle": contract.nozzle_max_c, "bed": contract.bed_max_c, "chamber": contract.chamber_max_c}[heater]
+    if maximum is None:
+        raise HTTPException(400, "Chamber temperature control is only supported by Creator 5 Pro")
+    if target > maximum:
+        raise HTTPException(400, f"{heater.capitalize()} temperature must be 0-{maximum}°C for this model")
+    if heater == "chamber" and model != "Creator 5 Pro":
+        raise HTTPException(400, "Chamber temperature control is only supported by Creator 5 Pro")
+    if provider == "flashforge_creator5" and heater == "nozzle":
+        extruder = 0 if extruder is None else extruder
+    elif extruder is not None:
+        raise HTTPException(400, "Per-extruder temperature control is only supported for Creator 5")
+    options = getattr(printer, "provider_options", None)
+    if isinstance(options, str):
+        try:
+            options = json.loads(options)
+        except json.JSONDecodeError:
+            options = {}
+    options = options if isinstance(options, dict) else {}
+    transport = ConnectorPrinterTransport(printer.connector_id or "", connector_gateway)
+    try:
+        result = await transport.temperature(
+            {
+                "request_id": secrets.token_urlsafe(16),
+                "ip_address": printer.ip_address,
+                "provider": provider,
+                "model": model,
+                "http_port": int(options.get("http_port") or 8898),
+                "serial_number": printer.serial_number,
+                "access_code": decrypt_check_code(printer.auth_token),
+                "heater": heater,
+                "target": target,
+                "extruder": extruder,
+                "timeout_ms": 8000,
+            },
+            timeout=12,
+        )
+    except ConnectorDeliveryUnknownError as exc:
+        raise HTTPException(504, detail=await _connector_delivery_unknown_detail(exc, printer, provider, options)) from exc
+    except ConnectorOfflineError as exc:
+        raise HTTPException(504, str(exc)) from exc
+    if result.get("status") != "completed":
+        raise HTTPException(502, result.get("error") or "Connector could not set temperature")
+    return {"success": True, "message": f"{heater.capitalize()} target set to {target}°C", "observed": result.get("observed")}
+
+
 async def _validate_connector_binding(
     db: AsyncSession,
     connector_id: str | None,
@@ -278,6 +500,8 @@ def _connector_printer_port(provider: str) -> int:
         "prusalink": 80,
         "prusaconnect": 443,
         "elegoo_sdcp": 3030,
+        "flashforge_ad5m": 8898,
+        "flashforge_creator5": 8898,
     }.get(provider, 8883)
 
 
@@ -355,6 +579,8 @@ async def create_printer(
             provider=printer_data.provider,
             api_url=printer_data.api_url,
             auth_token=printer_data.auth_token,
+            model=printer_data.model,
+            provider_options=printer_data.provider_options,
         )
     if not test_result.get("success"):
         if printer_data.provider == "bambu":
@@ -367,6 +593,11 @@ async def create_printer(
             failure_message = (
                 "Could not connect to Elegoo SDCP. Verify the IP/hostname, confirm the printer is reachable on "
                 "the local network, and check that SDCP WebSocket port 3030 is accessible. The printer was not added."
+            )
+        elif printer_data.provider in FLASHFORGE_PROVIDERS:
+            failure_message = (
+                "Could not verify the FlashForge printer. Check the host, serial number, LAN check code, "
+                "and confirm LAN-only mode is enabled. The printer was not added."
             )
         else:
             failure_message = (
@@ -386,6 +617,11 @@ async def create_printer(
         )
 
     printer_payload = printer_data.model_dump()
+    if printer_data.provider in FLASHFORGE_PROVIDERS:
+        try:
+            printer_payload["auth_token"] = encrypt_check_code(printer_data.auth_token or "")
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(503, "FlashForge check-code encryption is unavailable; printer was not added") from exc
     detected_provider_options = test_result.get("provider_options")
     if detected_provider_options:
         try:
@@ -605,6 +841,27 @@ async def update_printer(
 
     update_data = normalize_external_camera_update(printer_data.model_dump(exclude_unset=True))
 
+    effective_provider = update_data.get("provider", getattr(printer, "provider", "bambu"))
+    if effective_provider in FLASHFORGE_PROVIDERS:
+        effective_model = update_data.get("model", getattr(printer, "model", None))
+        effective_options = update_data.get("provider_options", getattr(printer, "provider_options", None))
+        switching_to_flashforge = getattr(printer, "provider", "bambu") not in FLASHFORGE_PROVIDERS
+        if switching_to_flashforge and not str(update_data.get("auth_token") or "").strip():
+            raise HTTPException(422, "auth_token (FlashForge check code) is required when enabling FlashForge")
+        try:
+            _, canonical_model = contract_for(effective_provider, effective_model)
+            update_data["model"] = canonical_model
+            validate_flashforge_options(effective_provider, canonical_model, effective_options)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        if "auth_token" in update_data and update_data["auth_token"]:
+            try:
+                update_data["auth_token"] = encrypt_check_code(update_data["auth_token"])
+            except (RuntimeError, ValueError) as exc:
+                raise HTTPException(503, "FlashForge check-code encryption is unavailable; credentials were not saved") from exc
+    elif getattr(printer, "provider", None) in FLASHFORGE_PROVIDERS and effective_provider not in FLASHFORGE_PROVIDERS:
+        update_data.setdefault("auth_token", None)
+
     requested_mode = update_data.get("connection_mode", getattr(printer, "connection_mode", "direct"))
     requested_connector_id = update_data.get("connector_id", getattr(printer, "connector_id", None))
     if requested_mode == "connector":
@@ -747,6 +1004,8 @@ async def get_printer_status(
                     "ip_address": printer.ip_address,
                     "port": _connector_printer_port(printer.provider),
                     "provider": printer.provider,
+                    "serial_number": printer.serial_number,
+                    "access_code": decrypt_check_code(printer.auth_token) if printer.provider in FLASHFORGE_PROVIDERS else None,
                     "timeout_ms": 1000,
                 },
                 timeout=4,
@@ -764,6 +1023,11 @@ async def get_printer_status(
             )
         connected = bool(result.get("connected")) and result.get("status") == "completed"
         state = str(result.get("state") or "unknown").upper()
+        telemetry = result.get("telemetry") if isinstance(result.get("telemetry"), dict) else {}
+        temperatures = telemetry.get("temperatures") if isinstance(telemetry.get("temperatures"), dict) else None
+        progress = telemetry.get("progress")
+        progress = float(progress) if isinstance(progress, (int, float)) and not isinstance(progress, bool) else None
+        filename = str(telemetry.get("filename") or "").strip() or None
         return PrinterStatus(
             id=printer_id,
             name=printer.name,
@@ -773,10 +1037,17 @@ async def get_printer_status(
             connector_status="online",
             connector_last_seen_at=printer.connector_last_seen_at,
             connector_last_error=None if connected else (str(result.get("error")) if result.get("error") else None),
+            current_print=filename if state in {"RUNNING", "PAUSE"} else None,
+            subtask_name=filename,
+            gcode_file=filename,
+            progress=progress,
+            temperatures=temperatures,
+            firmware_version=str(telemetry.get("firmware_version")) if telemetry.get("firmware_version") else None,
             connection_details={
                 "transport": "connector",
                 "connector_status": "online",
                 "remote_state": str(result.get("state") or "unknown"),
+                "telemetry": telemetry,
             },
         )
 
@@ -804,6 +1075,16 @@ async def get_printer_status(
     vt_tray = []
     ams_exists = False
     raw_data = state.raw_data or {}
+    creator5_material_slots = None
+    if (
+        normalize_provider(getattr(printer, "provider", None)) == "flashforge_creator5"
+        and getattr(printer, "connection_mode", "direct") != "connector"
+    ):
+        station = raw_data.get("creator5_material_station")
+        raw_slots = station.get("slot_infos", []) if isinstance(station, dict) else []
+        from backend.app.services.flashforge.normalize import normalize_creator5_material_slots
+
+        creator5_material_slots = normalize_creator5_material_slots(raw_slots)
 
     # Build K-profile lookup map: cali_idx -> k_value
     # This allows looking up the calibrated K value for each AMS slot
@@ -840,6 +1121,7 @@ async def get_printer_status(
                 trays.append(
                     AMSTray(
                         id=tray_data.get("id", 0),
+                        slot=tray_data.get("slot"),
                         tray_color=tray_data.get("tray_color"),
                         tray_type=tray_data.get("tray_type"),
                         tray_sub_brands=tray_data.get("tray_sub_brands"),
@@ -860,6 +1142,14 @@ async def get_printer_status(
                         drying_temp=tray_data.get("drying_temp"),
                         drying_time=tray_data.get("drying_time"),
                         state=tray_data.get("state"),
+                        active=tray_data.get("active"),
+                        loaded_to_feeder=tray_data.get("loaded_to_feeder"),
+                        loaded_to_extruder=tray_data.get("loaded_to_extruder"),
+                        filament_detected=tray_data.get("filament_detected"),
+                        channel_state=tray_data.get("channel_state"),
+                        channel_action_state=tray_data.get("channel_action_state"),
+                        channel_error=tray_data.get("channel_error"),
+                        filament_source=tray_data.get("filament_source"),
                     )
                 )
             # Prefer humidity_raw (percentage) over humidity (index 1-5)
@@ -1037,8 +1327,12 @@ async def get_printer_status(
         cover_url=cover_url,
         hms_errors=hms_errors,
         ams=ams_units,
+        creator5_material_slots=creator5_material_slots,
         ams_exists=ams_exists,
         vt_tray=vt_tray,
+        cfs_nano=((state.raw_data if isinstance(state.raw_data, dict) else {}).get("creality_k3") or {}).get("cfs_nano")
+        if isinstance((state.raw_data if isinstance(state.raw_data, dict) else {}).get("creality_k3"), dict)
+        else None,
         sdcard=state.sdcard,
         store_to_sdcard=state.store_to_sdcard,
         timelapse=state.timelapse,
@@ -1055,6 +1349,7 @@ async def get_printer_status(
         airduct_mode=state.airduct_mode,
         speed_level=state.speed_level,
         chamber_light=state.chamber_light,
+        chamber_light_available=getattr(state, "chamber_light_available", False),
         active_extruder=state.active_extruder,
         ams_mapping=ams_mapping,
         ams_extruder_map=ams_extruder_map,
@@ -1129,6 +1424,29 @@ async def refresh_printer_status(
     return {"status": "refresh_requested"}
 
 
+@router.get("/{printer_id}/capabilities")
+async def get_printer_capabilities(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return FlashForge capability states without treating reference claims as implemented."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+    if printer.provider not in FLASHFORGE_PROVIDERS:
+        raise HTTPException(404, "Provider capabilities are not available through this endpoint")
+    try:
+        return capability_snapshot(
+            printer.provider,
+            printer.model,
+            direct_transport=printer.connection_mode != "connector",
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 @router.post("/{printer_id}/connect")
 async def connect_printer(
     printer_id: int,
@@ -1164,8 +1482,13 @@ async def disconnect_printer(
 @router.post("/test")
 async def test_printer_connection(
     ip_address: str,
-    serial_number: str,
-    access_code: str,
+    serial_number: str = "",
+    access_code: str = "",
+    provider: str = "bambu",
+    api_url: str | None = None,
+    auth_token: str | None = None,
+    model: str | None = None,
+    provider_options: str | None = None,
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CREATE),
 ):
     """Test connection to a printer without saving."""
@@ -1173,6 +1496,11 @@ async def test_printer_connection(
         ip_address=ip_address,
         serial_number=serial_number,
         access_code=access_code,
+        provider=provider,
+        api_url=api_url,
+        auth_token=auth_token,
+        model=model,
+        provider_options=provider_options,
     )
     return result
 
@@ -1247,6 +1575,19 @@ async def get_printer_cover(
     state = printer_manager.get_status(printer_id)
     if not state:
         raise HTTPException(404, "Printer not connected")
+
+    provider = str(getattr(printer, "provider", "") or "").lower()
+    active_gcode = str(getattr(state, "gcode_file", "") or "")
+    if provider in {"klipper", "mainsail", "fluidd"} and active_gcode.lower().endswith((".gcode", ".gco", ".g")):
+        client = _provider_for_printer(printer)
+        if client is not None:
+            try:
+                thumbnail_method = getattr(client, "download_gcode_thumbnail", None)
+                thumbnail = await asyncio.to_thread(thumbnail_method, active_gcode) if callable(thumbnail_method) else None
+                if thumbnail is not None:
+                    return Response(content=thumbnail.data, media_type=thumbnail.media_type)
+            except Exception as exc:  # noqa: BLE001 - preserve existing 3MF cover fallback
+                logger.debug("Could not extract active G-code thumbnail for printer %s: %s", printer_id, exc)
 
     # Use subtask_name as the 3MF filename (gcode_file is the path inside the 3MF)
     subtask_name = state.subtask_name
@@ -1491,21 +1832,112 @@ async def list_printer_files(
     if not printer:
         raise HTTPException(404, "Printer not found")
 
+    _validate_ad5m_file_options(printer, path=path, storage=storage)
+    if getattr(printer, "connection_mode", "direct") == "connector":
+        provider = str(getattr(printer, "provider", "") or "").strip().lower()
+        if provider not in FLASHFORGE_PROVIDERS:
+            raise HTTPException(400, "Connector file listing is currently available for FlashForge only")
+        options = getattr(printer, "provider_options", None)
+        if isinstance(options, str):
+            try:
+                options = json.loads(options)
+            except json.JSONDecodeError:
+                options = {}
+        options = options if isinstance(options, dict) else {}
+        transport = ConnectorPrinterTransport(printer.connector_id or "", connector_gateway)
+        try:
+            result = await transport.files(
+                {
+                    "request_id": secrets.token_urlsafe(16),
+                    "ip_address": printer.ip_address,
+                    "provider": provider,
+                    "http_port": int(options.get("http_port") or 8898),
+                    "tcp_port": int(options["tcp_port"]) if options.get("tcp_port") is not None else None,
+                    "serial_number": printer.serial_number,
+                    "access_code": decrypt_check_code(printer.auth_token),
+                    "path": path,
+                    "timeout_ms": 3000,
+                },
+                timeout=8,
+            )
+        except ConnectorOfflineError as exc:
+            raise HTTPException(504, str(exc)) from exc
+        if result.get("status") != "completed":
+            raise HTTPException(502, result.get("error") or "Connector could not list printer files")
+        files = [dict(item) for item in result.get("files", []) if isinstance(item, dict)]
+        return {
+            "path": path,
+            "storage": storage,
+            "files": files,
+            "supported_print_extensions": sorted(PRINTABLE_PRINTER_FILE_EXTENSIONS),
+            "listing": {
+                "completeness": result.get("completeness", "recent_only"),
+                "source": result.get("source"),
+                "warning": None
+                if result.get("completeness") == "complete"
+                else "The printer returned recent files only; a full listing is unavailable while TCP M661 cannot be reached.",
+            },
+        }
     provider_client = _provider_for_printer(printer)
     if provider_client is not None:
         files = [_normalize_provider_file_entry(f) for f in provider_client.list_files(path, storage=storage)]
+        if str(getattr(printer, "provider", "") or "").lower() in {"klipper", "mainsail", "fluidd"}:
+            for entry in files:
+                thumbnail_url = _gcode_thumbnail_url(printer_id, entry)
+                if thumbnail_url:
+                    entry["thumbnail_url"] = thumbnail_url
     else:
         files = await list_files_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
         # Add full path to each file
         for f in files:
             f["path"] = f"{path.rstrip('/')}/{f['name']}" if path != "/" else f"/{f['name']}"
 
-    return {
+    response = {
         "path": path,
         "storage": storage,
         "files": files,
         "supported_print_extensions": sorted(PRINTABLE_PRINTER_FILE_EXTENSIONS),
     }
+    provider_raw_data = getattr(getattr(provider_client, "state", None), "raw_data", None)
+    listing = provider_raw_data.get("file_listing") if isinstance(provider_raw_data, dict) else None
+    if isinstance(listing, dict) and isinstance(listing.get("complete"), bool):
+        complete = listing["complete"]
+        response["listing"] = {
+            "completeness": "complete" if complete else "recent_only",
+            "source": listing.get("source"),
+            "warning": None
+            if complete
+            else "The printer returned recent files only; a full listing is unavailable while TCP M661 cannot be reached.",
+        }
+    return response
+
+
+@router.get("/{printer_id}/files/thumbnail")
+async def get_printer_file_thumbnail(
+    printer_id: int,
+    path: str = Query(..., description="Full path to the G-code file on the printer"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+    db: AsyncSession = Depends(get_db),
+):
+    """Extract and return a slicer thumbnail embedded in a Klipper G-code file."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+    if str(getattr(printer, "provider", "") or "").lower() not in {"klipper", "mainsail", "fluidd"}:
+        raise HTTPException(400, "Embedded G-code thumbnails are currently supported for Moonraker printers")
+    filename = Path(path).name.lower()
+    if not filename.endswith((".gcode", ".gco", ".g", ".bgcode")):
+        raise HTTPException(400, "Only G-code files have embedded thumbnails")
+
+    provider_client = _provider_for_printer(printer)
+    thumbnail_method = getattr(provider_client, "download_gcode_thumbnail", None)
+    if not callable(thumbnail_method):
+        raise HTTPException(400, "Printer provider does not support G-code thumbnail extraction")
+    thumbnail = await asyncio.to_thread(thumbnail_method, path)
+    if thumbnail is None:
+        raise HTTPException(404, "No embedded thumbnail found")
+    return Response(content=thumbnail.data, media_type=thumbnail.media_type)
 
 
 @router.post("/{printer_id}/files/upload")
@@ -1514,6 +1946,7 @@ async def upload_printer_file(
     file: UploadFile = File(...),
     path: str = "/",
     storage: str | None = Query(default=None),
+    tool_count: int | None = Query(default=None, ge=1, le=4),
     overwrite: bool = Query(default=False),
     conflict_strategy: str = Query(default="error", pattern="^(error|rename|delete_replace)$"),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
@@ -1525,6 +1958,9 @@ async def upload_printer_file(
     if not printer:
         raise HTTPException(404, "Printer not found")
 
+    if tool_count is not None and printer.provider != "flashforge_creator5":
+        raise HTTPException(400, "tool_count is only supported for FlashForge Creator 5 uploads")
+    _validate_ad5m_file_options(printer, path=path, storage=storage)
     remote_path = _safe_remote_upload_path(path, file.filename or "upload.gcode")
     suffix = Path(remote_path).suffix or ".gcode"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -1534,6 +1970,52 @@ async def upload_printer_file(
 
     try:
         provider_client = _provider_for_printer(printer)
+        if getattr(printer, "connection_mode", "direct") == "connector":
+            provider = str(getattr(printer, "provider", "") or "").strip().lower()
+            if provider not in FLASHFORGE_PROVIDERS:
+                raise HTTPException(400, "Connector upload is currently available for FlashForge only")
+            if storage:
+                raise HTTPException(400, "FlashForge Connector upload does not expose selectable storage")
+            if path not in {"", "/"}:
+                raise HTTPException(400, "FlashForge Connector only supports the printer root directory")
+            if conflict_strategy != "error" or overwrite:
+                raise HTTPException(400, "FlashForge Connector upload does not support rename or replace yet")
+            options = getattr(printer, "provider_options", None)
+            if isinstance(options, str):
+                try:
+                    options = json.loads(options)
+                except json.JSONDecodeError:
+                    options = {}
+            options = options if isinstance(options, dict) else {}
+            transport = ConnectorPrinterTransport(printer.connector_id or "", connector_gateway)
+            expected_size = tmp_path.stat().st_size
+            try:
+                result = await transport.upload_file(
+                    {
+                        "request_id": secrets.token_urlsafe(16),
+                        "ip_address": printer.ip_address,
+                        "provider": provider,
+                        "http_port": int(options.get("http_port") or 8898),
+                        "serial_number": printer.serial_number,
+                        "access_code": decrypt_check_code(printer.auth_token),
+                        "tool_count": tool_count or 1,
+                    },
+                    tmp_path,
+                    filename=Path(remote_path).name,
+                    timeout=320,
+                )
+            except ConnectorDeliveryUnknownError as exc:
+                raise HTTPException(
+                    504,
+                    detail=await _connector_upload_delivery_unknown_detail(
+                        exc, printer, provider, options, Path(remote_path).name, expected_size
+                    ),
+                ) from exc
+            except ConnectorOfflineError as exc:
+                raise HTTPException(504, str(exc)) from exc
+            if result.get("status") != "completed":
+                raise HTTPException(502, result.get("error") or "Connector could not upload printer file")
+            return {"status": "uploaded", "path": remote_path, "filename": Path(remote_path).name}
         reconciled = False
         expected_size = tmp_path.stat().st_size
         if provider_client is not None:
@@ -1564,7 +2046,23 @@ async def upload_printer_file(
                         ),
                     )
             try:
-                success = provider_client.upload_file(tmp_path, remote_path, overwrite=overwrite, storage=storage)
+                if printer.provider == "flashforge_creator5":
+                    success = await asyncio.to_thread(
+                        provider_client.upload_file,
+                        tmp_path,
+                        remote_path,
+                        overwrite=overwrite,
+                        storage=storage,
+                        tool_count=tool_count or 1,
+                    )
+                else:
+                    success = await asyncio.to_thread(
+                        provider_client.upload_file,
+                        tmp_path,
+                        remote_path,
+                        overwrite=overwrite,
+                        storage=storage,
+                    )
                 if success:
                     success = await _wait_for_provider_file(
                         provider_client, remote_path, expected_size, storage=storage
@@ -1614,6 +2112,8 @@ async def upload_printer_file(
                 ) from exc
             except HTTPException:
                 raise
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
             except Exception as exc:  # noqa: BLE001 - convert provider failures into useful API errors
                 logger.exception("Printer file upload failed for %s: %s", remote_path, type(exc).__name__)
                 raise HTTPException(502, f"Printer upload failed: {type(exc).__name__}") from exc
@@ -1750,6 +2250,51 @@ async def start_printer_file(
     if not printer:
         raise HTTPException(404, "Printer not found")
 
+    if getattr(printer, "connection_mode", "direct") == "connector":
+        provider = str(getattr(printer, "provider", "") or "").strip().lower()
+        if provider not in FLASHFORGE_PROVIDERS:
+            raise HTTPException(400, "Connector start is currently available for FlashForge only")
+        if storage or ams_mapping is not None or print_platform_type is not None or path not in {f"/{Path(path).name}", Path(path).name}:
+            raise HTTPException(400, "FlashForge Connector start supports root files without storage or tool mapping")
+        options = getattr(printer, "provider_options", None)
+        if isinstance(options, str):
+            try:
+                options = json.loads(options)
+            except json.JSONDecodeError:
+                options = {}
+        options = options if isinstance(options, dict) else {}
+        transport = ConnectorPrinterTransport(printer.connector_id or "", connector_gateway)
+        try:
+            control = await transport.control(
+                {
+                    "request_id": secrets.token_urlsafe(16),
+                    "ip_address": printer.ip_address,
+                    "provider": provider,
+                    "http_port": int(options.get("http_port") or 8898),
+                    "serial_number": printer.serial_number,
+                    "access_code": decrypt_check_code(printer.auth_token),
+                    "action": "start",
+                    "filename": Path(path).name,
+                    "bed_leveling": True if bed_levelling is None else bed_levelling,
+                    "flow_calibration": False,
+                    "timelapse": False,
+                    "timeout_ms": 8000,
+                },
+                timeout=12,
+            )
+        except ConnectorDeliveryUnknownError as exc:
+            raise HTTPException(504, detail=await _connector_delivery_unknown_detail(exc, printer, provider, options)) from exc
+        except ConnectorOfflineError as exc:
+            raise HTTPException(504, str(exc)) from exc
+        if control.get("status") != "completed":
+            raise HTTPException(502, control.get("error") or "Connector could not start print")
+        return {"status": "started", "path": path}
+
+    _validate_ad5m_file_options(printer, path=str(PurePosixPath(path).parent), storage=storage)
+    if str(getattr(printer, "provider", "bambu") or "bambu").strip().lower() == "flashforge_ad5m" and (
+        ams_mapping is not None or print_platform_type is not None
+    ):
+        raise HTTPException(400, "FlashForge AD5M does not support AMS mapping or platform selection")
     provider_client = _provider_for_printer(printer)
     direct_file_info = None
     if provider_client is not None:
@@ -1769,7 +2314,10 @@ async def start_printer_file(
             start_options["storage"] = storage
         if ams_mapping is not None:
             start_options["ams_mapping"] = ams_mapping
-        success = provider_client.start_print(path, **start_options)
+        try:
+            success = await asyncio.to_thread(provider_client.start_print, path, **start_options)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     else:
         success = printer_manager.start_print(printer_id, path)
 
@@ -2577,6 +3125,12 @@ async def start_calibration(
     if not any([bed_leveling, vibration, motor_noise, nozzle_offset, high_temp_heatbed]):
         raise HTTPException(400, "At least one calibration option must be selected")
 
+    if printer.provider in FLASHFORGE_PROVIDERS:
+        raise HTTPException(
+            400,
+            "Standalone FlashForge calibration is not available; bed leveling is only supported before print.",
+        )
+
     success = client.start_calibration(
         bed_leveling=bed_leveling,
         vibration=vibration,
@@ -3339,6 +3893,9 @@ async def stop_print(
     if not printer:
         raise HTTPException(404, "Printer not found")
 
+    if getattr(printer, "connection_mode", "direct") == "connector":
+        return await _connector_job_control(printer, "cancel")
+
     client = printer_manager.get_client(printer_id)
     if not client:
         raise HTTPException(400, "Printer not connected")
@@ -3409,6 +3966,9 @@ async def pause_print(
     if not printer:
         raise HTTPException(404, "Printer not found")
 
+    if getattr(printer, "connection_mode", "direct") == "connector":
+        return await _connector_job_control(printer, "pause")
+
     client = printer_manager.get_client(printer_id)
     if not client:
         raise HTTPException(400, "Printer not connected")
@@ -3431,6 +3991,9 @@ async def resume_print(
     printer = result.scalar_one_or_none()
     if not printer:
         raise HTTPException(404, "Printer not found")
+
+    if getattr(printer, "connection_mode", "direct") == "connector":
+        return await _connector_job_control(printer, "resume")
 
     client = printer_manager.get_client(printer_id)
     if not client:
@@ -3510,13 +4073,24 @@ async def set_chamber_light(
 
     client = printer_manager.get_client(printer_id)
     if not client:
-        raise HTTPException(400, "Printer not connected")
+        try:
+            provider = normalize_provider(printer.provider)
+        except ValueError:
+            provider = ""
+        if provider in {"klipper", "mainsail", "fluidd"}:
+            client = create_moonraker_client(printer)
+        else:
+            raise HTTPException(400, "Printer not connected")
 
     set_chamber_light_method = getattr(client, "set_chamber_light", None)
     if not callable(set_chamber_light_method):
         raise HTTPException(400, "Chamber light control is not supported by this printer provider")
 
-    success = set_chamber_light_method(on)
+    try:
+        success = set_chamber_light_method(on)
+    except Exception as exc:
+        logger.exception("Failed to control chamber light for printer %s", printer_id)
+        raise HTTPException(502, f"Printer rejected chamber light command: {exc}") from exc
     if not success:
         raise HTTPException(500, "Failed to control chamber light")
 
@@ -3552,6 +4126,17 @@ async def set_fan_speed(
     if not printer:
         raise HTTPException(404, "Printer not found")
 
+    if printer.provider == "flashforge_ad5m" and normalized_fan not in {
+        "part",
+        "model",
+        "model_fan",
+        "cooling",
+        "chamber",
+        "box",
+        "box_fan",
+    }:
+        raise HTTPException(400, "FlashForge AD5M supports only cooling and chamber fans")
+
     client = printer_manager.get_client(printer_id)
     if not client:
         raise HTTPException(400, "Printer not connected")
@@ -3565,7 +4150,11 @@ async def set_fan_speed(
         100 if force_binary_chamber and normalized_fan in {"chamber", "box", "box_fan"} and speed > 0 else speed
     )
     try:
-        success = set_fan_speed_method(normalized_fan, effective_speed)
+        success = (
+            await asyncio.to_thread(set_fan_speed_method, normalized_fan, effective_speed)
+            if printer.provider in FLASHFORGE_PROVIDERS
+            else set_fan_speed_method(normalized_fan, effective_speed)
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     if not success:
@@ -3699,6 +4288,7 @@ async def disable_steppers(
 async def set_nozzle_temperature(
     printer_id: int,
     target: int = Query(..., description="Nozzle target temperature in °C; 0 turns heater off"),
+    extruder: int | None = Query(None, ge=0, le=3, description="Optional Klipper extruder index (0-3)"),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
@@ -3711,13 +4301,38 @@ async def set_nozzle_temperature(
     if not printer:
         raise HTTPException(404, "Printer not found")
 
+    if printer.provider in FLASHFORGE_PROVIDERS:
+        contract, _ = contract_for(printer.provider, printer.model)
+        if target > contract.nozzle_max_c:
+            raise HTTPException(400, f"Nozzle temperature must be 0-{contract.nozzle_max_c}°C for this FlashForge model")
+
+    if printer.connection_mode == "connector":
+        return await _connector_temperature_control(printer, heater="nozzle", target=target, extruder=extruder)
+
+    if printer.provider == "flashforge_creator5":
+        extruder = 0 if extruder is None else extruder
+    elif extruder is not None:
+        provider = (printer.provider or "").lower()
+        model = (printer.model or "").lower()
+        is_moonraker = provider in {"klipper", "mainsail", "fluidd"}
+        is_snapmaker_u1 = "snapmaker u1" in model
+        is_creality_k3 = model.strip().removeprefix("creality ").split(maxsplit=1)[0] == "k3"
+        if not is_moonraker or not (is_snapmaker_u1 or is_creality_k3):
+            raise HTTPException(400, "Per-extruder temperature control is not supported for this printer")
+
     client = printer_manager.get_client(printer_id)
     if not client:
         raise HTTPException(400, "Printer not connected")
     set_temp = getattr(client, "set_nozzle_temperature", None)
     if not callable(set_temp):
         raise HTTPException(400, "Printer provider does not support nozzle temperature control")
-    if not set_temp(target):
+    if printer.provider == "flashforge_creator5":
+        accepted = await asyncio.to_thread(set_temp, target, extruder)
+    elif printer.provider in FLASHFORGE_PROVIDERS:
+        accepted = await asyncio.to_thread(set_temp, target)
+    else:
+        accepted = set_temp(target, extruder) if extruder is not None else set_temp(target)
+    if not accepted:
         raise HTTPException(500, "Failed to set nozzle temperature")
     return {"success": True, "message": f"Nozzle target set to {target}°C"}
 
@@ -3738,15 +4353,109 @@ async def set_bed_temperature(
     if not printer:
         raise HTTPException(404, "Printer not found")
 
+    if printer.provider in FLASHFORGE_PROVIDERS:
+        contract, _ = contract_for(printer.provider, printer.model)
+        if target > contract.bed_max_c:
+            raise HTTPException(400, f"Bed temperature must be 0-{contract.bed_max_c}°C for this FlashForge model")
+
+    if printer.connection_mode == "connector":
+        return await _connector_temperature_control(printer, heater="bed", target=target)
+
     client = printer_manager.get_client(printer_id)
     if not client:
         raise HTTPException(400, "Printer not connected")
     set_temp = getattr(client, "set_bed_temperature", None)
     if not callable(set_temp):
         raise HTTPException(400, "Printer provider does not support bed temperature control")
-    if not set_temp(target):
+    accepted = (
+        await asyncio.to_thread(set_temp, target)
+        if printer.provider in FLASHFORGE_PROVIDERS
+        else set_temp(target)
+    )
+    if not accepted:
         raise HTTPException(500, "Failed to set bed temperature")
     return {"success": True, "message": f"Bed target set to {target}°C"}
+
+
+@router.post("/{printer_id}/temperature/chamber")
+async def set_chamber_temperature(
+    printer_id: int,
+    target: int = Query(..., description="Chamber target temperature in °C; 0 turns heater off"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set chamber target on providers with explicit chamber control support."""
+    if target < 0 or target > 65:
+        raise HTTPException(400, "Chamber temperature must be 0-65°C")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+    if printer.provider != "flashforge_creator5":
+        raise HTTPException(400, "Chamber temperature control is not supported by this printer provider")
+    if printer.connection_mode == "connector":
+        return await _connector_temperature_control(printer, heater="chamber", target=target)
+
+    contract, _ = contract_for(printer.provider, printer.model)
+    if contract.chamber_max_c is None:
+        raise HTTPException(400, "Chamber temperature control is only supported by Creator 5 Pro")
+    if target > contract.chamber_max_c:
+        raise HTTPException(400, f"Chamber temperature must be 0-{contract.chamber_max_c}°C for this model")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+    set_temp = getattr(client, "set_chamber_temperature", None)
+    if not callable(set_temp):
+        raise HTTPException(400, "Chamber temperature control is not supported by this printer provider")
+    if not await asyncio.to_thread(set_temp, target):
+        raise HTTPException(502, "Failed to verify chamber temperature target")
+    return {"success": True, "message": f"Chamber target set to {target}°C"}
+
+
+@router.post("/{printer_id}/filament-config")
+async def set_creator5_filament_config(
+    printer_id: int,
+    body: Creator5FilamentConfigRequest,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set allowlisted Creator 5 material metadata for a tool and verify readback."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+    if printer.provider != "flashforge_creator5":
+        raise HTTPException(400, "Filament configuration is only supported by Creator 5")
+    if printer.connection_mode == "connector":
+        raise HTTPException(400, "Filament configuration is unavailable through Connector")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+    configure = getattr(client, "set_filament_config", None)
+    if not callable(configure):
+        raise HTTPException(400, "Printer provider does not support filament configuration")
+    try:
+        verified = await asyncio.to_thread(
+            configure,
+            body.tool_index,
+            material=body.material,
+            color=body.color,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not verified:
+        raise HTTPException(502, "Failed to verify Creator 5 filament configuration")
+    return {
+        "success": True,
+        "tool_index": body.tool_index,
+        "slot": body.tool_index + 1,
+        "material": body.material,
+        "color": body.color,
+        "verified": True,
+    }
 
 
 @router.post("/{printer_id}/home-axes")

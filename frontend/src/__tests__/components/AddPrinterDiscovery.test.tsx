@@ -307,5 +307,8 @@ describe('AddPrinterModal Discovery', () => {
       expect(screen.getByDisplayValue('http://10.0.0.42:7125')).toBeInTheDocument();
       expect(screen.getByDisplayValue('voron')).toBeInTheDocument();
     });
+
+    expect(screen.queryByText(/no moonraker instances found/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/all discovered printers are already configured/i)).not.toBeInTheDocument();
   });
 });

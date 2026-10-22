@@ -13,6 +13,7 @@ COPY connector/requirements.txt ./connector/requirements.txt
 RUN python -m pip install --no-cache-dir --upgrade "pip>=26.1" \
     && python -m pip install --no-cache-dir -r connector/requirements.txt
 COPY connector_protocol/ ./connector_protocol/
+COPY flashforge_discovery/ ./flashforge_discovery/
 COPY connector/ ./connector/
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin printbuddy \
     && mkdir -p /var/lib/printbuddy-connector \

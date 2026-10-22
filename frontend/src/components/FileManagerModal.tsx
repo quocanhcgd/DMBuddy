@@ -24,7 +24,7 @@ import {
   ListPlus,
   Play,
 } from 'lucide-react';
-import { api, type PrinterProvider } from '../api/client';
+import { api, ApiError, type PrinterProvider } from '../api/client';
 import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
 import { PrintModal } from './PrintModal';
@@ -307,6 +307,7 @@ export function FileManagerModal({ printerId, printerName, printerProvider, prin
   const [elegooPrintPlatformType, setElegooPrintPlatformType] = useState<ElegooPrintPlatformType>(0);
   const isPrusaPrinter = printerProvider === 'prusalink' || printerProvider === 'prusaconnect';
   const isPrusaLinkPrinter = printerProvider === 'prusalink';
+  const isMoonrakerPrinter = printerProvider === 'klipper' || printerProvider === 'mainsail' || printerProvider === 'fluidd';
   const isElegooSDCPPrinter = isElegooCc1Printer(printerProvider, printerModel);
 
   // Close on Escape key
@@ -339,7 +340,7 @@ export function FileManagerModal({ printerId, printerName, printerProvider, prin
     setSelectedStorage(preferred.id);
   }, [availableStorages, isPrusaLinkPrinter, selectedStorage]);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['printerFiles', printerId, currentPath, activeStorage],
     queryFn: () => api.getPrinterFiles(printerId, currentPath, activeStorage),
     enabled: !isPrusaLinkPrinter || availableStorages.length === 0 || Boolean(activeStorage),
@@ -464,6 +465,15 @@ export function FileManagerModal({ printerId, printerName, printerProvider, prin
       queryClient.invalidateQueries({ queryKey: ['printerFiles', printerId] });
       refetch();
     } catch (error) {
+      if (error instanceof ApiError && error.detail?.outcome === 'delivery_unknown') {
+        queryClient.invalidateQueries({ queryKey: ['printerFiles', printerId] });
+        await refetch();
+        showToast(t(
+          'printerFiles.toast.uploadOutcomeUnknown',
+          'The printer may have received this upload. The file list was refreshed; verify the file before retrying.',
+        ), 'warning');
+        return;
+      }
       showToast(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
     } finally {
       setUploadingFile(false);
@@ -556,12 +566,14 @@ export function FileManagerModal({ printerId, printerName, printerProvider, prin
   };
 
   // Quick navigation buttons for common directories
-  const quickDirs = [
-    { path: '/', label: 'Root' },
-    { path: '/cache', label: 'Cache' },
-    { path: '/model', label: 'Models' },
-    { path: '/timelapse', label: 'Timelapse' },
-  ];
+  const quickDirs = isMoonrakerPrinter
+    ? [{ path: '/', label: t('printerFiles.root', 'Root') }]
+    : [
+        { path: '/', label: 'Root' },
+        { path: '/cache', label: 'Cache' },
+        { path: '/model', label: 'Models' },
+        { path: '/timelapse', label: 'Timelapse' },
+      ];
 
   return (
     <div
@@ -746,6 +758,14 @@ export function FileManagerModal({ printerId, printerName, printerProvider, prin
               <div className="text-center py-12 text-bambu-gray">
                 No PrusaLink storage is currently available. Insert USB storage and refresh.
               </div>
+            ) : isError ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-12 text-center text-bambu-gray">
+                <p>{t('printerFiles.failedToLoad')}</p>
+                {error instanceof Error && <p className="max-w-xl break-words text-xs">{error.message}</p>}
+                <Button variant="secondary" size="sm" onClick={() => refetch()}>
+                  {t('common.retry')}
+                </Button>
+              </div>
             ) : !data?.files?.length ? (
               <div className="text-center py-12 text-bambu-gray">
                 No files in this directory
@@ -823,11 +843,21 @@ export function FileManagerModal({ printerId, printerName, printerProvider, prin
                             )}
                           </button>
                         ) : null}
-                        <FileIcon
-                          className={`w-5 h-5 flex-shrink-0 ${
-                            file.is_directory ? 'text-bambu-green' : 'text-bambu-gray'
-                          }`}
-                        />
+                        {file.thumbnail_url && isMoonrakerPrinter ? (
+                          <img
+                            src={api.getPrinterFileThumbnailUrl(printerId, file.path)}
+                            alt=""
+                            loading="lazy"
+                            onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                            className="w-10 h-10 flex-shrink-0 rounded object-cover bg-bambu-dark-tertiary"
+                          />
+                        ) : (
+                          <FileIcon
+                            className={`w-5 h-5 flex-shrink-0 ${
+                              file.is_directory ? 'text-bambu-green' : 'text-bambu-gray'
+                            }`}
+                          />
+                        )}
                         <span className="flex-1 text-white truncate">{file.name}</span>
                         {canPreview && (
                           <button

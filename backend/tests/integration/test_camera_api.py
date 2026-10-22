@@ -412,6 +412,73 @@ class TestCameraAPI:
         assert response.status_code == 503
         assert "external camera" in response.json()["detail"].lower()
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        ("provider", "model"),
+        [("flashforge_ad5m", "Adventurer 5M Pro"), ("flashforge_creator5", "Creator 5 Pro")],
+    )
+    async def test_camera_snapshot_flashforge_activates_provider_before_capture(
+        self, async_client: AsyncClient, printer_factory, provider, model
+    ):
+        printer = await printer_factory(provider=provider, model=model)
+        camera_url = f"http://{printer.ip_address}:8080/live"
+        fake_jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+        camera_client = MagicMock()
+        camera_client.activate_camera.return_value = camera_url
+
+        with (
+            patch("backend.app.services.printer_manager.printer_manager.get_client", return_value=camera_client),
+            patch(
+                "backend.app.services.external_camera.capture_frame",
+                new_callable=AsyncMock,
+                return_value=fake_jpeg,
+            ) as capture,
+        ):
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
+
+        assert response.status_code == 200
+        assert response.content == fake_jpeg
+        camera_client.activate_camera.assert_called_once_with()
+        capture.assert_awaited_once_with(camera_url, "mjpeg", timeout=15, snapshot_url=None)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        ("provider", "model"),
+        [("flashforge_ad5m", "Adventurer 5M Pro"), ("flashforge_creator5", "Creator 5 Pro")],
+    )
+    async def test_camera_stream_flashforge_activates_once_and_uses_provider_url(
+        self, async_client: AsyncClient, printer_factory, provider, model
+    ):
+        printer = await printer_factory(provider=provider, model=model)
+        camera_url = f"http://{printer.ip_address}:8080/live"
+        camera_client = MagicMock()
+        camera_client.activate_camera.return_value = camera_url
+        yielded_urls = []
+
+        async def fake_stream(url, camera_type, fps):
+            yielded_urls.append((url, camera_type, fps))
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n\xff\xd8fake\xff\xd9\r\n"
+
+        with (
+            patch("backend.app.services.printer_manager.printer_manager.get_client", return_value=camera_client),
+            patch("backend.app.services.external_camera.generate_mjpeg_stream", side_effect=fake_stream),
+        ):
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/stream")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("multipart/x-mixed-replace")
+        assert yielded_urls == [(camera_url, "mjpeg", 10)]
+        camera_client.activate_camera.assert_called_once_with()
+        from backend.app.services.camera_fanout import shutdown_broadcaster
+
+        await shutdown_broadcaster(f"printer-{printer.id}")
+        from backend.app.api.routes.camera import _active_external_streams, _stream_start_times
+
+        assert printer.id not in _active_external_streams
+        assert printer.id not in _stream_start_times
+
     # ========================================================================
     # Camera Stream Endpoint
     # ========================================================================

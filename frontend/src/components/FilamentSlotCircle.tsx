@@ -37,18 +37,19 @@ export function FilamentSlotCircle({ trayColor, trayType, isEmpty, emptyKind, sl
   // "cleared but possibly still has a spool the firmware hasn't confirmed
   // gone" rather than "definitely no spool".
   const emptyBorderColor = emptyKind === 'reset' ? '#3d3d3d' : '#666';
+  const normalizedColor = trayColor?.trim().replace(/^#/, '') || '';
   return (
     <div
       className="w-3.5 h-3.5 rounded-full mx-auto mb-0.5 border-2 flex items-center justify-center"
       style={{
-        backgroundColor: trayColor ? `#${trayColor}` : (trayType ? '#333' : 'transparent'),
+        backgroundColor: normalizedColor ? `#${normalizedColor}` : (trayType ? '#333' : 'transparent'),
         borderColor: isEmpty ? emptyBorderColor : 'rgba(255,255,255,0.1)',
         borderStyle: isEmpty ? 'dashed' : 'solid',
       }}
     >
       <span
         className="text-[6px] font-bold leading-none select-none"
-        style={{ color: trayColor && isLightFilamentColor(trayColor) ? '#000' : '#fff' }}
+        style={{ color: normalizedColor && isLightFilamentColor(normalizedColor) ? '#000' : '#fff' }}
       >
         {slotNumber}
       </span>

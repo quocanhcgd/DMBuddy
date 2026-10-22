@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, PlainSerializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, model_validator
 
 
 # Custom serializer to ensure UTC datetimes have Z suffix
@@ -13,6 +13,29 @@ def serialize_utc_datetime(dt: datetime | None) -> str | None:
 
 
 UTCDatetime = Annotated[datetime | None, PlainSerializer(serialize_utc_datetime)]
+
+
+class Creator5MaterialMapping(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    tool_id: int = Field(alias="toolId", strict=True, ge=0, le=3)
+    slot_id: int = Field(alias="slotId", strict=True, ge=1, le=4)
+    material_name: str = Field(alias="materialName", min_length=1, max_length=32)
+    tool_material_color: str = Field(alias="toolMaterialColor", pattern=r"^#[0-9A-Fa-f]{6}$")
+    slot_material_color: str = Field(alias="slotMaterialColor", pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+def validate_creator5_material_mappings(mappings: list[Creator5MaterialMapping] | None) -> None:
+    if mappings is None:
+        return
+    if len(mappings) < 2:
+        raise ValueError("Creator 5 material mapping is only valid for multi-tool jobs")
+    tool_ids = [mapping.tool_id for mapping in mappings]
+    if len(tool_ids) != len(set(tool_ids)):
+        raise ValueError("Creator 5 material mapping cannot contain duplicate toolId values")
+    slot_ids = [mapping.slot_id for mapping in mappings]
+    if len(slot_ids) != len(set(slot_ids)):
+        raise ValueError("Creator 5 material mapping cannot assign one slotId to multiple tools")
 
 
 class PrintQueueItemCreate(BaseModel):
@@ -32,6 +55,7 @@ class PrintQueueItemCreate(BaseModel):
     # AMS mapping: list of global tray IDs for each filament slot
     # Format: [5, -1, 2, -1] where position = slot_id-1, value = global tray ID (-1 = unused)
     ams_mapping: list[int] | None = None
+    creator5_material_mappings: list[Creator5MaterialMapping] | None = Field(default=None, min_length=2, max_length=4)
     # Plate ID for multi-plate 3MF files (1-indexed, None = auto-detect/plate 1)
     plate_id: int | None = None
     # Print options
@@ -49,6 +73,13 @@ class PrintQueueItemCreate(BaseModel):
     # Project to associate the resulting archive with
     project_id: int | None = None
 
+    @model_validator(mode="after")
+    def validate_creator5_mapping(self):
+        validate_creator5_material_mappings(self.creator5_material_mappings)
+        if self.creator5_material_mappings and self.ams_mapping is not None:
+            raise ValueError("Creator 5 material mapping cannot be combined with Bambu AMS mapping")
+        return self
+
 
 class PrintQueueItemUpdate(BaseModel):
     printer_id: int | None = None
@@ -61,6 +92,7 @@ class PrintQueueItemUpdate(BaseModel):
     auto_off_after: bool | None = None
     manual_start: bool | None = None
     ams_mapping: list[int] | None = None
+    creator5_material_mappings: list[Creator5MaterialMapping] | None = Field(default=None, min_length=2, max_length=4)
     plate_id: int | None = None
     # Print options
     bed_levelling: bool | None = None
@@ -72,6 +104,13 @@ class PrintQueueItemUpdate(BaseModel):
     use_ams: bool | None = None
     # Auto-print G-code injection
     gcode_injection: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_creator5_mapping(self):
+        validate_creator5_material_mappings(self.creator5_material_mappings)
+        if self.creator5_material_mappings and self.ams_mapping is not None:
+            raise ValueError("Creator 5 material mapping cannot be combined with Bambu AMS mapping")
+        return self
 
 
 class PrintQueueItemResponse(BaseModel):
@@ -96,6 +135,7 @@ class PrintQueueItemResponse(BaseModel):
     filament_short: bool = False
     skip_filament_check: bool = False
     ams_mapping: list[int] | None = None
+    creator5_material_mappings: list[Creator5MaterialMapping] | None = None
     plate_id: int | None = None  # Plate ID for multi-plate 3MF files
     # Print options
     bed_levelling: bool = True

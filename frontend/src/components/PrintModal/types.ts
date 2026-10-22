@@ -181,6 +181,12 @@ export interface FilamentReqsData {
     used_meters: number;
     nozzle_id?: number;
   }>;
+  creator5_tools?: Array<{
+    tool_id: number;
+    material_name: string | null;
+    tool_material_color: string | null;
+  }>;
+  creator5_tool_warning?: string | null;
 }
 
 /**
