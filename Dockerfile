@@ -74,6 +74,10 @@ COPY backend/ ./backend/
 # not import backend.app, but the server uses these schemas for gateway frames.
 COPY connector_protocol/ ./connector_protocol/
 
+# Git checkouts performed by deployment scripts may inherit a restrictive
+# umask. Ensure the non-root runtime user can read and traverse application code.
+RUN chmod -R a+rX /app/backend /app/connector_protocol
+
 # Capture the current git branch at build time. `.git/HEAD` is the only
 # .git metadata the build context lets through (see .dockerignore); it
 # contains `ref: refs/heads/<branch>` for runtime version/source reporting.

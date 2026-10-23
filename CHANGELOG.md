@@ -5,6 +5,12 @@ The historical upstream changelog is preserved after that section for fork/upstr
 
 ## Printbuddy
 
+### 0.2.5.9 - 2026-10-23
+
+#### Fixed
+- Restored the deployment script's original umask after creating the protected data backup so Git does not check out Python source files without read permissions.
+- Normalized backend source readability in the Docker image so the non-root app user can import modules after deployments with restrictive file permissions.
+
 ### 0.2.5.8 - 2026-10-23
 
 #### Added

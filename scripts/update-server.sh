@@ -11,6 +11,7 @@ HEALTH_URL="${PRINTBUDDY_HEALTH_URL:-http://127.0.0.1:${PORT:-8000}/health}"
 HEALTH_TIMEOUT="${PRINTBUDDY_HEALTH_TIMEOUT:-180}"
 BACKUP_ROOT="${PRINTBUDDY_BACKUP_DIR:-${REPO_ROOT}/backups}"
 CONTAINER="${PRINTBUDDY_CONTAINER:-printbuddy}"
+ORIGINAL_UMASK="$(umask)"
 
 die() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -72,6 +73,7 @@ if [[ ! -s "$BACKUP_FILE" ]]; then
   docker compose up -d "$SERVICE" || true
   die "Data backup was not created; deployment remains unchanged."
 fi
+umask "$ORIGINAL_UMASK"
 trap - ERR
 
 printf 'Updating %s: %s -> %s\n' "$BRANCH" "${OLD_COMMIT:0:12}" "${TARGET_COMMIT:0:12}"
