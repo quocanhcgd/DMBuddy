@@ -1,6 +1,8 @@
 import base64
+import io
+import zipfile
 
-from backend.app.services.gcode_thumbnail import extract_gcode_thumbnail
+from backend.app.services.gcode_thumbnail import extract_3mf_thumbnail, extract_gcode_thumbnail
 
 
 def test_extracts_png_thumbnail_from_klipper_comments():
@@ -19,3 +21,34 @@ def test_ignores_invalid_or_unsupported_thumbnail_blocks():
     source = b"; thumbnail begin 32x32 3\n; bmF0\n; thumbnail end\n"
 
     assert extract_gcode_thumbnail(source) is None
+
+
+def test_extracts_requested_plate_thumbnail_from_3mf():
+    plate_one = b"\x89PNG\r\n\x1a\nplate-one"
+    plate_four = b"\x89PNG\r\n\x1a\nplate-four"
+    archive_data = io.BytesIO()
+    with zipfile.ZipFile(archive_data, "w") as archive:
+        archive.writestr("Metadata/plate_1.png", plate_one)
+        archive.writestr("Metadata/plate_4.png", plate_four)
+
+    thumbnail = extract_3mf_thumbnail(archive_data.getvalue(), plate_index=4)
+
+    assert thumbnail is not None
+    assert thumbnail.data == plate_four
+    assert thumbnail.media_type == "image/png"
+
+
+def test_extracts_auxiliary_thumbnail_when_3mf_has_no_plate_preview():
+    preview = b"\x89PNG\r\n\x1a\nthreemf-preview"
+    archive_data = io.BytesIO()
+    with zipfile.ZipFile(archive_data, "w") as archive:
+        archive.writestr("Auxiliaries/.thumbnails/thumbnail_middle.png", preview)
+
+    thumbnail = extract_3mf_thumbnail(archive_data.getvalue())
+
+    assert thumbnail is not None
+    assert thumbnail.data == preview
+
+
+def test_invalid_3mf_has_no_thumbnail():
+    assert extract_3mf_thumbnail(b"not a zip archive") is None

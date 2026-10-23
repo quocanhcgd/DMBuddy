@@ -128,6 +128,34 @@ describe('FileManagerModal', () => {
       });
     });
 
+    it('shows printer-provided thumbnails for Bambu files too', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/files', () => HttpResponse.json({
+          files: [{
+            name: 'benchy.gcode.3mf',
+            path: '/benchy.gcode.3mf',
+            size: 1024,
+            is_directory: false,
+            thumbnail_url: '/api/v1/printers/1/files/thumbnail?path=%2Fbenchy.gcode.3mf',
+          }],
+        }))
+      );
+
+      const { container } = render(
+        <FileManagerModal
+          printerId={1}
+          printerName="X1 Carbon"
+          printerProvider="bambu"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('benchy.gcode.3mf')).toBeInTheDocument();
+        expect(container.querySelector('img[src*="files/thumbnail"]')).toBeInTheDocument();
+      });
+    });
+
     it('does not show file sizes in the file list', async () => {
       render(
         <FileManagerModal

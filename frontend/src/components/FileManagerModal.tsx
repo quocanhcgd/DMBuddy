@@ -843,7 +843,7 @@ export function FileManagerModal({ printerId, printerName, printerProvider, prin
                             )}
                           </button>
                         ) : null}
-                        {file.thumbnail_url && isMoonrakerPrinter ? (
+                        {file.thumbnail_url ? (
                           <img
                             src={api.getPrinterFileThumbnailUrl(printerId, file.path)}
                             alt=""

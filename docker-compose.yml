@@ -1,6 +1,6 @@
 services:
   printbuddy:
-    image: ghcr.io/quocanhcgd/printbuddy:latest
+    image: ghcr.io/quocanhcgd/dmbuddy:latest
     build: .
     # Usage:
     #   docker compose pull && docker compose up -d → pulls this repository's GitHub-built image

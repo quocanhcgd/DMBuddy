@@ -1137,6 +1137,33 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_printer_file_thumbnail_extracts_bambu_3mf_preview(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        import io
+        import zipfile
+
+        preview = b"\x89PNG\r\n\x1a\nplate-preview"
+        archive_data = io.BytesIO()
+        with zipfile.ZipFile(archive_data, "w") as archive:
+            archive.writestr("Metadata/plate_1.png", preview)
+
+        printer = await printer_factory()
+        with patch(
+            "backend.app.api.routes.printers.download_file_bytes_async",
+            new=AsyncMock(return_value=archive_data.getvalue()),
+        ):
+            response = await async_client.get(
+                f"/api/v1/printers/{printer.id}/files/thumbnail",
+                params={"path": "/benchy.gcode.3mf"},
+            )
+
+        assert response.status_code == 200, response.text
+        assert response.headers["content-type"] == "image/png"
+        assert response.content == preview
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_get_printer_status_omits_fila_switch_when_not_installed(
         self, async_client: AsyncClient, printer_factory, db_session
     ):

@@ -55,6 +55,7 @@ from backend.app.services.bambu_ftp import (
 )
 from backend.app.services.connector_gateway import connector_gateway
 from backend.app.services.flashforge.secrets import decrypt_check_code, encrypt_check_code
+from backend.app.services.gcode_thumbnail import extract_3mf_thumbnail
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_manager import (
     get_derived_status_name,
@@ -71,7 +72,6 @@ from backend.app.services.printer_providers.flashforge_contract import (
     validate_flashforge_options,
 )
 from backend.app.services.printer_providers.moonraker import create_moonraker_client
-from backend.app.services.gcode_thumbnail import extract_gcode_thumbnail
 from backend.app.services.printer_transport import (
     ConnectorDeliveryUnknownError,
     ConnectorOfflineError,
@@ -188,7 +188,7 @@ def _gcode_thumbnail_url(printer_id: int, entry: dict) -> str | None:
     if bool(entry.get("is_directory")):
         return None
     name = str(entry.get("name") or "").lower()
-    if not (name.endswith((".gcode", ".gco", ".g", ".bgcode")) or ".gcode." in name):
+    if not (name.endswith((".gcode", ".gco", ".g", ".bgcode", ".3mf")) or ".gcode." in name):
         return None
     path = str(entry.get("path") or "")
     return f"/api/v1/printers/{printer_id}/files/thumbnail?path={quote(path)}" if path else None
@@ -1878,10 +1878,11 @@ async def list_printer_files(
                 else "The printer returned recent files only; a full listing is unavailable while TCP M661 cannot be reached.",
             },
         }
+    provider_name = str(getattr(printer, "provider", "") or "").lower()
     provider_client = _provider_for_printer(printer)
     if provider_client is not None:
         files = [_normalize_provider_file_entry(f) for f in provider_client.list_files(path, storage=storage)]
-        if str(getattr(printer, "provider", "") or "").lower() in {"klipper", "mainsail", "fluidd"}:
+        if provider_name in {"klipper", "mainsail", "fluidd"}:
             for entry in files:
                 thumbnail_url = _gcode_thumbnail_url(printer_id, entry)
                 if thumbnail_url:
@@ -1891,6 +1892,10 @@ async def list_printer_files(
         # Add full path to each file
         for f in files:
             f["path"] = f"{path.rstrip('/')}/{f['name']}" if path != "/" else f"/{f['name']}"
+            name = str(f.get("name") or "").lower()
+            thumbnail_url = _gcode_thumbnail_url(printer_id, f) if name.endswith(".3mf") else None
+            if thumbnail_url:
+                f["thumbnail_url"] = thumbnail_url
 
     response = {
         "path": path,
@@ -1919,22 +1924,41 @@ async def get_printer_file_thumbnail(
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
     db: AsyncSession = Depends(get_db),
 ):
-    """Extract and return a slicer thumbnail embedded in a Klipper G-code file."""
+    """Extract and return a slicer thumbnail embedded in a printer file."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
     if not printer:
         raise HTTPException(404, "Printer not found")
-    if str(getattr(printer, "provider", "") or "").lower() not in {"klipper", "mainsail", "fluidd"}:
-        raise HTTPException(400, "Embedded G-code thumbnails are currently supported for Moonraker printers")
+    provider_name = str(getattr(printer, "provider", "") or "").lower()
+    normalized_path = path.replace("\\", "/")
+    if any(part in {".", ".."} for part in PurePosixPath(normalized_path).parts):
+        raise HTTPException(400, "Invalid printer file path")
     filename = Path(path).name.lower()
-    if not filename.endswith((".gcode", ".gco", ".g", ".bgcode")):
-        raise HTTPException(400, "Only G-code files have embedded thumbnails")
-
     provider_client = _provider_for_printer(printer)
-    thumbnail_method = getattr(provider_client, "download_gcode_thumbnail", None)
-    if not callable(thumbnail_method):
-        raise HTTPException(400, "Printer provider does not support G-code thumbnail extraction")
-    thumbnail = await asyncio.to_thread(thumbnail_method, path)
+    if filename.endswith(".3mf"):
+        if provider_name in {"klipper", "mainsail", "fluidd"}:
+            download_method = getattr(provider_client, "download_file", None)
+            source = await asyncio.to_thread(download_method, path) if callable(download_method) else None
+        elif provider_name == "bambu":
+            source = await download_file_bytes_async(
+                printer.ip_address,
+                printer.access_code,
+                path,
+                printer_model=printer.model,
+            )
+        else:
+            raise HTTPException(400, "3MF thumbnails are not supported for this printer provider")
+        match = re.search(r"plate_(\d+)", filename)
+        thumbnail = extract_3mf_thumbnail(source or b"", plate_index=int(match.group(1)) if match else None)
+    elif filename.endswith((".gcode", ".gco", ".g", ".bgcode")):
+        if provider_name not in {"klipper", "mainsail", "fluidd"}:
+            raise HTTPException(400, "Embedded G-code thumbnails are currently supported for Moonraker printers")
+        thumbnail_method = getattr(provider_client, "download_gcode_thumbnail", None)
+        if not callable(thumbnail_method):
+            raise HTTPException(400, "Printer provider does not support G-code thumbnail extraction")
+        thumbnail = await asyncio.to_thread(thumbnail_method, path)
+    else:
+        raise HTTPException(400, "Only G-code and 3MF files have embedded thumbnails")
     if thumbnail is None:
         raise HTTPException(404, "No embedded thumbnail found")
     return Response(content=thumbnail.data, media_type=thumbnail.media_type)

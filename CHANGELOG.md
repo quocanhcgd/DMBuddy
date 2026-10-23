@@ -5,6 +5,12 @@ The historical upstream changelog is preserved after that section for fork/upstr
 
 ## Printbuddy
 
+### 0.2.5.7 - 2026-10-23
+
+#### Fixed
+- Fixed printer file previews for embedded G-code thumbnails and 3MF plate images, including Bambu `.gcode.3mf` files and Moonraker G-code files.
+- Pointed the Docker Compose image at this repository's GHCR package so image pulls no longer resolve to the inherited Printbuddy package.
+
 ### 0.2.5.6 - 2026-10-22
 
 #### Added

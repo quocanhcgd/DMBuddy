@@ -1,11 +1,13 @@
-"""Extract slicer thumbnails embedded in Klipper G-code comments."""
+"""Extract slicer thumbnails embedded in G-code files and 3MF archives."""
 
 from __future__ import annotations
 
 import base64
 import binascii
 import re
+import zipfile
 from dataclasses import dataclass
+from io import BytesIO
 
 
 @dataclass(frozen=True)
@@ -65,3 +67,42 @@ def extract_gcode_thumbnail(source: bytes, *, max_scan_bytes: int = 8 * 1024 * 1
             continue
         candidates.append(GcodeThumbnail(decoded, width, height, media_type))
     return max(candidates, key=lambda item: (item.width * item.height, len(item.data)), default=None)
+
+
+def extract_3mf_thumbnail(source: bytes, *, plate_index: int | None = None) -> GcodeThumbnail | None:
+    """Return a preview image embedded in a slicer 3MF archive."""
+    if not source:
+        return None
+    try:
+        with zipfile.ZipFile(BytesIO(source)) as archive:
+            names = set(archive.namelist())
+            candidates = []
+            if plate_index is not None:
+                candidates.extend((f"Metadata/plate_{plate_index}.png", f"Metadata/plate_{plate_index}_small.png"))
+            candidates.extend(
+                (
+                    "Metadata/plate_1.png",
+                    "Metadata/thumbnail.png",
+                    "Metadata/plate_1_small.png",
+                    "Auxiliaries/.thumbnails/thumbnail_middle.png",
+                    "Auxiliaries/.thumbnails/thumbnail_small.png",
+                    "Auxiliaries/.thumbnails/thumbnail_3mf.png",
+                    "Thumbnails/thumbnail.png",
+                    "thumbnail.png",
+                )
+            )
+            candidates.extend(
+                name
+                for name in archive.namelist()
+                if name.startswith("Metadata/") and name.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+            )
+            for name in dict.fromkeys(candidates):
+                if name not in names:
+                    continue
+                image = archive.read(name)
+                media_type = _image_type(image)
+                if media_type:
+                    return GcodeThumbnail(image, 0, 0, media_type)
+    except (OSError, zipfile.BadZipFile, RuntimeError):
+        return None
+    return None
