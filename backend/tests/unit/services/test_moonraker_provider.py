@@ -1,7 +1,36 @@
 import pytest
 
-from backend.app.services.printer_providers.moonraker import MoonrakerPrinterClient
 from backend.app.services.gcode_thumbnail import extract_gcode_thumbnail
+from backend.app.services.printer_providers.moonraker import MoonrakerPrinterClient
+
+
+def test_moonraker_connect_keeps_server_info_for_printer_details(monkeypatch):
+    client = MoonrakerPrinterClient("http://u1.local:7125", printer_model="Snapmaker U1")
+    monkeypatch.setattr(
+        client,
+        "_get",
+        lambda path, **kwargs: (
+            {"moonraker_version": "?", "klippy_state": "ready"}
+            if path == "server/info"
+            else {"software_version": "09faed31-dirty"}
+        ),
+    )
+    monkeypatch.setattr(client, "_available_objects", lambda: ["mcu", "mcu nozzle_mcu"])
+    monkeypatch.setattr(
+        client,
+        "_query_objects",
+        lambda names: {
+            "mcu": {"mcu_version": "main-fw-1.2"},
+            "mcu nozzle_mcu": {"mcu_version": "nozzle-fw-2.3"},
+        },
+    )
+    monkeypatch.setattr(client, "request_status_update", lambda: True)
+
+    client.connect()
+
+    assert client.state.klippy_state == "ready"
+    assert client.state.klipper_software_version == "09faed31-dirty"
+    assert client.state.mcu_firmware_versions == {"main": "main-fw-1.2", "nozzle_mcu": "nozzle-fw-2.3"}
 
 
 def test_moonraker_sets_temperature_for_selected_extruder(monkeypatch):
@@ -299,7 +328,8 @@ def test_moonraker_normalizes_creality_k3_four_nozzles_without_assuming_selectio
     k3_status = {
         key: value
         for key, value in status.items()
-        if key in {
+        if key
+        in {
             "toolhead",
             "nozzle_manager",
             "extruder1",
@@ -458,7 +488,9 @@ def test_moonraker_controls_snapmaker_u1_cavity_fan(monkeypatch):
 def test_moonraker_controls_snapmaker_u1_case_light_with_fixed_led_command(monkeypatch):
     client = MoonrakerPrinterClient("http://snapmaker-u1.local:7125", printer_model="Snapmaker U1")
     sent: list[str] = []
-    monkeypatch.setattr(client, "_available_objects", lambda: (_ for _ in ()).throw(AssertionError("must not discover LEDs")))
+    monkeypatch.setattr(
+        client, "_available_objects", lambda: (_ for _ in ()).throw(AssertionError("must not discover LEDs"))
+    )
     monkeypatch.setattr(client, "send_gcode", lambda script: sent.append(script) or True)
 
     assert client.set_chamber_light(True) is True
@@ -557,7 +589,9 @@ def test_moonraker_extracts_thumbnail_using_only_first_eight_megabytes(monkeypat
             assert chunk_size == 64 * 1024
             yield source
 
-    monkeypatch.setattr("backend.app.services.printer_providers.moonraker.httpx.stream", lambda *args, **kwargs: StreamResponse())
+    monkeypatch.setattr(
+        "backend.app.services.printer_providers.moonraker.httpx.stream", lambda *args, **kwargs: StreamResponse()
+    )
 
     thumbnail = client.download_gcode_thumbnail("/benchy.gcode")
 

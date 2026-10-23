@@ -62,6 +62,15 @@ function CopyButton({ value }: { value: string }) {
 
 export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: PrinterInfoModalProps) {
   const { t } = useTranslation();
+  const isKlipper = ['klipper', 'mainsail', 'fluidd'].includes(printer.provider);
+  const isKnownFourNozzleModel = /^(?:creality\s+)?k3\b/i.test((printer.model || '').trim())
+    || /snapmaker\s+u1/i.test(printer.model || '');
+  const reportedKlipperNozzleCount = ['nozzle', 'nozzle_2', 'nozzle_3', 'nozzle_4']
+    .filter((key) => status?.temperatures?.[key as keyof NonNullable<PrinterStatus['temperatures']>] !== undefined)
+    .length;
+  const nozzleCount = isKlipper
+    ? reportedKlipperNozzleCount || (isKnownFourNozzleModel ? 4 : printer.nozzle_count)
+    : printer.nozzle_count;
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -120,9 +129,10 @@ export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: 
     ),
   });
 
-  // Serial Number
+  // HTTP providers use a generated identifier because they do not expose a
+  // manufacturer serial through their standard API.
   rows.push({
-    label: t('printers.serialNumber'),
+    label: isKlipper ? t('printers.internalId') : t('printers.serialNumber'),
     value: (
       <span className="flex items-center">
         <span className="font-mono truncate">{printer.serial_number}</span>
@@ -156,11 +166,37 @@ export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: 
     });
   }
 
-  // Firmware
-  rows.push({
-    label: t('printers.firmware'),
-    value: status?.firmware_version ?? '—',
-  });
+  if (isKlipper) {
+    const details = status?.connection_details;
+    const klippyState = details?.klippy_state;
+    const klipperVersion = details?.klipper_software_version;
+    if (klipperVersion) {
+      rows.push({ label: t('printers.firmwareKlipper'), value: String(klipperVersion) });
+    }
+    Object.entries(details ?? {})
+      .filter(([key, value]) => key.startsWith('mcu_firmware_') && value)
+      .forEach(([key, value]) => {
+        const mcuName = key.slice('mcu_firmware_'.length).replace(/_/g, ' ');
+        const text = String(value);
+        rows.push({
+          label: t('printers.firmwareMcu', { name: mcuName }),
+          value: (
+            <span className="flex items-center min-w-0 justify-end">
+              <span className="font-mono truncate max-w-[14rem]" title={text}>{text}</span>
+              <CopyButton value={text} />
+            </span>
+          ),
+        });
+      });
+    if (klippyState) {
+      rows.push({ label: t('printers.klipperStatus'), value: String(klippyState) });
+    }
+  } else {
+    rows.push({
+      label: t('printers.firmware'),
+      value: status?.firmware_version ?? '—',
+    });
+  }
 
   const connectionDetails = status?.connection_details ?? null;
   const connectionRows: { key: string; label: string; copy?: boolean }[] = [
@@ -170,7 +206,7 @@ export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: 
     { key: 'printer_id', label: t('printers.sdcp.printerId', 'SDCP Printer ID'), copy: true },
     { key: 'mainboard_id', label: t('printers.sdcp.mainboardId', 'Mainboard ID'), copy: true },
   ];
-  if (connectionDetails) {
+  if (connectionDetails && !isKlipper) {
     connectionRows.forEach(({ key, label, copy }) => {
       const value = connectionDetails[key];
       if (value === null || value === undefined || value === '') return;
@@ -188,7 +224,7 @@ export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: 
   }
 
   // Developer Mode
-  if (status?.developer_mode != null) {
+  if (!isKlipper && status?.developer_mode != null) {
     rows.push({
       label: t('printers.developerMode'),
       value: (
@@ -206,7 +242,7 @@ export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: 
   // Nozzle Count
   rows.push({
     label: t('printers.nozzleCount'),
-    value: printer.nozzle_count,
+    value: nozzleCount,
   });
 
   // Auto-Archive

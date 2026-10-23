@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings
 
 # Application version - single source of truth
-APP_VERSION = "0.2.5.7"
+APP_VERSION = "0.2.5.8"
 GITHUB_REPO = "quocanhcgd/DMBuddy"
 UPSTREAM_GITHUB_REPO = "vmhomelab/Printbuddy"
 
@@ -15,6 +15,7 @@ def get_compat_env(name: str, default: str = "") -> str:
     """Read a DMbuddy environment variable, falling back to its Printbuddy name."""
     suffix = name.removeprefix("DMBUDDY_").removeprefix("PRINTBUDDY_")
     return os.environ.get(f"DMBUDDY_{suffix}", os.environ.get(f"PRINTBUDDY_{suffix}", default))
+
 
 # App directory - where the application is installed (for static files)
 _app_dir = Path(__file__).resolve().parent.parent.parent.parent

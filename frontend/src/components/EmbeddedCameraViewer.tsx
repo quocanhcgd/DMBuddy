@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { ChamberLight } from './icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from './SkipObjectsModal';
 import { CameraDiagnoseModal } from './CameraDiagnoseModal';
+import { K3WebRtcViewer } from './K3WebRtcViewer';
 
 interface EmbeddedCameraViewerProps {
   printerId: number;
@@ -139,6 +140,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   // through the backend MJPEG endpoint (which intentionally returns 409).
   const isWebRtcCamera = printer?.external_camera_enabled === true && printer.external_camera_type === 'webrtc';
   const webRtcUrl = isWebRtcCamera ? printer.external_camera_url : null;
+  const isK3WebRtc = Boolean(webRtcUrl?.includes('/call/webrtc_local'));
 
   // Fetch printer status for light toggle and skip objects
   const { data: status } = useQuery({
@@ -755,16 +757,26 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
             </div>
           )}
           {isWebRtcCamera && webRtcUrl ? (
-            <iframe
-              key={imageKey}
-              src={webRtcUrl}
-              title={t('camera.cameraStream')}
-              allow="autoplay; camera; microphone; fullscreen"
-              referrerPolicy="no-referrer"
-              className="w-full h-full min-h-[220px] border-0 bg-black"
-              onLoad={handleStreamLoad}
-              onError={handleStreamError}
-            />
+            isK3WebRtc ? (
+              <K3WebRtcViewer
+                key={imageKey}
+                signalingUrl={webRtcUrl}
+                className="w-full h-full min-h-[220px] object-contain bg-black"
+                onReady={handleStreamLoad}
+                onError={handleStreamError}
+              />
+            ) : (
+              <iframe
+                key={imageKey}
+                src={webRtcUrl}
+                title={t('camera.cameraStream')}
+                allow="autoplay; camera; microphone; fullscreen"
+                referrerPolicy="no-referrer"
+                className="w-full h-full min-h-[220px] border-0 bg-black"
+                onLoad={handleStreamLoad}
+                onError={handleStreamError}
+              />
+            )
           ) : (printer && !waitingForStreamToken ? (
             <img
               ref={imgRef}

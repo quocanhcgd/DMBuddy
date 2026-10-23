@@ -307,7 +307,9 @@ async def _connector_delivery_unknown_detail(
         )
         telemetry = snapshot.get("telemetry") if isinstance(snapshot.get("telemetry"), dict) else {}
         reconciliation = {
-            "status": "observed" if snapshot.get("status") == "completed" and snapshot.get("connected") else "unavailable",
+            "status": "observed"
+            if snapshot.get("status") == "completed" and snapshot.get("connected")
+            else "unavailable",
             "connected": bool(snapshot.get("connected")),
             "state": str(snapshot.get("state") or "unknown"),
         }
@@ -354,9 +356,7 @@ async def _connector_upload_delivery_unknown_detail(
         source = result.get("source")
         files = result.get("files") if isinstance(result.get("files"), list) else []
         observed = any(
-            isinstance(item, dict)
-            and str(item.get("name") or "").casefold() == filename.casefold()
-            for item in files
+            isinstance(item, dict) and str(item.get("name") or "").casefold() == filename.casefold() for item in files
         )
         listing = {
             "status": "observed" if observed else "not_observed",
@@ -403,7 +403,9 @@ async def _connector_job_control(printer: Printer, action: str) -> dict:
             timeout=12,
         )
     except ConnectorDeliveryUnknownError as exc:
-        raise HTTPException(504, detail=await _connector_delivery_unknown_detail(exc, printer, provider, options)) from exc
+        raise HTTPException(
+            504, detail=await _connector_delivery_unknown_detail(exc, printer, provider, options)
+        ) from exc
     except ConnectorOfflineError as exc:
         raise HTTPException(504, str(exc)) from exc
     if result.get("status") != "completed":
@@ -463,12 +465,18 @@ async def _connector_temperature_control(
             timeout=12,
         )
     except ConnectorDeliveryUnknownError as exc:
-        raise HTTPException(504, detail=await _connector_delivery_unknown_detail(exc, printer, provider, options)) from exc
+        raise HTTPException(
+            504, detail=await _connector_delivery_unknown_detail(exc, printer, provider, options)
+        ) from exc
     except ConnectorOfflineError as exc:
         raise HTTPException(504, str(exc)) from exc
     if result.get("status") != "completed":
         raise HTTPException(502, result.get("error") or "Connector could not set temperature")
-    return {"success": True, "message": f"{heater.capitalize()} target set to {target}°C", "observed": result.get("observed")}
+    return {
+        "success": True,
+        "message": f"{heater.capitalize()} target set to {target}°C",
+        "observed": result.get("observed"),
+    }
 
 
 async def _validate_connector_binding(
@@ -858,7 +866,9 @@ async def update_printer(
             try:
                 update_data["auth_token"] = encrypt_check_code(update_data["auth_token"])
             except (RuntimeError, ValueError) as exc:
-                raise HTTPException(503, "FlashForge check-code encryption is unavailable; credentials were not saved") from exc
+                raise HTTPException(
+                    503, "FlashForge check-code encryption is unavailable; credentials were not saved"
+                ) from exc
     elif getattr(printer, "provider", None) in FLASHFORGE_PROVIDERS and effective_provider not in FLASHFORGE_PROVIDERS:
         update_data.setdefault("auth_token", None)
 
@@ -894,7 +904,18 @@ async def update_printer(
     await db.refresh(printer)
 
     # Reconnect if connection settings changed
-    if any(k in update_data for k in ["ip_address", "access_code", "auth_token", "provider_options", "is_active", "connection_mode", "connector_id"]):
+    if any(
+        k in update_data
+        for k in [
+            "ip_address",
+            "access_code",
+            "auth_token",
+            "provider_options",
+            "is_active",
+            "connection_mode",
+            "connector_id",
+        ]
+    ):
         printer_manager.disconnect_printer(printer_id)
         if printer.is_active and printer.connection_mode != "connector":
             try:
@@ -1005,7 +1026,9 @@ async def get_printer_status(
                     "port": _connector_printer_port(printer.provider),
                     "provider": printer.provider,
                     "serial_number": printer.serial_number,
-                    "access_code": decrypt_check_code(printer.auth_token) if printer.provider in FLASHFORGE_PROVIDERS else None,
+                    "access_code": decrypt_check_code(printer.auth_token)
+                    if printer.provider in FLASHFORGE_PROVIDERS
+                    else None,
                     "timeout_ms": 1000,
                 },
                 timeout=4,
@@ -1364,7 +1387,18 @@ async def get_printer_status(
         big_fan2_speed=state.big_fan2_speed,
         heatbreak_fan_speed=state.heatbreak_fan_speed,
         firmware_version=state.firmware_version,
-        connection_details=getattr(state, "sdcp_connection", None) or (state.raw_data or {}).get("sdcp_connection"),
+        connection_details=(
+            {
+                "klippy_state": getattr(state, "klippy_state", None),
+                "klipper_software_version": getattr(state, "klipper_software_version", None),
+                **{
+                    f"mcu_firmware_{name}": version
+                    for name, version in getattr(state, "mcu_firmware_versions", {}).items()
+                },
+            }
+            if printer.provider in {"klipper", "mainsail", "fluidd"}
+            else getattr(state, "sdcp_connection", None) or (state.raw_data or {}).get("sdcp_connection")
+        ),
         developer_mode=state.developer_mode if state else None,
         awaiting_plate_clear=printer_manager.is_awaiting_plate_clear(printer_id),
         supports_drying=supports_drying(printer.model, state.firmware_version),
@@ -1583,7 +1617,9 @@ async def get_printer_cover(
         if client is not None:
             try:
                 thumbnail_method = getattr(client, "download_gcode_thumbnail", None)
-                thumbnail = await asyncio.to_thread(thumbnail_method, active_gcode) if callable(thumbnail_method) else None
+                thumbnail = (
+                    await asyncio.to_thread(thumbnail_method, active_gcode) if callable(thumbnail_method) else None
+                )
                 if thumbnail is not None:
                     return Response(content=thumbnail.data, media_type=thumbnail.media_type)
             except Exception as exc:  # noqa: BLE001 - preserve existing 3MF cover fallback
@@ -2278,7 +2314,12 @@ async def start_printer_file(
         provider = str(getattr(printer, "provider", "") or "").strip().lower()
         if provider not in FLASHFORGE_PROVIDERS:
             raise HTTPException(400, "Connector start is currently available for FlashForge only")
-        if storage or ams_mapping is not None or print_platform_type is not None or path not in {f"/{Path(path).name}", Path(path).name}:
+        if (
+            storage
+            or ams_mapping is not None
+            or print_platform_type is not None
+            or path not in {f"/{Path(path).name}", Path(path).name}
+        ):
             raise HTTPException(400, "FlashForge Connector start supports root files without storage or tool mapping")
         options = getattr(printer, "provider_options", None)
         if isinstance(options, str):
@@ -2307,7 +2348,9 @@ async def start_printer_file(
                 timeout=12,
             )
         except ConnectorDeliveryUnknownError as exc:
-            raise HTTPException(504, detail=await _connector_delivery_unknown_detail(exc, printer, provider, options)) from exc
+            raise HTTPException(
+                504, detail=await _connector_delivery_unknown_detail(exc, printer, provider, options)
+            ) from exc
         except ConnectorOfflineError as exc:
             raise HTTPException(504, str(exc)) from exc
         if control.get("status") != "completed":
@@ -4328,7 +4371,9 @@ async def set_nozzle_temperature(
     if printer.provider in FLASHFORGE_PROVIDERS:
         contract, _ = contract_for(printer.provider, printer.model)
         if target > contract.nozzle_max_c:
-            raise HTTPException(400, f"Nozzle temperature must be 0-{contract.nozzle_max_c}°C for this FlashForge model")
+            raise HTTPException(
+                400, f"Nozzle temperature must be 0-{contract.nozzle_max_c}°C for this FlashForge model"
+            )
 
     if printer.connection_mode == "connector":
         return await _connector_temperature_control(printer, heater="nozzle", target=target, extruder=extruder)
@@ -4392,9 +4437,7 @@ async def set_bed_temperature(
     if not callable(set_temp):
         raise HTTPException(400, "Printer provider does not support bed temperature control")
     accepted = (
-        await asyncio.to_thread(set_temp, target)
-        if printer.provider in FLASHFORGE_PROVIDERS
-        else set_temp(target)
+        await asyncio.to_thread(set_temp, target) if printer.provider in FLASHFORGE_PROVIDERS else set_temp(target)
     )
     if not accepted:
         raise HTTPException(500, "Failed to set bed temperature")

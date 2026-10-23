@@ -64,6 +64,10 @@ class MoonrakerPrinterState:
     heatbreak_fan_speed: int | None = None
     firmware_version: str | None = None
     developer_mode: bool | None = None
+    moonraker_version: str | None = None
+    klippy_state: str | None = None
+    klipper_software_version: str | None = None
+    mcu_firmware_versions: dict[str, str] = field(default_factory=dict)
 
 
 def _map_moonraker_state(raw_state: Any) -> str:
@@ -549,7 +553,11 @@ def _normalize_moonraker_webcam(base_url: str, webcam: dict[str, Any]) -> dict[s
     if not stream_url:
         return None
     raw_camera_type = str(webcam.get("camera_type") or webcam.get("type") or "").strip().lower()
-    if raw_camera_type in {"webrtc", "whep"} or "/webcam/webrtc" in stream_url.lower() or stream_url.lower().rstrip("/").endswith("/whep"):
+    if (
+        raw_camera_type in {"webrtc", "whep"}
+        or "/webcam/webrtc" in stream_url.lower()
+        or stream_url.lower().rstrip("/").endswith("/whep")
+    ):
         camera_type = "webrtc"
     else:
         camera_type = "snapshot" if snapshot_url and stream_url == snapshot_url else "mjpeg"
@@ -1098,7 +1106,9 @@ class MoonrakerPrinterClient:
 
         light = status.get("output_pin LED")
         self.state.chamber_light_available = isinstance(light, dict) and "value" in light
-        self.state.chamber_light = bool(_safe_float(light.get("value"))) if self.state.chamber_light_available else False
+        self.state.chamber_light = (
+            bool(_safe_float(light.get("value"))) if self.state.chamber_light_available else False
+        )
 
         extruder_names = ["extruder", "extruder1", "extruder2", "extruder3"]
         nozzle_info: list[NozzleInfo] = []
@@ -1160,9 +1170,7 @@ class MoonrakerPrinterClient:
             if isinstance(box.get(name), dict) and box[name].get("type")
         }
         cfs_nano = None
-        cfs_nano_units = [
-            name for name, value in station_types.items() if value.strip().casefold() == "cfs-nano"
-        ]
+        cfs_nano_units = [name for name, value in station_types.items() if value.strip().casefold() == "cfs-nano"]
         if cfs_nano_units:
             material_by_slot = _creality_cfs_material_lookup(box.get("same_material"))
             slots: list[dict[str, Any]] = []
@@ -1177,7 +1185,9 @@ class MoonrakerPrinterClient:
                             "slot": slot_name,
                             "material_name": material_by_slot.get(slot_name) or None,
                             "material_code": material_code[:32] if material_code not in {"", "-1"} else None,
-                            "color": color if isinstance(color, str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", color) else None,
+                            "color": color
+                            if isinstance(color, str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", color)
+                            else None,
                         }
                     )
             raw_online = box.get("is_online")
@@ -1466,6 +1476,26 @@ class MoonrakerPrinterClient:
             raise last_exc
         self.state.connected = True
         self.state.state = _map_moonraker_state(info.get("klippy_state") or info.get("state") or "connected")
+        self.state.moonraker_version = str(info["moonraker_version"]) if info.get("moonraker_version") else None
+        self.state.klippy_state = str(info["klippy_state"]) if info.get("klippy_state") else None
+        try:
+            printer_info = self._get("printer/info")
+            software_version = printer_info.get("software_version")
+            if software_version and str(software_version).strip().lower() not in {"?", "unknown", "none"}:
+                self.state.klipper_software_version = str(software_version)
+        except Exception:  # noqa: BLE001 - printer.info is optional across Moonraker implementations
+            pass
+        try:
+            mcu_objects = [name for name in self._available_objects() if name == "mcu" or name.startswith("mcu ")]
+            mcu_status = self._query_objects(mcu_objects) if mcu_objects else {}
+            self.state.mcu_firmware_versions = {
+                "main" if name == "mcu" else name[4:].strip().replace(" ", "_"): str(version)
+                for name, values in mcu_status.items()
+                if isinstance(values, dict)
+                if (version := values.get("mcu_version"))
+            }
+        except Exception:  # noqa: BLE001 - MCU metadata is optional; don't fail printer startup
+            self.state.mcu_firmware_versions = {}
         self.state.raw_status = info
         self.state.raw_data = info
         try:

@@ -304,6 +304,27 @@ def test_creality_k2_plus_derives_go2rtc_camera_from_model():
     assert camera.snapshot_url == f"http://go2rtc.local:1984/api/frame.jpeg?src={expected_src}"
 
 
+def test_creality_k3_derives_direct_local_webrtc_camera():
+    row = SimpleNamespace(
+        provider="fluidd",
+        ip_address="192.168.0.158",
+        model="Creality K3",
+        provider_options=None,
+        external_camera_enabled=False,
+        external_camera_url=None,
+        external_camera_type=None,
+        external_camera_snapshot_url=None,
+    )
+
+    camera = get_effective_camera_source(row)
+
+    assert camera.enabled is True
+    assert camera.derived is True
+    assert camera.camera_type == "webrtc"
+    assert camera.url == "http://192.168.0.158:8000/call/webrtc_local"
+    assert camera.snapshot_url is None
+
+
 def test_creality_k2_plus_derives_go2rtc_camera_from_model_version_code():
     row = SimpleNamespace(
         provider="klipper",

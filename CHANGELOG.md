@@ -5,6 +5,15 @@ The historical upstream changelog is preserved after that section for fork/upstr
 
 ## Printbuddy
 
+### 0.2.5.8 - 2026-10-23
+
+#### Added
+- Added direct Creality K3 camera support using the printer's local WebRTC signaling service, with browser-native playback and a `sendrecv` compatibility fallback.
+- Added Klipper firmware, MCU firmware, and runtime state details to printer information; Klipper nozzle counts now use Moonraker telemetry or known four-nozzle model defaults.
+
+#### Fixed
+- Kept non-Klipper firmware and serial-number details on their existing Bambu/provider-specific paths.
+
 ### 0.2.5.7 - 2026-10-23
 
 #### Fixed

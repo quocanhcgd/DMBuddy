@@ -146,6 +146,15 @@ def _is_creality_k2_family(model: str, model_version: str) -> bool:
     )
 
 
+def _is_creality_k3(model: str) -> bool:
+    """Return whether the printer model identifies a Creality K3.
+
+    K3 exposes its camera through the printer-local ``webrtc_local`` service,
+    so it does not need the go2rtc bridge used by the K2 family.
+    """
+    return "k3" in model.strip().lower()
+
+
 def _creality_webrtc_provider_camera_source(printer: Any) -> EffectiveCameraSource | None:
     """Derive Creality K2/K1C WebRTC camera through a configured go2rtc service.
 
@@ -161,11 +170,24 @@ def _creality_webrtc_provider_camera_source(printer: Any) -> EffectiveCameraSour
         return None
 
     options = _provider_options_dict(printer)
+    model, model_version = _creality_model_values(printer, options)
+    host = _normalize_host(getattr(printer, "ip_address", None) or getattr(printer, "api_url", None))
+    if not host:
+        return None
+
+    if _is_creality_k3(model):
+        return EffectiveCameraSource(
+            enabled=True,
+            url=f"http://{host}:{CREALITY_WEBRTC_PORT}{CREALITY_WEBRTC_K2_PATH}",
+            camera_type="webrtc",
+            snapshot_url=None,
+            derived=True,
+        )
+
     go2rtc_base = _option_first(options, CREALITY_GO2RTC_OPTION_KEYS).rstrip("/")
     if not go2rtc_base:
         return None
 
-    model, model_version = _creality_model_values(printer, options)
     is_k2 = _is_creality_k2_family(model, model_version)
     supports_webrtc = _truthy_webrtc_support(
         options.get("webrtcSupport")
@@ -174,10 +196,6 @@ def _creality_webrtc_provider_camera_source(printer: Any) -> EffectiveCameraSour
         or options.get("camera_webrtc")
     )
     if not (is_k2 or supports_webrtc):
-        return None
-
-    host = _normalize_host(getattr(printer, "ip_address", None) or getattr(printer, "api_url", None))
-    if not host:
         return None
 
     configured_path = str(options.get("creality_webrtc_path") or options.get("webrtc_path") or "").strip()

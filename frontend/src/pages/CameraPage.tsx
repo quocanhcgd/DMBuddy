@@ -10,6 +10,7 @@ import { useStreamTokenSync } from '../hooks/useCameraStreamToken';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
 import { CameraDiagnoseModal } from '../components/CameraDiagnoseModal';
+import { K3WebRtcViewer } from '../components/K3WebRtcViewer';
 import { appAssetPath } from '../utils/assetPaths';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -71,6 +72,7 @@ export function CameraPage() {
   });
   const isWebRtcCamera = printer?.external_camera_enabled === true && printer.external_camera_type === 'webrtc';
   const webRtcUrl = isWebRtcCamera ? printer.external_camera_url : null;
+  const isK3WebRtc = Boolean(webRtcUrl?.includes('/call/webrtc_local'));
 
   // Fetch printer status for light toggle and skip objects
   const { data: status } = useQuery({
@@ -646,7 +648,8 @@ export function CameraPage() {
             </button>
             <button
               onClick={() => switchToMode('snapshot')}
-              disabled={isDisabled}
+              disabled={isDisabled || isK3WebRtc}
+              title={isK3WebRtc ? 'K3 camera provides live WebRTC video only' : undefined}
               className={`px-3 py-1 text-xs rounded transition-colors ${
                 streamMode === 'snapshot'
                   ? 'bg-bambu-green text-white'
@@ -773,16 +776,26 @@ export function CameraPage() {
             </div>
           )}
           {isWebRtcCamera && streamMode === 'stream' && webRtcUrl ? (
-            <iframe
-              key={imageKey}
-              src={webRtcUrl}
-              title={t('camera.cameraStream')}
-              allow="autoplay; camera; microphone; fullscreen"
-              referrerPolicy="no-referrer"
-              className="w-full h-full min-h-[320px] border-0 bg-black"
-              onLoad={handleStreamLoad}
-              onError={handleStreamError}
-            />
+            isK3WebRtc ? (
+              <K3WebRtcViewer
+                key={imageKey}
+                signalingUrl={webRtcUrl}
+                className="w-full h-full min-h-[320px] object-contain bg-black"
+                onReady={handleStreamLoad}
+                onError={handleStreamError}
+              />
+            ) : (
+              <iframe
+                key={imageKey}
+                src={webRtcUrl}
+                title={t('camera.cameraStream')}
+                allow="autoplay; camera; microphone; fullscreen"
+                referrerPolicy="no-referrer"
+                className="w-full h-full min-h-[320px] border-0 bg-black"
+                onLoad={handleStreamLoad}
+                onError={handleStreamError}
+              />
+            )
           ) : (
             <img
               ref={imgRef}

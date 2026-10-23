@@ -11,7 +11,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { PrinterInfoModal } from '../../components/PrinterInfoModal';
-import type { Printer } from '../../api/client';
+import type { Printer, PrinterStatus } from '../../api/client';
 
 function mockPrinter(): Printer {
   return {
@@ -132,5 +132,60 @@ describe('PrinterInfoModal — CopyButton clipboard fallback (#1174)', () => {
     await waitFor(() => {
       expect(document.querySelectorAll('textarea').length).toBe(0);
     });
+  });
+});
+
+describe('PrinterInfoModal provider-specific details', () => {
+  it('shows Klipper stack details and labels its generated serial as an internal ID', () => {
+    const printer = {
+      ...mockPrinter(),
+      name: 'Snapmaker U1',
+      model: 'Snapmaker U1',
+      provider: 'klipper',
+      serial_number: 'KLIPPER-192-168-0-38',
+    } as Printer;
+    const status = {
+      connected: true,
+      connection_details: {
+        klipper_software_version: '09faed31-dirty',
+        mcu_firmware_main: 'F031_0.0.0.18-839-g8b48b14d6-dirty',
+        klippy_state: 'ready',
+      },
+    } as PrinterStatus;
+
+    render(<PrinterInfoModal printer={printer} status={status} onClose={() => {}} />);
+
+    expect(screen.getByText('Internal ID')).toBeTruthy();
+    expect(screen.getByText('Klipper Version')).toBeTruthy();
+    expect(screen.getByText('MCU Firmware (main)')).toBeTruthy();
+    expect(screen.getByText('Klipper Status')).toBeTruthy();
+    expect(screen.getByText('09faed31-dirty')).toBeTruthy();
+    expect(screen.getByText('F031_0.0.0.18-839-g8b48b14d6-dirty')).toBeTruthy();
+    expect(screen.getByText('ready')).toBeTruthy();
+    expect(screen.queryByText('Firmware')).toBeNull();
+    expect(screen.queryByText('Developer Mode')).toBeNull();
+  });
+
+  it('uses the four Klipper extruders reported by Moonraker instead of the saved Bambu nozzle count', () => {
+    const printer = {
+      ...mockPrinter(),
+      name: 'Creality K3',
+      model: 'Creality K3',
+      provider: 'fluidd',
+      nozzle_count: 2,
+    } as Printer;
+    const status = {
+      connected: true,
+      temperatures: {
+        nozzle: 30,
+        nozzle_2: 30,
+        nozzle_3: 30,
+        nozzle_4: 30,
+      },
+    } as PrinterStatus;
+
+    render(<PrinterInfoModal printer={printer} status={status} onClose={() => {}} />);
+
+    expect(screen.getByText('Nozzle Count').parentElement?.textContent).toContain('4');
   });
 });
