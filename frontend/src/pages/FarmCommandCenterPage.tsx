@@ -31,6 +31,7 @@ import {
   type PrinterStatus,
 } from '../api/client';
 import { classifyPrinterStatus } from '../utils/printerStatus';
+import { getPrinterImage } from '../utils/printer';
 
 interface FleetPrinter {
   printer: Printer;
@@ -262,12 +263,24 @@ function FleetTile({ item }: { item: FleetPrinter }) {
   const label = state === 'printing' ? t('farmCommandCenter.printing') : state === 'paused' ? t('farmCommandCenter.paused') : state === 'alert' ? t('farmCommandCenter.alert') : state === 'offline' ? t('farmCommandCenter.offline') : t('farmCommandCenter.idle');
   return (
     <div className={`min-h-20 rounded-lg border p-3 ${classes[state]}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-bold text-white">{item.printer.name}</div>
-          <div className="mt-1 text-xs">{label}</div>
+      <div className="flex items-start gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-white/10 bg-bambu-dark/70 p-1">
+          <img
+            src={getPrinterImage(item.printer.model)}
+            alt={item.printer.model || item.printer.name}
+            className="h-full w-full object-contain"
+          />
         </div>
-        <span className="text-xs text-bambu-gray-light">{progress !== null ? `${progress}%` : '—'}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-bold text-white">{item.printer.name}</div>
+              <div className="mt-1 truncate text-[0.68rem] text-bambu-gray-light">{item.printer.model || item.printer.provider || 'Printer'}</div>
+              <div className="mt-1 text-xs">{label}</div>
+            </div>
+            <span className="shrink-0 text-xs text-bambu-gray-light">{progress !== null ? `${progress}%` : '—'}</span>
+          </div>
+        </div>
       </div>
       {state === 'printing' && (
         <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bambu-dark-tertiary">

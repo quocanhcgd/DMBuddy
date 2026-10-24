@@ -190,6 +190,8 @@ describe('FarmCommandCenterPage', () => {
     expect(screen.getByText('Fleet Status')).toBeInTheDocument();
     expect(screen.getByText('PRA-01')).toBeInTheDocument();
     expect(screen.getByText('PRB-04')).toBeInTheDocument();
+    expect(screen.getByAltText('P1S')).toHaveAttribute('src', '/img/printers/p1s.png');
+    expect(screen.getByAltText('Generic FDM Printer')).toHaveAttribute('src', '/img/printers/generic-printer.png');
     expect(screen.getAllByText('Gridfinity Organizer Set').length).toBeGreaterThan(0);
     expect(screen.getByText('42 / 64 Parts')).toBeInTheDocument();
     expect(screen.getByText('3 queued')).toBeInTheDocument();

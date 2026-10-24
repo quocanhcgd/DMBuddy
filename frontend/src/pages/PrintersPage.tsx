@@ -455,6 +455,25 @@ function parsePrusaLinkApiAuthMode(providerOptions?: string | null): PrusaLinkAp
   return 'auto';
 }
 
+function parseFlashForgeHttpPort(providerOptions?: string | null): number {
+  if (providerOptions) {
+    try {
+      const options = JSON.parse(providerOptions) as Record<string, unknown>;
+      const port = Number(options.http_port);
+      if (Number.isInteger(port) && port >= 1 && port <= 65535) {
+        return port;
+      }
+    } catch {
+      // Fall back to the FlashForge contract default.
+    }
+  }
+  return 8898;
+}
+
+function buildFlashForgeProviderOptions(httpPort: number): string {
+  return JSON.stringify({ http_port: httpPort });
+}
+
 function getPrusaLinkWebUrl(printer: Printer): string | null {
   if (printer.provider !== 'prusalink') {
     return null;
@@ -505,6 +524,10 @@ function PrinterModelSelect({
           return { ...group, options: [] };
         })
         .filter((group) => group.options.length > 0)
+    : provider === 'flashforge_ad5m' || provider === 'flashforge_creator5'
+      ? PRINTER_MODEL_GROUPS
+          .map((group) => group.label === 'FlashForge' ? group : { ...group, options: [] })
+          .filter((group) => group.options.length > 0)
     : PRINTER_MODEL_GROUPS;
 
   return (
@@ -6803,7 +6826,8 @@ function AddPrinterModal({
   const isPrusaConnectProvider = form.provider === 'prusaconnect';
   const isPrusaProvider = isPrusaLinkProvider || isPrusaConnectProvider;
   const isElegooSDCPProvider = form.provider === 'elegoo_sdcp';
-  const isHttpProvider = isMoonrakerProvider || isPrusaProvider || isElegooSDCPProvider;
+  const isFlashForgeProvider = form.provider === 'flashforge_ad5m' || form.provider === 'flashforge_creator5';
+  const isHttpProvider = isMoonrakerProvider || isPrusaProvider || isElegooSDCPProvider || isFlashForgeProvider;
   const isConnectorMode = form.connection_mode === 'connector';
 
   const buildSubmitPayload = (): PrinterCreate => {
@@ -7174,12 +7198,21 @@ function AddPrinterModal({
                   provider,
                   serial_number: provider === 'bambu' ? form.serial_number : '',
                   access_code: provider === 'bambu' ? form.access_code : '',
-                  api_url: provider === 'bambu' ? '' : form.api_url,
+                  api_url: provider === 'bambu' || provider === 'flashforge_ad5m' || provider === 'flashforge_creator5' ? '' : form.api_url,
                   auth_token: provider === 'bambu' ? '' : form.auth_token,
                   external_camera_url: provider === 'bambu' ? '' : form.external_camera_url,
                   external_camera_type: provider === 'bambu' ? undefined : form.external_camera_type,
                   external_camera_enabled: provider === 'bambu' ? false : form.external_camera_enabled,
-                  model: provider === 'bambu' ? form.model : '',
+                  model: provider === 'bambu'
+                    ? form.model
+                    : provider === 'flashforge_ad5m'
+                      ? 'Adventurer 5M Pro'
+                      : provider === 'flashforge_creator5'
+                        ? 'Creator 5 Pro'
+                        : '',
+                  provider_options: provider === 'flashforge_ad5m' || provider === 'flashforge_creator5'
+                    ? buildFlashForgeProviderOptions(8898)
+                    : form.provider_options,
                 });
               }}
             >
@@ -7189,6 +7222,8 @@ function AddPrinterModal({
               <option value="fluidd">Fluidd / Moonraker</option>
               <option value="prusalink">Prusa</option>
               <option value="elegoo_sdcp">Elegoo SDCP (Centauri Carbon)</option>
+              <option value="flashforge_ad5m">FlashForge Adventurer 5M</option>
+              <option value="flashforge_creator5">FlashForge Creator 5</option>
             </select>
             {isPrusaProvider && (
               <div className="mt-3">
@@ -7234,6 +7269,11 @@ function AddPrinterModal({
             {isElegooSDCPProvider && (
               <p className="text-xs text-bambu-gray mt-1">
                 Elegoo SDCP uses the printer's local LAN WebSocket at ws://printer-host:3030/websocket. No API key is required. Initial support is status/test only for Centauri Carbon-class SDCP firmware.
+              </p>
+            )}
+            {isFlashForgeProvider && (
+              <p className="text-xs text-bambu-gray mt-1">
+                FlashForge uses its local HTTP API, usually at port 8898. Enter the printer serial number and check code from the printer settings below.
               </p>
             )}
           </div>
@@ -7549,6 +7589,46 @@ function AddPrinterModal({
                     onChange={(e) => setForm({ ...form, access_code: e.target.value })}
                     placeholder={t('printers.modal.fromPrinterSettings')}
                   />
+                </div>
+              </>
+            )}
+            {isFlashForgeProvider && (
+              <>
+                <div>
+                  <label className="block text-sm text-bambu-gray mb-1">FlashForge serial number</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    value={form.serial_number || ''}
+                    onChange={(e) => setForm({ ...form, serial_number: e.target.value })}
+                    placeholder="Printer serial number"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-bambu-gray mb-1">FlashForge check code</label>
+                  <input
+                    type="password"
+                    required
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    value={form.auth_token || ''}
+                    onChange={(e) => setForm({ ...form, auth_token: e.target.value })}
+                    placeholder="Check code from printer settings"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="flashforge_http_port" className="block text-sm text-bambu-gray mb-1">FlashForge HTTP port</label>
+                  <input
+                    id="flashforge_http_port"
+                    type="number"
+                    min={1}
+                    max={65535}
+                    required
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    value={parseFlashForgeHttpPort(form.provider_options)}
+                    onChange={(e) => setForm({ ...form, provider_options: buildFlashForgeProviderOptions(Number(e.target.value)) })}
+                  />
+                  <p className="text-xs text-bambu-gray mt-1">Default: 8898. Change this only if the printer uses a different HTTP port.</p>
                 </div>
               </>
             )}

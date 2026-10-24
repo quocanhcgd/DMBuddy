@@ -63,6 +63,15 @@ export const PRINTER_MODEL_GROUPS: PrinterModelOptionGroup[] = [
     ],
   },
   {
+    label: 'FlashForge',
+    options: [
+      { value: 'Adventurer 5M', label: 'Adventurer 5M' },
+      { value: 'Adventurer 5M Pro', label: 'Adventurer 5M Pro' },
+      { value: 'Creator 5', label: 'Creator 5' },
+      { value: 'Creator 5 Pro', label: 'Creator 5 Pro' },
+    ],
+  },
+  {
     label: 'Voron',
     options: [
       { value: 'Voron V0.2', label: 'V0.2' },
