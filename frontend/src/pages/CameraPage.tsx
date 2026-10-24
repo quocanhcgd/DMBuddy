@@ -779,7 +779,7 @@ export function CameraPage() {
             isK3WebRtc ? (
               <K3WebRtcViewer
                 key={imageKey}
-                signalingUrl={webRtcUrl}
+                printerId={id}
                 className="w-full h-full min-h-[320px] object-contain bg-black"
                 onReady={handleStreamLoad}
                 onError={handleStreamError}

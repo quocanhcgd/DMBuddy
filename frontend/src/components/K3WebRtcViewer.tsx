@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
+import { api } from '../api/client';
 
 interface K3WebRtcViewerProps {
-  signalingUrl: string;
+  printerId: number;
   className?: string;
   onReady?: () => void;
   onError?: () => void;
@@ -21,7 +22,7 @@ function encodeOffer(offer: RTCSessionDescription): string {
 }
 
 /** Native browser player for Creality K3's local WebRTC signaling service. */
-export function K3WebRtcViewer({ signalingUrl, className, onReady, onError }: K3WebRtcViewerProps) {
+export function K3WebRtcViewer({ printerId, className, onReady, onError }: K3WebRtcViewerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const onReadyRef = useRef(onReady);
   const onErrorRef = useRef(onError);
@@ -33,7 +34,7 @@ export function K3WebRtcViewer({ signalingUrl, className, onReady, onError }: K3
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !signalingUrl) return;
+    if (!video) return;
 
     let disposed = false;
     let peer: RTCPeerConnection | null = null;
@@ -92,13 +93,8 @@ export function K3WebRtcViewer({ signalingUrl, className, onReady, onError }: K3
           });
         }
         if (disposed || currentAttempt !== attempt || !currentPeer.localDescription) return;
-        const response = await fetch(signalingUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'plain/text' },
-          body: encodeOffer(currentPeer.localDescription),
-        });
-        if (!response.ok) throw new Error(`K3 signaling returned HTTP ${response.status}`);
-        await currentPeer.setRemoteDescription(decodeAnswer(await response.text()));
+        const response = await api.postK3WebRtcOffer(printerId, encodeOffer(currentPeer.localDescription));
+        await currentPeer.setRemoteDescription(decodeAnswer(response.answer));
         fallbackTimeout = window.setTimeout(() => {
           if (disposed || currentAttempt !== attempt || video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return;
           if (direction === 'recvonly') void connect('sendrecv');
@@ -122,7 +118,7 @@ export function K3WebRtcViewer({ signalingUrl, className, onReady, onError }: K3
       peer?.close();
       video.srcObject = null;
     };
-  }, [signalingUrl]);
+  }, [printerId]);
 
   return (
     <video

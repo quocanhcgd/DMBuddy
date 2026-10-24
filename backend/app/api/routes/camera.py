@@ -1,13 +1,18 @@
 """Camera streaming API endpoints for Bambu Lab printers."""
 
 import asyncio
+import base64
+import binascii
+import json
 import logging
 import os
 import subprocess
 import sys
 from collections.abc import AsyncGenerator
 from typing import Any
+from urllib.parse import urlparse
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
@@ -637,6 +642,80 @@ async def create_stream_token(
     to camera stream/snapshot URLs loaded via <img> tags.
     """
     return {"token": await create_camera_stream_token()}
+
+
+@router.post("/{printer_id}/camera/k3-webrtc-offer")
+async def k3_webrtc_offer(
+    printer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+):
+    """Relay only K3 WebRTC signaling through this origin.
+
+    The browser still negotiates and receives the actual media directly from
+    the printer. Relaying the small SDP exchange avoids cross-origin HTTP and
+    mixed-content restrictions in production deployments.
+    """
+    printer = await get_printer_or_404(printer_id, db)
+    effective_camera = get_effective_camera_source(printer)
+    camera_url = str(effective_camera.url or "")
+    parsed_url = urlparse(camera_url)
+    model = str(getattr(printer, "model", None) or "").lower()
+    provider = str(getattr(printer, "provider", None) or "").lower()
+    configured_host = str(getattr(printer, "ip_address", None) or "").strip()
+    parsed_host = urlparse(configured_host if "://" in configured_host else f"http://{configured_host}").hostname
+
+    if (
+        provider not in {"klipper", "fluidd", "mainsail", "moonraker"}
+        or "k3" not in model
+        or effective_camera.camera_type != "webrtc"
+        or not parsed_host
+        or parsed_url.scheme != "http"
+        or parsed_url.hostname != parsed_host
+        or parsed_url.port != 8000
+        or parsed_url.path != "/call/webrtc_local"
+    ):
+        raise HTTPException(status_code=409, detail="Printer is not configured with a Creality K3 WebRTC camera")
+
+    try:
+        payload = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=422, detail="Expected a JSON WebRTC offer") from None
+    offer = payload.get("offer") if isinstance(payload, dict) else None
+    if not isinstance(offer, str) or not offer or len(offer) > 128_000:
+        raise HTTPException(status_code=422, detail="Invalid WebRTC offer")
+    try:
+        offer_json = json.loads(base64.b64decode(offer, validate=True))
+    except (binascii.Error, ValueError, json.JSONDecodeError):
+        raise HTTPException(status_code=422, detail="WebRTC offer must be Base64-encoded JSON") from None
+    if not isinstance(offer_json, dict) or offer_json.get("type") != "offer" or not offer_json.get("sdp"):
+        raise HTTPException(status_code=422, detail="Invalid WebRTC offer description")
+
+    try:
+        # The printer is a LAN endpoint. Do not let HTTP(S)_PROXY environment
+        # variables route this private request through an external proxy.
+        async with httpx.AsyncClient(timeout=10, follow_redirects=False, trust_env=False) as client:
+            upstream = await client.post(
+                camera_url,
+                content=offer,
+                headers={"Content-Type": "plain/text"},
+            )
+    except httpx.HTTPError as exc:
+        logger.warning("K3 camera signaling request failed for printer %s: %s", printer_id, type(exc).__name__)
+        raise HTTPException(status_code=502, detail="Could not reach the K3 camera signaling service") from None
+
+    if upstream.status_code != 200:
+        logger.warning("K3 camera signaling returned HTTP %s for printer %s", upstream.status_code, printer_id)
+        raise HTTPException(status_code=502, detail="K3 camera signaling rejected the offer")
+    answer = upstream.text.strip()
+    try:
+        answer_json = json.loads(base64.b64decode(answer, validate=True))
+    except (binascii.Error, ValueError, json.JSONDecodeError):
+        raise HTTPException(status_code=502, detail="K3 returned an invalid WebRTC answer") from None
+    if not isinstance(answer_json, dict) or answer_json.get("type") != "answer" or not answer_json.get("sdp"):
+        raise HTTPException(status_code=502, detail="K3 returned an invalid WebRTC answer")
+    return {"answer": answer}
 
 
 @router.get("/{printer_id}/camera/stream")

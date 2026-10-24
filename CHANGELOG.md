@@ -5,6 +5,12 @@ The historical upstream changelog is preserved after that section for fork/upstr
 
 ## Printbuddy
 
+### 0.2.5.10 - 2026-10-24
+
+#### Fixed
+- Routed Creality K3 WebRTC signaling through the Printbuddy origin so the browser can negotiate the camera without direct cross-origin HTTP requests.
+- Ensured LAN signaling requests bypass ambient HTTP proxy variables and added validation and integration coverage for K3 offer/answer exchange failures.
+
 ### 0.2.5.9 - 2026-10-23
 
 #### Fixed

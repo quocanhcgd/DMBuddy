@@ -12,6 +12,113 @@ from httpx import AsyncClient
 class TestCameraAPI:
     """Integration tests for /api/v1/printers/{id}/camera/ endpoints."""
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_k3_webrtc_offer_relays_offer_and_answer(self, async_client: AsyncClient, printer_factory):
+        """Only the signaling exchange is proxied; preserve K3's base64 payload."""
+        import base64
+        import json
+
+        printer = await printer_factory(
+            provider="moonraker",
+            model="Creality K3",
+            ip_address="192.168.0.158",
+        )
+        offer = base64.b64encode(json.dumps({"type": "offer", "sdp": "v=0\\r\\n"}).encode()).decode()
+        answer = base64.b64encode(json.dumps({"type": "answer", "sdp": "v=0\\r\\n"}).encode()).decode()
+
+        class FakeResponse:
+            status_code = 200
+            text = answer
+
+        class FakeClient:
+            def __init__(self, **kwargs):
+                assert kwargs["follow_redirects"] is False
+                assert kwargs["trust_env"] is False
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            async def post(self, url, *, content, headers):
+                assert url == "http://192.168.0.158:8000/call/webrtc_local"
+                assert content == offer
+                assert headers == {"Content-Type": "plain/text"}
+                return FakeResponse()
+
+        with patch("backend.app.api.routes.camera.httpx.AsyncClient", FakeClient):
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/camera/k3-webrtc-offer",
+                json={"offer": offer},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"answer": answer}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_k3_webrtc_offer_rejects_non_k3_printer(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(provider="moonraker", model="Ender 3", ip_address="192.168.0.158")
+        response = await async_client.post(
+            f"/api/v1/printers/{printer.id}/camera/k3-webrtc-offer",
+            json={"offer": "e30="},
+        )
+        assert response.status_code == 409
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_k3_webrtc_offer_rejects_malformed_offer(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(
+            provider="moonraker",
+            model="Creality K3",
+            ip_address="192.168.0.158",
+        )
+        response = await async_client.post(
+            f"/api/v1/printers/{printer.id}/camera/k3-webrtc-offer",
+            json={"offer": "not-base64"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_k3_webrtc_offer_maps_upstream_failure(self, async_client: AsyncClient, printer_factory):
+        import base64
+        import json
+
+        printer = await printer_factory(
+            provider="moonraker",
+            model="Creality K3",
+            ip_address="192.168.0.158",
+        )
+        offer = base64.b64encode(json.dumps({"type": "offer", "sdp": "v=0\\r\\n"}).encode()).decode()
+
+        class FakeResponse:
+            status_code = 503
+            text = "unavailable"
+
+        class FakeClient:
+            def __init__(self, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            async def post(self, *args, **kwargs):
+                return FakeResponse()
+
+        with patch("backend.app.api.routes.camera.httpx.AsyncClient", FakeClient):
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/camera/k3-webrtc-offer",
+                json={"offer": offer},
+            )
+
+        assert response.status_code == 502
+
     # ========================================================================
     # Camera Stop Endpoint
     # ========================================================================

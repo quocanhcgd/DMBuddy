@@ -760,7 +760,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
             isK3WebRtc ? (
               <K3WebRtcViewer
                 key={imageKey}
-                signalingUrl={webRtcUrl}
+                printerId={printerId}
                 className="w-full h-full min-h-[220px] object-contain bg-black"
                 onReady={handleStreamLoad}
                 onError={handleStreamError}

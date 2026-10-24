@@ -5908,6 +5908,11 @@ export const api = {
   // Camera
   getCameraStreamToken: () =>
     request<{ token: string }>('/printers/camera/stream-token', { method: 'POST' }),
+  postK3WebRtcOffer: (printerId: number, offer: string) =>
+    request<{ answer: string }>(`/printers/${printerId}/camera/k3-webrtc-offer`, {
+      method: 'POST',
+      body: JSON.stringify({ offer }),
+    }),
 
   // Long-lived camera-stream tokens (#1108)
   createLongLivedCameraToken: (payload: { name: string; expires_in_days: number }) =>
