@@ -5,6 +5,11 @@ The historical upstream changelog is preserved after that section for fork/upstr
 
 ## Printbuddy
 
+### 0.2.5.13 - 2026-10-25
+
+#### Fixed
+- Show embedded thumbnails in the printer file manager for Klipper G-code even when Moonraker omits thumbnail metadata, and fetch protected thumbnail endpoints with the user's authorization token.
+
 ### 0.2.5.12 - 2026-10-25
 
 #### Fixed

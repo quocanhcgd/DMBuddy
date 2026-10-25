@@ -61,6 +61,12 @@ export function setAuthToken(token: string | null, persistence: TokenPersistence
 }
 
 export function getAuthToken(): string | null {
+  if (authToken) return authToken;
+  try {
+    authToken = sessionStorage.getItem('auth_token') ?? localStorage.getItem('auth_token');
+  } catch {
+    // Storage may be unavailable in private browsing; keep the in-memory value.
+  }
   return authToken;
 }
 

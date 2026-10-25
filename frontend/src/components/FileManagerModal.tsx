@@ -24,7 +24,7 @@ import {
   ListPlus,
   Play,
 } from 'lucide-react';
-import { api, ApiError, type PrinterProvider } from '../api/client';
+import { api, ApiError, getAuthToken, type PrinterProvider } from '../api/client';
 import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
 import { PrintModal } from './PrintModal';
@@ -272,6 +272,66 @@ function getFileIcon(filename: string, isDirectory: boolean) {
     default:
       return File;
   }
+}
+
+interface PrinterFileThumbnailProps {
+  src: string;
+  alt: string;
+  Icon: typeof File;
+  iconClassName: string;
+}
+
+function PrinterFileThumbnail({ src, alt, Icon, iconClassName }: PrinterFileThumbnailProps) {
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    setStatus('loading');
+    setImageSrc(null);
+
+    const controller = new AbortController();
+    let objectUrl: string | null = null;
+    const auth = getAuthToken();
+    const headers: Record<string, string> = auth ? { Authorization: `Bearer ${auth}` } : {};
+
+    fetch(src, { headers, credentials: 'include', cache: 'no-store', signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Thumbnail request failed: ${response.status}`);
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.startsWith('image/')) throw new Error('Thumbnail response is not an image');
+        return response.blob();
+      })
+      .then((blob) => {
+        if (controller.signal.aborted) return;
+        objectUrl = URL.createObjectURL(blob);
+        setImageSrc(objectUrl);
+        setStatus('loaded');
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setStatus('error');
+      });
+
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [src]);
+
+  return (
+    <div className="w-10 h-10 flex-shrink-0 rounded bg-bambu-dark-tertiary flex items-center justify-center overflow-hidden">
+      {status !== 'loaded' && <Icon className={iconClassName} aria-hidden="true" />}
+      {status !== 'error' && imageSrc && (
+        <img
+          src={imageSrc}
+          alt={alt}
+          loading="lazy"
+          onLoad={() => setStatus('loaded')}
+          onError={() => setStatus('error')}
+          className={`w-full h-full object-cover ${status === 'loaded' ? '' : 'hidden'}`}
+        />
+      )}
+    </div>
+  );
 }
 
 type SortOption = 'name-asc' | 'name-desc' | 'size-asc' | 'size-desc' | 'date-asc' | 'date-desc';
@@ -815,6 +875,16 @@ export function FileManagerModal({ printerId, printerName, printerProvider, prin
                       (lowerName.endsWith('.3mf') ||
                         lowerName.endsWith('.gcode') ||
                         lowerName.endsWith('.stl'));
+                    const hasEmbeddedThumbnail =
+                      !file.is_directory &&
+                      (Boolean(file.thumbnail_url) ||
+                        (isMoonrakerPrinter &&
+                          (lowerName.endsWith('.gcode') ||
+                            lowerName.endsWith('.gco') ||
+                            lowerName.endsWith('.g') ||
+                            lowerName.endsWith('.bgcode') ||
+                            lowerName.endsWith('.3mf') ||
+                            lowerName.includes('.gcode.'))));
 
                     return (
                       <div
@@ -843,13 +913,13 @@ export function FileManagerModal({ printerId, printerName, printerProvider, prin
                             )}
                           </button>
                         ) : null}
-                        {file.thumbnail_url ? (
-                          <img
+                        {hasEmbeddedThumbnail ? (
+                          <PrinterFileThumbnail
+                            key={`${file.path}:${file.thumbnail_url || ''}`}
                             src={api.getPrinterFileThumbnailUrl(printerId, file.path)}
-                            alt=""
-                            loading="lazy"
-                            onError={(event) => { event.currentTarget.style.display = 'none'; }}
-                            className="w-10 h-10 flex-shrink-0 rounded object-cover bg-bambu-dark-tertiary"
+                            alt={`${file.name} thumbnail`}
+                            Icon={FileIcon}
+                            iconClassName={`w-5 h-5 ${file.is_directory ? 'text-bambu-green' : 'text-bambu-gray'}`}
                           />
                         ) : (
                           <FileIcon

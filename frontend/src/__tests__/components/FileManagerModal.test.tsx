@@ -3,10 +3,11 @@
  * Tests file browsing, selection, navigation, and file operations.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { render } from '../utils';
 import { FileManagerModal } from '../../components/FileManagerModal';
+import { setAuthToken } from '../../api/client';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 
@@ -51,6 +52,7 @@ describe('FileManagerModal', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    setAuthToken('test-printer-file-token');
     server.use(
       http.get('/api/v1/printers/:id/files', () => {
         return HttpResponse.json({ files: mockFiles });
@@ -65,6 +67,11 @@ describe('FileManagerModal', () => {
         return HttpResponse.json([{ id: 1, printer_id: 1, spool_id: 1, ams_id: -1, tray_id: 0 }]);
       })
     );
+  });
+
+  afterEach(() => {
+    setAuthToken(null);
+    vi.unstubAllGlobals();
   });
 
   describe('rendering', () => {
@@ -154,6 +161,41 @@ describe('FileManagerModal', () => {
         expect(screen.getByText('benchy.gcode.3mf')).toBeInTheDocument();
         expect(container.querySelector('img[src*="files/thumbnail"]')).toBeInTheDocument();
       });
+    });
+
+    it('requests embedded thumbnails for Moonraker G-code when the listing has no thumbnail URL', async () => {
+      const thumbnailRequest = vi.fn();
+      server.use(
+        http.get('/api/v1/printers/:id/files/thumbnail', ({ request }) => {
+          thumbnailRequest(request.headers.get('authorization'));
+          return new HttpResponse(new Uint8Array([137, 80, 78, 71]), {
+            headers: { 'Content-Type': 'image/png' },
+          });
+        })
+      );
+      const NativeURL = globalThis.URL;
+      class TestURL extends NativeURL {}
+      Object.assign(TestURL, {
+        createObjectURL: vi.fn(() => 'blob:printer-thumbnail'),
+        revokeObjectURL: vi.fn(),
+      });
+      vi.stubGlobal('URL', TestURL);
+
+      const { container } = render(
+        <FileManagerModal
+          printerId={1}
+          printerName="Creality K3"
+          printerProvider="klipper"
+          printerModel="Creality K3"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('print_job.gcode')).toBeInTheDocument();
+        expect(container.querySelector('img[src="blob:printer-thumbnail"]')).toBeInTheDocument();
+      });
+      expect(thumbnailRequest).toHaveBeenCalledWith('Bearer test-printer-file-token');
     });
 
     it('does not show file sizes in the file list', async () => {
