@@ -11,7 +11,6 @@ import {
   Layers,
   Search,
   Filter,
-  Image,
   Box,
   Printer,
   Upload,
@@ -696,21 +695,16 @@ function ArchiveCard({
         onMouseEnter={() => setShowPlateNav(true)}
         onMouseLeave={() => setShowPlateNav(false)}
       >
-        {archive.thumbnail_path ? (
-          <img
-            src={
-              currentPlateIndex !== null && plates.length > 0
-                ? api.getArchivePlateThumbnail(archive.id, plates[displayPlateIndex]?.index ?? 0)
-                : api.getArchiveThumbnail(archive.id)
-            }
-            alt={archive.print_name || archive.filename}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <Image className="w-12 h-12 text-bambu-dark-tertiary" />
-          </div>
-        )}
+        <img
+          src={
+            currentPlateIndex !== null && plates.length > 0
+              ? api.getArchivePlateThumbnail(archive.id, plates[displayPlateIndex]?.index ?? 0)
+              : api.getArchiveThumbnail(archive.id)
+          }
+          alt={archive.print_name || archive.filename}
+          className="w-full h-full object-cover"
+          onError={(event) => { event.currentTarget.style.display = 'none'; }}
+        />
         {/* Plate navigation - only show for multi-plate archives */}
         {isMultiPlate && plates.length > 1 && (
           <>
@@ -2033,17 +2027,12 @@ function ArchiveListRow({
               )}
             </button>
           )}
-          {archive.thumbnail_path ? (
-            <img
-              src={api.getArchiveThumbnail(archive.id)}
-              alt=""
-              className="w-10 h-10 object-cover rounded"
-            />
-          ) : (
-            <div className="w-10 h-10 bg-bambu-dark rounded flex items-center justify-center">
-              <Image className="w-5 h-5 text-bambu-dark-tertiary" />
-            </div>
-          )}
+          <img
+            src={api.getArchiveThumbnail(archive.id)}
+            alt=""
+            className="w-10 h-10 object-cover rounded"
+            onError={(event) => { event.currentTarget.style.display = 'none'; }}
+          />
         </div>
         <div className="col-span-4">
           <div className="flex items-center gap-2">

@@ -66,7 +66,9 @@ from backend.app.schemas.library import (
 )
 from backend.app.schemas.slicer import SliceRequest, SliceResponse
 from backend.app.services.archive import ThreeMFParser
+from backend.app.services.gcode_thumbnail import extract_3mf_thumbnail, extract_gcode_thumbnail
 from backend.app.services.stl_thumbnail import generate_stl_thumbnail
+from backend.app.services.thumbnail_cache import cache_thumbnail, get_thumbnail_cache_dir
 from backend.app.utils.threemf_tools import (
     extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
@@ -95,9 +97,7 @@ def get_library_files_dir() -> Path:
 
 def get_library_thumbnails_dir() -> Path:
     """Get the directory for library thumbnails."""
-    thumbnails_dir = get_library_dir() / "thumbnails"
-    thumbnails_dir.mkdir(parents=True, exist_ok=True)
-    return thumbnails_dir
+    return get_thumbnail_cache_dir()
 
 
 def to_relative_path(absolute_path: Path | str) -> str:
@@ -4452,6 +4452,23 @@ async def get_thumbnail(
         raise HTTPException(status_code=404, detail="File not found")
 
     abs_thumb_path = to_absolute_path(file.thumbnail_path)
+    if (not abs_thumb_path or not abs_thumb_path.exists()) and file.file_type in {"gcode", "3mf"}:
+        source_path = to_absolute_path(file.file_path)
+        preview = None
+        if source_path and source_path.exists():
+            try:
+                if file.file_type == "3mf":
+                    preview = extract_3mf_thumbnail(source_path.read_bytes())
+                else:
+                    with source_path.open("rb") as source:
+                        preview = extract_gcode_thumbnail(source.read(8 * 1024 * 1024))
+            except OSError:
+                preview = None
+        if preview:
+            cached = cache_thumbnail(f"library_{file.id}", preview.data, preview.media_type)
+            file.thumbnail_path = to_relative_path(cached)
+            await db.commit()
+            abs_thumb_path = cached
     if not abs_thumb_path or not abs_thumb_path.exists():
         raise HTTPException(status_code=404, detail="Thumbnail not found")
 

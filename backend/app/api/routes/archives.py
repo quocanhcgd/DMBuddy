@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import logging
@@ -23,12 +24,16 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
+from backend.app.models.printer import Printer
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate, ReprintRequest
 from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
+from backend.app.services.gcode_thumbnail import extract_3mf_thumbnail, extract_gcode_thumbnail
+from backend.app.services.printer_providers.factory import MOONRAKER_PROVIDERS, create_printer_client
+from backend.app.services.thumbnail_cache import cache_thumbnail
 from backend.app.utils.http import build_content_disposition
 from backend.app.utils.threemf_tools import (
     extract_embedded_presets_from_3mf,
@@ -1845,23 +1850,73 @@ async def get_thumbnail(
     """
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
-    if not archive or not archive.thumbnail_path:
+    if not archive:
         raise HTTPException(404, "Thumbnail not found")
 
-    thumb_path = settings.base_dir / archive.thumbnail_path
-    if not thumb_path.exists():
-        raise HTTPException(404, "Thumbnail file not found")
+    thumb_path = settings.base_dir / archive.thumbnail_path if archive.thumbnail_path else None
+    if thumb_path and thumb_path.exists():
+        mtime = int(thumb_path.stat().st_mtime)
+        return FileResponse(
+            path=thumb_path,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400", "ETag": f'"{mtime}"'},
+        )
 
-    # Use file modification time as ETag to bust cache
-    mtime = int(thumb_path.stat().st_mtime)
+    archive_file = settings.base_dir / archive.file_path if archive.file_path else None
+    thumbnail = None
+    if archive_file and archive_file.is_file():
+        try:
+            if archive_file.suffix.lower() == ".3mf":
+                thumbnail = extract_3mf_thumbnail(archive_file.read_bytes())
+            elif archive_file.suffix.lower() in {".gcode", ".gco", ".g", ".bgcode"}:
+                with archive_file.open("rb") as source:
+                    thumbnail = extract_gcode_thumbnail(source.read(8 * 1024 * 1024))
+        except OSError:
+            thumbnail = None
 
-    return FileResponse(
-        path=thumb_path,
-        media_type="image/png",
-        headers={
-            "Cache-Control": "no-cache, must-revalidate",
-            "ETag": f'"{mtime}"',
-        },
+    if thumbnail is None and archive.printer_id:
+        printer_result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
+        printer = printer_result.scalar_one_or_none()
+        provider = str(getattr(printer, "provider", "") or "").lower() if printer else ""
+        if printer and provider in MOONRAKER_PROVIDERS:
+            extra_data = archive.extra_data if isinstance(archive.extra_data, dict) else {}
+            print_data = extra_data.get("_print_data", {})
+            raw_data = print_data.get("raw_data", {}) if isinstance(print_data, dict) else {}
+            virtual_sdcard = raw_data.get("virtual_sdcard", {}) if isinstance(raw_data, dict) else {}
+            metadata_path = virtual_sdcard.get("file_path") if isinstance(virtual_sdcard, dict) else None
+            try:
+                client = create_printer_client(printer)
+                download_thumbnail = getattr(client, "download_gcode_thumbnail", None)
+                if callable(download_thumbnail):
+                    candidates = [archive.filename]
+                    if isinstance(metadata_path, str) and metadata_path.strip():
+                        candidates.insert(0, metadata_path)
+                    for candidate in candidates:
+                        thumbnail = await asyncio.to_thread(download_thumbnail, candidate)
+                        if thumbnail is not None:
+                            break
+            except Exception:
+                logger.warning("Failed to retrieve remote archive thumbnail for archive %s", archive_id, exc_info=True)
+
+    if thumbnail is None:
+        raise HTTPException(404, "Thumbnail not found")
+
+    try:
+        cached_path = cache_thumbnail(f"archive_{archive.id}", thumbnail.data, thumbnail.media_type)
+        archive.thumbnail_path = str(cached_path.relative_to(settings.base_dir))
+        await db.commit()
+        return FileResponse(
+            path=cached_path,
+            media_type=thumbnail.media_type,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    except OSError:
+        logger.warning("Could not persist archive thumbnail cache for %s", archive_id, exc_info=True)
+
+    return Response(
+        content=thumbnail.data,
+        media_type=thumbnail.media_type,
+        headers={"Cache-Control": "public, max-age=3600"},
     )
 
 

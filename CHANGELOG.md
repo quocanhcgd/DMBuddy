@@ -5,6 +5,11 @@ The historical upstream changelog is preserved after that section for fork/upstr
 
 ## Printbuddy
 
+### 0.2.5.12 - 2026-10-25
+
+#### Fixed
+- Restore missing G-code and 3MF thumbnails on demand for library files and print archives, cache the extracted images in shared persistent storage, and retrieve older Klipper archive previews from Moonraker when the original file is not stored locally.
+
 ### 0.2.5.11 - 2026-10-25
 
 #### Changed

@@ -732,11 +732,12 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
     >
       {/* Thumbnail */}
       <div className="aspect-square bg-bambu-dark flex items-center justify-center overflow-hidden">
-        {file.thumbnail_path ? (
+        {file.thumbnail_path || file.file_type === 'gcode' || file.file_type === '3mf' ? (
           <img
             src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersion ? ((api.getLibraryFileThumbnailUrl(file.id).includes('?') ? '&' : '?') + `v=${thumbnailVersion}`) : ''}`}
             alt={file.filename}
             className="w-full h-full object-cover"
+            onError={(event) => { event.currentTarget.style.display = 'none'; }}
           />
         ) : (
           <FileBox className="w-12 h-12 text-bambu-gray/30" />
@@ -2098,11 +2099,12 @@ export function FileManagerPage() {
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="relative group/thumb">
                         <div className="w-10 h-10 rounded bg-bambu-dark flex-shrink-0 overflow-hidden">
-                          {file.thumbnail_path ? (
+                          {file.thumbnail_path || file.file_type === 'gcode' || file.file_type === '3mf' ? (
                             <img
                               src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersions[file.id] ? ((api.getLibraryFileThumbnailUrl(file.id).includes('?') ? '&' : '?') + `v=${thumbnailVersions[file.id]}`) : ''}`}
                               alt=""
                               className="w-full h-full object-cover"
+                              onError={(event) => { event.currentTarget.style.display = 'none'; }}
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center">
@@ -2111,7 +2113,7 @@ export function FileManagerPage() {
                           )}
                         </div>
                         {/* Hover preview */}
-                        {file.thumbnail_path && (
+                        {(file.thumbnail_path || file.file_type === 'gcode' || file.file_type === '3mf') && (
                           <div className="absolute left-0 top-full mt-2 z-50 hidden group-hover/thumb:block">
                             <div className="w-48 h-48 rounded-lg bg-bambu-dark-secondary border border-bambu-dark-tertiary shadow-xl overflow-hidden">
                               <img
