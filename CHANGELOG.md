@@ -5,6 +5,11 @@ The historical upstream changelog is preserved after that section for fork/upstr
 
 ## Printbuddy
 
+### 0.2.5.14 - 2026-10-25
+
+#### Fixed
+- Show the active print thumbnail on Bambu printers such as H2C when firmware reports only the internal plate G-code path and omits the print subtask name, by falling back to the archive matched by subtask ID.
+
 ### 0.2.5.13 - 2026-10-25
 
 #### Fixed

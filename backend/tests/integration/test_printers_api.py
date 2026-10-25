@@ -1049,6 +1049,44 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_cover_falls_back_to_active_archive_when_bambu_omits_subtask_name(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session, tmp_path
+    ):
+        """Bambu H2C can report only /data/Metadata/plate_N.gcode while
+        printing. Reuse the archive matched by subtask_id instead of returning
+        404 because subtask_name is absent."""
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+        thumbnail_path = tmp_path / "h2c-print.png"
+        thumbnail_path.write_bytes(b"H2C_ARCHIVE_THUMBNAIL")
+        await archive_factory(
+            printer.id,
+            status="printing",
+            subtask_id="h2c-active-subtask",
+            thumbnail_path=str(thumbnail_path),
+        )
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "RUNNING"
+        state.gcode_file = "/data/Metadata/plate_5.gcode"
+        state.subtask_name = None
+        state.subtask_id = "h2c-active-subtask"
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/cover")
+
+        assert response.status_code == 200
+        assert response.content == b"H2C_ARCHIVE_THUMBNAIL"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_cover_3mf_scan_fallback_for_per_plate_archive(
         self, async_client: AsyncClient, printer_factory, db_session, tmp_path
     ):

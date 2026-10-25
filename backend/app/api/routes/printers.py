@@ -12,7 +12,7 @@ from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1623,9 +1623,45 @@ async def get_printer_cover(
             except Exception as exc:  # noqa: BLE001 - preserve existing 3MF cover fallback
                 logger.debug("Could not extract active G-code thumbnail for printer %s: %s", printer_id, exc)
 
-    # Use subtask_name as the 3MF filename (gcode_file is the path inside the 3MF)
+    # Some Bambu firmware reports only the selected plate's internal G-code
+    # path (for example /data/Metadata/plate_5.gcode) and omits subtask_name.
+    # In that case, reuse the archive already captured for this MQTT subtask.
     subtask_name = state.subtask_name
+    plate_num = resolve_plate_id(state)
     if not subtask_name:
+        if state.subtask_id:
+            from backend.app.models.archive import PrintArchive
+
+            archive_result = await db.execute(
+                select(PrintArchive)
+                .where(PrintArchive.printer_id == printer_id)
+                .where(PrintArchive.subtask_id == str(state.subtask_id))
+                .order_by(PrintArchive.created_at.desc())
+                .limit(1)
+            )
+            archive = archive_result.scalar_one_or_none()
+            if archive is not None:
+                thumbnail_path = settings.base_dir / archive.thumbnail_path if archive.thumbnail_path else None
+                if thumbnail_path and thumbnail_path.is_file():
+                    return FileResponse(path=thumbnail_path, media_type="image/png")
+
+                archive_path = settings.base_dir / archive.file_path if archive.file_path else None
+                if archive_path and archive_path.is_file():
+                    try:
+                        if archive_path.suffix.lower() == ".3mf":
+                            thumbnail = extract_3mf_thumbnail(archive_path.read_bytes(), plate_index=plate_num)
+                        elif archive_path.suffix.lower() in {".gcode", ".gco", ".g", ".bgcode"}:
+                            from backend.app.services.gcode_thumbnail import extract_gcode_thumbnail
+
+                            with archive_path.open("rb") as source:
+                                thumbnail = extract_gcode_thumbnail(source.read(8 * 1024 * 1024))
+                        else:
+                            thumbnail = None
+                    except OSError:
+                        thumbnail = None
+                    if thumbnail is not None:
+                        return Response(content=thumbnail.data, media_type=thumbnail.media_type)
+
         raise HTTPException(404, f"No subtask_name in printer state (state={state.state})")
 
     # Resolve the active plate. Precedence (#1166):
@@ -1637,7 +1673,6 @@ async def get_printer_cover(
     #      printer's gcode_file echo is just the .3mf filename)
     #   4. Fall back to plate 1
     # The 3MF-scan fallback runs later — after the file is on disk.
-    plate_num = resolve_plate_id(state)
     if plate_num is not None:
         logger.info("Cover: resolved plate %s before download (subtask=%s)", plate_num, subtask_name)
 
