@@ -5,6 +5,11 @@ The historical upstream changelog is preserved after that section for fork/upstr
 
 ## Printbuddy
 
+### 0.2.5.11 - 2026-10-25
+
+#### Changed
+- Show the Creality K3 system firmware version from its local firmware API, remove MCU build identifiers from printer firmware details, and display hardware version only when an explicit value is reported.
+
 ### 0.2.5.10 - 2026-10-24
 
 #### Fixed

@@ -1391,10 +1391,8 @@ async def get_printer_status(
             {
                 "klippy_state": getattr(state, "klippy_state", None),
                 "klipper_software_version": getattr(state, "klipper_software_version", None),
-                **{
-                    f"mcu_firmware_{name}": version
-                    for name, version in getattr(state, "mcu_firmware_versions", {}).items()
-                },
+                "creality_firmware_version": getattr(state, "creality_firmware_version", None),
+                "hardware_version": getattr(state, "hardware_version", None),
             }
             if printer.provider in {"klipper", "mainsail", "fluidd"}
             else getattr(state, "sdcp_connection", None) or (state.raw_data or {}).get("sdcp_connection")

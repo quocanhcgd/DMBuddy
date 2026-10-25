@@ -67,6 +67,8 @@ class MoonrakerPrinterState:
     moonraker_version: str | None = None
     klippy_state: str | None = None
     klipper_software_version: str | None = None
+    creality_firmware_version: str | None = None
+    hardware_version: str | None = None
     mcu_firmware_versions: dict[str, str] = field(default_factory=dict)
 
 
@@ -634,6 +636,35 @@ class MoonrakerPrinterClient:
     def _is_creality_k3(self) -> bool:
         normalized = "".join(character for character in self.printer_model.lower() if character.isalnum())
         return normalized in {"k3", "crealityk3"}
+
+    def _read_creality_firmware_version(self) -> None:
+        """Read Creality's K3 firmware API backed by system_version.json."""
+        if not self._is_creality_k3():
+            return
+        parsed = urlparse(self.base_url)
+        if not parsed.hostname:
+            return
+        host = parsed.hostname
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        origin = urlunparse((parsed.scheme or "http", f"{host}:4408", "", "", "", ""))
+        try:
+            response = httpx.get(
+                urljoin(origin + "/", "creality-firmware-version.json"),
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                return
+            version = payload.get("sys_version") or payload.get("firmware_version")
+            if version and str(version).strip().lower() not in {"?", "unknown", "none"}:
+                self.state.creality_firmware_version = str(version).strip()
+            hardware = payload.get("hw_version") or payload.get("hardware_version")
+            if hardware and str(hardware).strip().lower() not in {"?", "unknown", "none"}:
+                self.state.hardware_version = str(hardware).strip()
+        except (httpx.HTTPError, ValueError, TypeError):
+            return
 
     def _configured_gcodes_path_prefixes(self) -> list[str]:
         """Return absolute Klipper gcode storage paths for Elegoo/Moonraker aliases.
@@ -1478,13 +1509,20 @@ class MoonrakerPrinterClient:
         self.state.state = _map_moonraker_state(info.get("klippy_state") or info.get("state") or "connected")
         self.state.moonraker_version = str(info["moonraker_version"]) if info.get("moonraker_version") else None
         self.state.klippy_state = str(info["klippy_state"]) if info.get("klippy_state") else None
+        self.state.klipper_software_version = None
+        self.state.creality_firmware_version = None
+        self.state.hardware_version = None
         try:
             printer_info = self._get("printer/info")
             software_version = printer_info.get("software_version")
             if software_version and str(software_version).strip().lower() not in {"?", "unknown", "none"}:
                 self.state.klipper_software_version = str(software_version)
+            hardware_version = printer_info.get("hw_version") or printer_info.get("hardware_version")
+            if hardware_version and str(hardware_version).strip().lower() not in {"?", "unknown", "none"}:
+                self.state.hardware_version = str(hardware_version)
         except Exception:  # noqa: BLE001 - printer.info is optional across Moonraker implementations
             pass
+        self._read_creality_firmware_version()
         try:
             mcu_objects = [name for name in self._available_objects() if name == "mcu" or name.startswith("mcu ")]
             mcu_status = self._query_objects(mcu_objects) if mcu_objects else {}

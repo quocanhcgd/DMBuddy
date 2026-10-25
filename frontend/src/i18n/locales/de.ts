@@ -142,6 +142,7 @@ export default {
     serialNumber: 'Seriennummer',
     internalId: 'Interne ID',
     firmwareKlipper: 'Klipper-Version',
+    hardwareVersion: 'Hardware-Version',
     firmwareMcu: 'MCU-Firmware ({{name}})',
     klipperStatus: 'Klipper-Status',
     ipAddress: 'IP-Adresse / Hostname',

@@ -288,6 +288,7 @@ export default {
     copied: 'Đã sao chép!',
     internalId: 'ID nội bộ',
     firmwareKlipper: 'Phiên bản Klipper',
+    hardwareVersion: 'Phiên bản phần cứng',
     firmwareMcu: 'Firmware MCU ({{name}})',
     klipperStatus: 'Trạng thái Klipper',
     state: 'Tiểu bang',

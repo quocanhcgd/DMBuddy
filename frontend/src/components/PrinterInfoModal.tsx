@@ -170,24 +170,16 @@ export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: 
     const details = status?.connection_details;
     const klippyState = details?.klippy_state;
     const klipperVersion = details?.klipper_software_version;
-    if (klipperVersion) {
+    const crealityFirmwareVersion = details?.creality_firmware_version;
+    const hardwareVersion = details?.hardware_version;
+    if (crealityFirmwareVersion) {
+      rows.push({ label: t('printers.firmware'), value: String(crealityFirmwareVersion) });
+    } else if (klipperVersion) {
       rows.push({ label: t('printers.firmwareKlipper'), value: String(klipperVersion) });
     }
-    Object.entries(details ?? {})
-      .filter(([key, value]) => key.startsWith('mcu_firmware_') && value)
-      .forEach(([key, value]) => {
-        const mcuName = key.slice('mcu_firmware_'.length).replace(/_/g, ' ');
-        const text = String(value);
-        rows.push({
-          label: t('printers.firmwareMcu', { name: mcuName }),
-          value: (
-            <span className="flex items-center min-w-0 justify-end">
-              <span className="font-mono truncate max-w-[14rem]" title={text}>{text}</span>
-              <CopyButton value={text} />
-            </span>
-          ),
-        });
-      });
+    if (hardwareVersion) {
+      rows.push({ label: t('printers.hardwareVersion', 'Hardware version'), value: String(hardwareVersion) });
+    }
     if (klippyState) {
       rows.push({ label: t('printers.klipperStatus'), value: String(klippyState) });
     }

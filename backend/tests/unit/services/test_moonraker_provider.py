@@ -33,6 +33,43 @@ def test_moonraker_connect_keeps_server_info_for_printer_details(monkeypatch):
     assert client.state.mcu_firmware_versions == {"main": "main-fw-1.2", "nozzle_mcu": "nozzle-fw-2.3"}
 
 
+def test_creality_k3_reads_firmware_and_hardware_from_firmware_api(monkeypatch):
+    client = MoonrakerPrinterClient("http://192.168.0.158:7125", printer_model="Creality K3")
+    monkeypatch.setattr(
+        client,
+        "_get",
+        lambda path, **kwargs: (
+            {"moonraker_version": "?", "klippy_state": "ready"}
+            if path == "server/info"
+            else {"software_version": "09faed31-dirty"}
+        ),
+    )
+    monkeypatch.setattr(client, "_available_objects", lambda: [])
+    monkeypatch.setattr(client, "request_status_update", lambda: True)
+
+    class FirmwareResponse:
+        def raise_for_status(self):
+            return None
+
+        @staticmethod
+        def json():
+            return {"sys_version": "4.0.3.1.13", "hw_version": "CR0CUF039C13"}
+
+    requested = []
+
+    def fake_get(url, **kwargs):
+        requested.append(url)
+        return FirmwareResponse()
+
+    monkeypatch.setattr("backend.app.services.printer_providers.moonraker.httpx.get", fake_get)
+
+    client.connect()
+
+    assert requested == ["http://192.168.0.158:4408/creality-firmware-version.json"]
+    assert client.state.creality_firmware_version == "4.0.3.1.13"
+    assert client.state.hardware_version == "CR0CUF039C13"
+
+
 def test_moonraker_sets_temperature_for_selected_extruder(monkeypatch):
     client = MoonrakerPrinterClient("http://u1.local:7125", printer_model="Snapmaker U1")
     commands = []

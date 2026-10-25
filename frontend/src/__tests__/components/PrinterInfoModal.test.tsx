@@ -136,7 +136,7 @@ describe('PrinterInfoModal — CopyButton clipboard fallback (#1174)', () => {
 });
 
 describe('PrinterInfoModal provider-specific details', () => {
-  it('shows Klipper stack details and labels its generated serial as an internal ID', () => {
+  it('shows the Klipper version and runtime state without presenting MCU build IDs as printer firmware', () => {
     const printer = {
       ...mockPrinter(),
       name: 'Snapmaker U1',
@@ -157,13 +157,36 @@ describe('PrinterInfoModal provider-specific details', () => {
 
     expect(screen.getByText('Internal ID')).toBeTruthy();
     expect(screen.getByText('Klipper Version')).toBeTruthy();
-    expect(screen.getByText('MCU Firmware (main)')).toBeTruthy();
     expect(screen.getByText('Klipper Status')).toBeTruthy();
     expect(screen.getByText('09faed31-dirty')).toBeTruthy();
-    expect(screen.getByText('F031_0.0.0.18-839-g8b48b14d6-dirty')).toBeTruthy();
+    expect(screen.queryByText('MCU Firmware (main)')).toBeNull();
+    expect(screen.queryByText('F031_0.0.0.18-839-g8b48b14d6-dirty')).toBeNull();
     expect(screen.getByText('ready')).toBeTruthy();
     expect(screen.queryByText('Firmware')).toBeNull();
     expect(screen.queryByText('Developer Mode')).toBeNull();
+  });
+
+  it('shows Creality system firmware and an explicit hardware version when Moonraker reports them', () => {
+    const printer = {
+      ...mockPrinter(),
+      name: 'Creality K3',
+      model: 'Creality K3',
+      provider: 'fluidd',
+    } as Printer;
+    const status = {
+      connected: true,
+      connection_details: {
+        creality_firmware_version: '4.0.3.1.13',
+        hardware_version: 'CR0CUF039C13',
+      },
+    } as PrinterStatus;
+
+    render(<PrinterInfoModal printer={printer} status={status} onClose={() => {}} />);
+
+    expect(screen.getByText('Firmware')).toBeTruthy();
+    expect(screen.getByText('4.0.3.1.13')).toBeTruthy();
+    expect(screen.getByText('Hardware Version')).toBeTruthy();
+    expect(screen.getByText('CR0CUF039C13')).toBeTruthy();
   });
 
   it('uses the four Klipper extruders reported by Moonraker instead of the saved Bambu nozzle count', () => {
