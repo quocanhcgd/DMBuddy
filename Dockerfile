@@ -69,6 +69,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Copy backend
 COPY backend/ ./backend/
+COPY backend/data/ ./backend/data/
+
+# The server reuses the Connector's bounded FlashForge LAN discovery and its
+# pure packet parser for Direct LAN printer setup.
+COPY connector/discovery.py ./connector/discovery.py
+COPY flashforge_discovery/ ./flashforge_discovery/
 
 # Shared versioned Connector protocol package. The standalone Connector does
 # not import backend.app, but the server uses these schemas for gateway frames.
@@ -76,7 +82,7 @@ COPY connector_protocol/ ./connector_protocol/
 
 # Git checkouts performed by deployment scripts may inherit a restrictive
 # umask. Ensure the non-root runtime user can read and traverse application code.
-RUN chmod -R a+rX /app/backend /app/connector_protocol
+RUN chmod -R a+rX /app/backend /app/connector /app/flashforge_discovery /app/connector_protocol
 
 # Capture the current git branch at build time. `.git/HEAD` is the only
 # .git metadata the build context lets through (see .dockerignore); it

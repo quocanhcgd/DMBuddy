@@ -53,10 +53,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { KProfilesView } from '../components/KProfilesView';
 import { LocalProfilesView } from '../components/LocalProfilesView';
 import { OrcaCloudView } from '../components/OrcaCloudView';
+import { CrealityProfilesView } from '../components/CrealityProfilesView';
 import { Toggle } from '../components/Toggle';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
-type ProfileTab = 'cloud' | 'orca_cloud' | 'local' | 'kprofiles' | 'openfilamentdatabase';
+type ProfileTab = 'cloud' | 'orca_cloud' | 'local' | 'creality' | 'kprofiles' | 'openfilamentdatabase';
 type LoginStep = 'email' | 'code' | 'token';
 type PresetType = 'all' | 'filament' | 'printer' | 'process';
 
@@ -3013,6 +3014,17 @@ export function ProfilesPage() {
           {t('profiles.tabs.local')}
         </button>
         <button
+          onClick={() => setActiveTab('creality')}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            activeTab === 'creality'
+              ? 'text-bambu-green border-bambu-green'
+              : 'text-bambu-gray hover:text-white border-transparent'
+          }`}
+        >
+          <PrinterIcon className="w-4 h-4" />
+          Creality
+        </button>
+        <button
           onClick={() => setActiveTab('kprofiles')}
           className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
             activeTab === 'kprofiles'
@@ -3114,6 +3126,9 @@ export function ProfilesPage() {
 
       {/* Local Profiles Tab */}
       {activeTab === 'local' && <LocalProfilesView />}
+
+      {/* Creality Print presets */}
+      {activeTab === 'creality' && <CrealityProfilesView />}
 
       {/* K-Profiles Tab */}
       {activeTab === 'kprofiles' && <KProfilesView />}

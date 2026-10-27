@@ -1,0 +1,13 @@
+{
+    "type": "machine_model",
+    "name": "Creality CR-6 SE",
+    "nozzle_diameter": "0.4",
+    "bed_model": "Creality CR-6 SE_buildplate_model.stl",
+    "default_bed_type": "Cool Plate",
+    "bed_texture": "Creality CR-6 SE_buildplate_texture.png",
+    "family": "Creality",
+    "hotend_model": "",
+    "machine_tech": "FFF",
+    "model_id": "Creality_CR_6_SE",
+    "default_materials": "Generic PLA;Generic PETG;Generic ABS"
+}

@@ -1,0 +1,13 @@
+{
+    "type": "machine_model",
+    "name": "Creality GS-02",
+    "nozzle_diameter": "0.4",
+    "bed_model": "creality_k1_buildplate_model.stl",
+    "default_bed_type": "High Temp Plate",
+    "bed_texture": "",
+    "family": "Creality",
+    "hotend_model": "",
+    "machine_tech": "FFF",
+    "model_id": "Creality_GS_02",
+    "default_materials": "CR-PETG;Hyper ABS;Hyper PETG;Hyper PLA;Generic ASA;Generic PLA-CF;Generic TPU;Generic ABS;Generic PETG;Generic PLA-Silk;Generic PLA;CR-ABS;CR-Silk;CR-PLA;Hyper PLA-CF"
+}

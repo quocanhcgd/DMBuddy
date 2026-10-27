@@ -27,6 +27,7 @@ from backend.app.api.routes import (
     camera,
     cloud,
     connectors,
+    creality_profiles,
     discovery,
     external_links,
     filaments,
@@ -1702,7 +1703,7 @@ def _confirm_manual_assignment_cleanup(printer_id: int, assignment_id: int, faul
 
 
 async def on_ams_change(printer_id: int, ams_data: list):
-    """Handle AMS data changes - sync to Spoolman if enabled and auto mode."""
+    """Handle provider AMS changes, syncing to the configured spool backend."""
     logger = logging.getLogger(__name__)
 
     # Snapshot BEFORE any await: if a print is active, skip weight sync later.
@@ -1711,9 +1712,10 @@ async def on_ams_change(printer_id: int, ams_data: list):
 
     _print_active = printer_id in _active_sessions
 
+    printer_info = printer_manager.get_printer(printer_id)
+
     # MQTT relay - publish AMS change
     try:
-        printer_info = printer_manager.get_printer(printer_id)
         if printer_info:
             await mqtt_relay.on_ams_change(printer_id, printer_info.name, printer_info.serial_number, ams_data)
     except Exception:
@@ -1731,6 +1733,21 @@ async def on_ams_change(printer_id: int, ams_data: list):
             )
     except Exception as e:
         logger.warning("Failed to broadcast AMS change for printer %s: %s", printer_id, e)
+
+    # The Bambu-specific callback below also auto-assigns local inventory
+    # spools. Klipper providers already report third-party RFID and must use
+    # Spoolman's generic vendor path instead of being classified as Bambu.
+    if printer_info and printer_info.provider != "bambu":
+        try:
+            async with async_session() as db:
+                from backend.app.api.routes.spoolman import get_spoolman_settings, sync_printer_ams
+
+                spoolman_settings = await get_spoolman_settings(db)
+                if spoolman_settings["enabled"] and spoolman_settings["sync_mode"] == "auto":
+                    await sync_printer_ams(printer_id=printer_id, db=db, _=None)
+        except Exception as e:
+            logger.warning("Automatic Spoolman sync failed for printer %s: %s", printer_id, e, exc_info=True)
+        return
 
     from backend.app.utils.color_utils import colors_similar as _colors_similar
 
@@ -2279,6 +2296,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
             result = await db.execute(select(Printer).where(Printer.id == printer_id))
             printer = result.scalar_one_or_none()
             printer_name = printer.name if printer else f"Printer {printer_id}"
+            printer_provider = printer.provider if printer else "bambu"
 
             # OPTIMIZATION: Fetch all spools once before processing trays
             # This eliminates redundant API calls (one per tray) when syncing multiple trays
@@ -2345,6 +2363,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         # Empty tray slot — record for local assignment cleanup
                         empty_slots.append((ams_id, tray_id_raw))
                         continue
+                    tray.provider = printer_provider or "bambu"
 
                     spool_tag = (
                         tray.tray_uuid
@@ -6117,6 +6136,9 @@ PUBLIC_API_ROUTES = {
     "/api/v1/makerworld/public/china/download",
     # Version check for updates (no sensitive data)
     "/api/v1/updates/version",
+    # Bundled public Creality slicer presets are read-only and contain no user data.
+    "/api/v1/creality-profiles",
+    "/api/v1/creality-profiles/detail",
     # Metrics endpoint handles its own prometheus_token authentication
     "/api/v1/metrics",
     # Connector enrollment authenticates with a short-lived one-time code,
@@ -6500,6 +6522,7 @@ app.include_router(cloud.router, prefix=app_settings.api_prefix)
 app.include_router(connectors.router, prefix=app_settings.api_prefix)
 app.include_router(orca_cloud.router, prefix=app_settings.api_prefix)
 app.include_router(local_presets.router, prefix=app_settings.api_prefix)
+app.include_router(creality_profiles.router, prefix=app_settings.api_prefix)
 app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)
 app.include_router(print_log.router, prefix=app_settings.api_prefix)
 app.include_router(print_queue.router, prefix=app_settings.api_prefix)

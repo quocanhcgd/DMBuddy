@@ -522,13 +522,17 @@ export default {
       dockerNote: '检测到 Docker 环境。请以 CIDR 格式输入打印机所在子网。需要在 docker-compose.yml 中设置 network_mode: host。',
       scanSubnet: '扫描子网查找打印机',
       scanSubnetMoonraker: '扫描子网查找 Moonraker',
+      scanSubnetFlashForge: '扫描子网查找 FlashForge',
       discoverNetwork: '在网络上发现打印机',
       scanningSubnet: '正在扫描子网查找拓竹打印机...',
       scanningSubnetMoonraker: '正在扫描子网查找 Moonraker 打印机...',
+      scanningSubnetFlashForge: '正在扫描子网查找 FlashForge 打印机...',
       scanningNetwork: '正在扫描网络...',
       noPrintersFoundSubnetMoonraker: '在指定子网中未找到 Moonraker 实例。',
       moonrakerNeedsAuth: '此 Moonraker 实例需要 API 令牌 — 请在下方输入。',
       moonrakerSubnetNote: '在下方端口扫描 Moonraker/Klipper API JSON（默认 7125、80，以及部分 Creality 网页界面的 4408）。使用与拓竹相同的子网列表，包括 DISCOVERY_EXTRA_SUBNETS。',
+      flashForgeSubnetNote: '在此私有局域网子网中搜索 FlashForge 打印机。选择结果以填入地址和型号；添加前请输入打印机验证码。',
+      noFlashForgeFound: '此子网中未找到 FlashForge 打印机。',
       moonrakerPorts: '要扫描的端口',
       moonrakerPortsNote: '逗号分隔。CosmOS / 反向代理 Moonraker 请使用 80。4408 仅是部分 Creality 固件的候选端口，尚未确认 K3 支持。仅列出返回 Moonraker API JSON 的主机。',
       serialRequired: '需要序列号',
@@ -675,7 +679,10 @@ export default {
   },
 
   // Archives page
-  archives: {
+    archives: {
+    collections: { all: 'All Archives', recent: 'Last 24 Hours', thisWeek: 'This Week', thisMonth: 'This Month', favorites: 'Favorites', notPrinted: 'Not Printed', printed: 'Printed', failed: 'Failed Prints', duplicates: 'Duplicates' },
+    actions: { export: 'Export', exportCsv: 'Export as CSV', exportExcel: 'Export as Excel', compare: 'Compare ({{count}})', select: 'Select', selectAll: 'Select All', selected: '{{count}} selected', upload3mf: 'Upload 3MF', reset: 'Reset', close: 'Close', tags: 'Tags', project: 'Project' },
+    filters: { allPrinters: 'All Printers', allMaterials: 'All Materials', allFiles: 'All Files', slicedGcode: 'Sliced (GCODE)', sourceOnly: 'Source Only', favorites: 'Favorites', hideFailed: 'Hide Failed', allTags: 'All Tags' },
     title: '打印归档',
     searchPlaceholder: '搜索归档...',
     filterByPrinter: '按打印机筛选',
@@ -914,6 +921,7 @@ export default {
       deleteCount: '删除 {{count}} 个',
     },
     page: {
+      autoCreated: '打印完成后会自动创建归档',
       title: '归档',
       printsCount: '{{filtered}} / {{total}} 次打印',
       dropFilesHere: '将 .3mf 文件拖放到此处',
@@ -2868,9 +2876,11 @@ export default {
     tabs: {
       cloud: '云端配置文件',
       local: '本地配置文件',
+      creality: 'Creality 配置文件',
       kprofiles: 'K 值配置',
       openFilamentDatabase: 'Open Filament Database API 设置',
     },
+    creality: { kind: { printer: '打印机', process: '工艺', filament: '耗材' }, allModels: '所有型号', allNozzles: '所有喷嘴', search: '搜索配置...', source: '来源：{{source}} · 许可证：{{license}}。保留原始数据及继承引用。', count: '{{count}} 个配置', selectProfile: '选择配置以查看设置。', inherits: '继承自 {{name}}', baseProfile: '基础配置', download: '下载 JSON' },
     localProfiles: {
       title: '本地配置文件',
       subtitle: '从 OrcaSlicer 导入和管理切片预设',

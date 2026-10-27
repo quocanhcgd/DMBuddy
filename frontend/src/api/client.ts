@@ -61,11 +61,13 @@ export function setAuthToken(token: string | null, persistence: TokenPersistence
 }
 
 export function getAuthToken(): string | null {
+  // Keep direct fetch consumers (thumbnail/blob loaders) in sync with the
+  // request helper when another tab or the login flow populated storage.
   if (authToken) return authToken;
   try {
     authToken = sessionStorage.getItem('auth_token') ?? localStorage.getItem('auth_token');
   } catch {
-    // Storage may be unavailable in private browsing; keep the in-memory value.
+    // Storage may be unavailable in private browsing; use the in-memory value.
   }
   return authToken;
 }
@@ -1664,6 +1666,18 @@ export interface LocalPresetsResponse {
   filament: LocalPreset[];
   printer: LocalPreset[];
   process: LocalPreset[];
+}
+
+export interface CrealityProfileMeta {
+  id: string;
+  name: string;
+  inherits: string | null;
+  printer: string | null;
+  nozzles: string[];
+}
+
+export interface CrealityProfileDetail extends CrealityProfileMeta {
+  setting: Record<string, unknown>;
 }
 
 export interface ImportResponse {
@@ -5914,8 +5928,14 @@ export const api = {
   // Camera
   getCameraStreamToken: () =>
     request<{ token: string }>('/printers/camera/stream-token', { method: 'POST' }),
+  postCrealityWebRtcOffer: (printerId: number, offer: string) =>
+    request<{ answer: string }>(`/printers/${printerId}/camera/creality-webrtc-offer`, {
+      method: 'POST',
+      body: JSON.stringify({ offer }),
+    }),
+  // Backwards-compatible alias used by the existing K3 viewer.
   postK3WebRtcOffer: (printerId: number, offer: string) =>
-    request<{ answer: string }>(`/printers/${printerId}/camera/k3-webrtc-offer`, {
+    request<{ answer: string }>(`/printers/${printerId}/camera/creality-webrtc-offer`, {
       method: 'POST',
       body: JSON.stringify({ offer }),
     }),
@@ -6721,6 +6741,12 @@ export const api = {
     request<{ success: boolean }>(`/local-presets/${id}`, { method: 'DELETE' }),
   refreshBaseProfileCache: () =>
     request<{ refreshed: number; failed: number; total: number }>('/local-presets/base-cache/refresh', { method: 'POST' }),
+  getCrealityProfiles: (params: { kind?: string; printer?: string; nozzle?: string; search?: string } = {}) => {
+    const query = new URLSearchParams(Object.entries(params).filter((entry): entry is [string, string] => Boolean(entry[1])));
+    return request<{ profiles: CrealityProfileMeta[]; printers: string[]; counts: Record<string, number>; license: string; source: string }>(`/creality-profiles${query.size ? `?${query}` : ''}`);
+  },
+  getCrealityProfileDetail: (id: string) =>
+    request<CrealityProfileDetail>(`/creality-profiles/detail?profile_id=${encodeURIComponent(id)}`),
 };
 
 // AMS History types
@@ -7172,6 +7198,12 @@ export const discoveryApi = {
 
   getDiscoveredMoonrakerPrinters: () =>
     request<DiscoveredPrinter[]>('/discovery/moonraker/printers'),
+
+  scanFlashForgeSubnet: (subnet: string, timeout_ms: number = 500) =>
+    request<ConnectorDiscoveryResultEntry[]>('/discovery/flashforge/scan', {
+      method: 'POST',
+      body: JSON.stringify({ subnet, timeout_ms }),
+    }),
 };
 
 // Virtual Printer types

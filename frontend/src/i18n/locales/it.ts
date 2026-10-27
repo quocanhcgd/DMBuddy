@@ -522,13 +522,17 @@ export default {
       dockerNote: 'Docker rilevato. Inserisci la sottorete della stampante in notazione CIDR. Richiede network_mode: host in docker-compose.yml.',
       scanSubnet: 'Scansiona sottorete per stampanti',
       scanSubnetMoonraker: 'Scansiona sottorete per Moonraker',
+      scanSubnetFlashForge: 'Scansiona sottorete per FlashForge',
       discoverNetwork: 'Trova stampanti in rete',
       scanningSubnet: 'Scansione sottorete per stampanti Bambu...',
       scanningSubnetMoonraker: 'Scansione sottorete per stampanti Moonraker...',
+      scanningSubnetFlashForge: 'Scansione sottorete per stampanti FlashForge...',
       scanningNetwork: 'Scansione rete...',
       noPrintersFoundSubnetMoonraker: 'Nessuna istanza Moonraker trovata nella sottorete specificata.',
       moonrakerNeedsAuth: 'Questa istanza Moonraker richiede un token API — inseriscilo sotto.',
       moonrakerSubnetNote: 'Cerca l’API Moonraker/Klipper sulle porte sotto (predefinite 7125, 80 e 4408 per alcune interfacce web Creality). Usa lo stesso elenco di sottoreti di Bambu, incluso DISCOVERY_EXTRA_SUBNETS.',
+      flashForgeSubnetNote: 'Cerca stampanti FlashForge in questa sottorete LAN privata. Seleziona un risultato per compilare indirizzo e modello; inserisci il codice di verifica della stampante prima di aggiungerla.',
+      noFlashForgeFound: 'Nessuna stampante FlashForge trovata in questa sottorete.',
       moonrakerPorts: 'Porte da scansionare',
       moonrakerPortsNote: 'Separate da virgola. Usa 80 per CosmOS / Moonraker in proxy. La porta 4408 è solo un tentativo per alcuni firmware Creality; K3 non è confermato. Sono elencati solo gli host che restituiscono JSON Moonraker.',
       serialRequired: 'Seriale richiesto',
@@ -675,7 +679,10 @@ export default {
   },
 
   // Archives page
-  archives: {
+    archives: {
+    collections: { all: 'All Archives', recent: 'Last 24 Hours', thisWeek: 'This Week', thisMonth: 'This Month', favorites: 'Favorites', notPrinted: 'Not Printed', printed: 'Printed', failed: 'Failed Prints', duplicates: 'Duplicates' },
+    actions: { export: 'Export', exportCsv: 'Export as CSV', exportExcel: 'Export as Excel', compare: 'Compare ({{count}})', select: 'Select', selectAll: 'Select All', selected: '{{count}} selected', upload3mf: 'Upload 3MF', reset: 'Reset', close: 'Close', tags: 'Tags', project: 'Project' },
+    filters: { allPrinters: 'All Printers', allMaterials: 'All Materials', allFiles: 'All Files', slicedGcode: 'Sliced (GCODE)', sourceOnly: 'Source Only', favorites: 'Favorites', hideFailed: 'Hide Failed', allTags: 'All Tags' },
     title: 'Archivi di stampa',
     searchPlaceholder: 'Cerca archivi...',
     filterByPrinter: 'Filtra per stampante',
@@ -914,6 +921,7 @@ export default {
       deleteCount: 'Elimina {{count}}',
     },
     page: {
+      autoCreated: 'Gli archivi vengono creati automaticamente al termine delle stampe',
       title: 'Archivi',
       printsCount: '{{filtered}} di {{total}} stampe',
       dropFilesHere: 'Rilascia file .3mf qui',
@@ -2869,9 +2877,11 @@ export default {
     tabs: {
       cloud: 'Profili cloud',
       local: 'Profili locali',
+      creality: 'Profili Creality',
       kprofiles: 'Profili K',
       openFilamentDatabase: 'API Open Filament Database',
     },
+    creality: { kind: { printer: 'Stampante', process: 'Processo', filament: 'Filamento' }, allModels: 'Tutti i modelli', allNozzles: 'Qualsiasi ugello', search: 'Cerca profili...', source: 'Fonte: {{source}} · Licenza: {{license}}. Dati originali con riferimenti di ereditarietà.', count: '{{count}} profili', selectProfile: 'Seleziona un profilo per visualizzarne le impostazioni.', inherits: 'Eredita da {{name}}', baseProfile: 'Profilo base', download: 'Scarica JSON' },
     localProfiles: {
       title: 'Profili locali',
       subtitle: 'Importa e gestisci preset slicer da OrcaSlicer',

@@ -521,13 +521,17 @@ export default {
       dockerNote: 'Dockerを検出しました。プリンターのサブネットをCIDR表記で入力してください。docker-compose.ymlでnetwork_mode: hostが必要です。',
       scanSubnet: 'サブネットをスキャンしてプリンターを検出',
       scanSubnetMoonraker: 'サブネットをスキャンしてMoonrakerを検出',
+      scanSubnetFlashForge: 'サブネットをスキャンしてFlashForgeを検出',
       discoverNetwork: 'ネットワーク上のプリンターを検出',
       scanningSubnet: 'サブネットでBambuプリンターをスキャン中...',
       scanningSubnetMoonraker: 'サブネットでMoonrakerプリンターをスキャン中...',
+      scanningSubnetFlashForge: 'サブネットでFlashForgeプリンターをスキャン中...',
       scanningNetwork: 'ネットワークをスキャン中...',
       noPrintersFoundSubnetMoonraker: '指定したサブネットでMoonrakerが見つかりませんでした。',
       moonrakerNeedsAuth: 'このMoonrakerにはAPIトークンが必要です。下に入力してください。',
       moonrakerSubnetNote: '下のポートでMoonraker/Klipper API JSONを検索します（既定は7125、80、一部CrealityのWeb UI用4408）。Bambuと同じサブネット一覧（DISCOVERY_EXTRA_SUBNETS含む）を使います。',
+      flashForgeSubnetNote: 'このプライベートLANサブネットでFlashForgeプリンターを検索します。結果を選ぶとアドレスとモデルを入力できます。追加前にプリンターの確認コードを入力してください。',
+      noFlashForgeFound: 'このサブネットにFlashForgeプリンターが見つかりません。',
       moonrakerPorts: 'スキャンするポート',
       moonrakerPortsNote: 'カンマ区切り。CosmOS / プロキシ済みMoonrakerには80を指定。4408は一部Crealityファームウェア向けの候補で、K3では未確認です。Moonraker API JSONを返すホストだけを一覧します。',
       serialRequired: 'シリアル番号が必要です',
@@ -674,7 +678,10 @@ export default {
   },
 
   // Archives page
-  archives: {
+    archives: {
+    collections: { all: 'All Archives', recent: 'Last 24 Hours', thisWeek: 'This Week', thisMonth: 'This Month', favorites: 'Favorites', notPrinted: 'Not Printed', printed: 'Printed', failed: 'Failed Prints', duplicates: 'Duplicates' },
+    actions: { export: 'Export', exportCsv: 'Export as CSV', exportExcel: 'Export as Excel', compare: 'Compare ({{count}})', select: 'Select', selectAll: 'Select All', selected: '{{count}} selected', upload3mf: 'Upload 3MF', reset: 'Reset', close: 'Close', tags: 'Tags', project: 'Project' },
+    filters: { allPrinters: 'All Printers', allMaterials: 'All Materials', allFiles: 'All Files', slicedGcode: 'Sliced (GCODE)', sourceOnly: 'Source Only', favorites: 'Favorites', hideFailed: 'Hide Failed', allTags: 'All Tags' },
     title: '印刷アーカイブ',
     searchPlaceholder: 'アーカイブを検索...',
     filterByPrinter: 'プリンターで絞り込み',
@@ -913,6 +920,7 @@ export default {
       deleteCount: '{{count}}件を削除',
     },
     page: {
+      autoCreated: '印刷が完了するとアーカイブが自動的に作成されます',
       title: '印刷アーカイブ',
       printsCount: '{{filtered}} / {{total}} 件のプリント',
       dropFilesHere: '.3mfファイルをここにドロップ',
@@ -2881,9 +2889,11 @@ export default {
     tabs: {
       cloud: 'クラウドプロファイル',
       local: 'ローカルプロファイル',
+      creality: 'Crealityプロファイル',
       kprofiles: 'Kプロファイル',
       openFilamentDatabase: 'Open Filament Database API 設定',
     },
+    creality: { kind: { printer: 'プリンター', process: 'プロセス', filament: 'フィラメント' }, allModels: 'すべてのモデル', allNozzles: 'すべてのノズル', search: 'プロファイルを検索...', source: 'ソース: {{source}} · ライセンス: {{license}}。継承参照を含む元データです。', count: '{{count}} 件のプロファイル', selectProfile: 'プロファイルを選択して設定を表示します。', inherits: '{{name}} を継承', baseProfile: 'ベースプロファイル', download: 'JSONをダウンロード' },
     localProfiles: {
       title: 'ローカルプロファイル',
       subtitle: 'OrcaSlicerからスライサープリセットをインポート・管理',

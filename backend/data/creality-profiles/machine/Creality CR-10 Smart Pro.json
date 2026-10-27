@@ -1,0 +1,13 @@
+{
+    "type": "machine_model",
+    "name": "Creality CR-10 Smart Pro",
+    "nozzle_diameter": "0.4",
+    "bed_model": "creality_k1_buildplate_model.stl",
+    "default_bed_type": "High Temp Plate",
+    "bed_texture": "",
+    "family": "Creality",
+    "hotend_model": "",
+    "machine_tech": "FFF",
+    "model_id": "Creality_CR_10_Smart_Pro",
+    "default_materials": "CR-PETG;CR-TPU;Ender-PLA;Generic ABS"
+}

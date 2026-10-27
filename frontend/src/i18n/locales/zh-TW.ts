@@ -522,13 +522,17 @@ export default {
       dockerNote: '偵測到 Docker 環境。請以 CIDR 格式輸入印表機所在子網。需要在 docker-compose.yml 中設定 network_mode: host。',
       scanSubnet: '掃描子網查詢印表機',
       scanSubnetMoonraker: '掃描子網查詢 Moonraker',
+      scanSubnetFlashForge: '掃描子網查詢 FlashForge',
       discoverNetwork: '在網路上發現印表機',
       scanningSubnet: '正在掃描子網查詢拓竹印表機...',
       scanningSubnetMoonraker: '正在掃描子網查詢 Moonraker 印表機...',
+      scanningSubnetFlashForge: '正在掃描子網查詢 FlashForge 印表機...',
       scanningNetwork: '正在掃描網路...',
       noPrintersFoundSubnetMoonraker: '在指定子網中找不到 Moonraker 執行個體。',
       moonrakerNeedsAuth: '此 Moonraker 執行個體需要 API 權杖 — 請在下方輸入。',
       moonrakerSubnetNote: '在下方連接埠掃描 Moonraker/Klipper API JSON（預設 7125、80，以及部分 Creality 網頁介面的 4408）。使用與拓竹相同的子網清單，包括 DISCOVERY_EXTRA_SUBNETS。',
+      flashForgeSubnetNote: '在此私人區域網路子網中搜尋 FlashForge 印表機。選取結果以填入位址和型號；新增前請輸入印表機驗證碼。',
+      noFlashForgeFound: '此子網中找不到 FlashForge 印表機。',
       moonrakerPorts: '要掃描的連接埠',
       moonrakerPortsNote: '以逗號分隔。CosmOS / 反向代理 Moonraker 請使用 80。4408 僅是部分 Creality 韌體的候選連接埠，尚未確認 K3 支援。僅列出回傳 Moonraker API JSON 的主機。',
       serialRequired: '需要序列號',
@@ -675,7 +679,10 @@ export default {
   },
 
   // Archives page
-  archives: {
+    archives: {
+    collections: { all: 'All Archives', recent: 'Last 24 Hours', thisWeek: 'This Week', thisMonth: 'This Month', favorites: 'Favorites', notPrinted: 'Not Printed', printed: 'Printed', failed: 'Failed Prints', duplicates: 'Duplicates' },
+    actions: { export: 'Export', exportCsv: 'Export as CSV', exportExcel: 'Export as Excel', compare: 'Compare ({{count}})', select: 'Select', selectAll: 'Select All', selected: '{{count}} selected', upload3mf: 'Upload 3MF', reset: 'Reset', close: 'Close', tags: 'Tags', project: 'Project' },
+    filters: { allPrinters: 'All Printers', allMaterials: 'All Materials', allFiles: 'All Files', slicedGcode: 'Sliced (GCODE)', sourceOnly: 'Source Only', favorites: 'Favorites', hideFailed: 'Hide Failed', allTags: 'All Tags' },
     title: '列印歸檔',
     searchPlaceholder: '搜尋歸檔...',
     filterByPrinter: '按印表機篩選',
@@ -914,6 +921,7 @@ export default {
       deleteCount: '刪除 {{count}} 個',
     },
     page: {
+      autoCreated: '列印完成後會自動建立封存',
       title: '歸檔',
       printsCount: '{{filtered}} / {{total}} 次列印',
       dropFilesHere: '將 .3mf 檔案拖放到此處',
@@ -2868,9 +2876,11 @@ export default {
     tabs: {
       cloud: '雲端設定檔案',
       local: '本機設定檔案',
+      creality: 'Creality 設定檔',
       kprofiles: 'K 值設定',
       openFilamentDatabase: 'Open Filament Database API 設定',
     },
+    creality: { kind: { printer: '印表機', process: '製程', filament: '耗材' }, allModels: '所有型號', allNozzles: '所有噴嘴', search: '搜尋設定檔...', source: '來源：{{source}} · 授權：{{license}}。保留原始資料及繼承參照。', count: '{{count}} 個設定檔', selectProfile: '選擇設定檔以檢視設定。', inherits: '繼承自 {{name}}', baseProfile: '基礎設定檔', download: '下載 JSON' },
     localProfiles: {
       title: '本機設定檔案',
       subtitle: '從 OrcaSlicer 匯入和管理切片預設',
