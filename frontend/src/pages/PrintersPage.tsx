@@ -123,7 +123,7 @@ import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModa
 import { FileUploadModal } from '../components/FileUploadModal';
 import { PrintModal } from '../components/PrintModal';
 import { PrinterInfoModal } from '../components/PrinterInfoModal';
-import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, isBambuLabSpool, resolveLoadedFilamentInfo, resolveTrayFillLevel } from '../utils/amsHelpers';
+import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, hasBambuLabTrayUuid, isBambuLabSpool, resolveLoadedFilamentInfo, resolveTrayFillLevel } from '../utils/amsHelpers';
 import { getDefaultPrinterImage, getPrinterImage, getWifiStrength, filterCompatibleQueueItems } from '../utils/printer';
 import { appAssetPath } from '../utils/assetPaths';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
@@ -4711,7 +4711,7 @@ function PrinterCard({
 
                                 // Build filament data for hover card
                                 const filamentData = tray?.tray_type ? {
-                                  vendor: (!isCfsUnit && isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
+                                  vendor: (!isCfsUnit && !isSnapmakerU1Unit && hasBambuLabTrayUuid(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                                   // Spoolman spool name wins over cloud lookup so a slot bound to
                                   // a Spoolman spool shows that spool's preset name (e.g. "Devil
                                   // Design PLA") instead of whatever the printer's filament_id
@@ -5085,7 +5085,7 @@ function PrinterCard({
 
                         // Build filament data for hover card
                         const filamentData = tray?.tray_type ? {
-                          vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
+                          vendor: (hasBambuLabTrayUuid(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                           profile: slotPreset?.preset_name || (htSlotSpoolForFill ? [htSlotSpoolForFill.brand, htSlotSpoolForFill.slicer_filament_name?.split('@')[0].trim() || htSlotSpoolForFill.material].filter(Boolean).join(' ').trim() : null) || htInventoryAssignment?.spool?.slicer_filament_name || cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
                           colorName: getColorName(tray.tray_color || ''),
                           colorHex: tray.tray_color || null,
@@ -5509,7 +5509,7 @@ function PrinterCard({
                                 : undefined;
 
                               const extFilamentData = {
-                                vendor: (isBambuLabSpool(extTray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
+                                vendor: (hasBambuLabTrayUuid(extTray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                                 profile: extSlotPreset?.preset_name || (extSlotSpoolForFill ? [extSlotSpoolForFill.brand, extSlotSpoolForFill.slicer_filament_name?.split('@')[0].trim() || extSlotSpoolForFill.material].filter(Boolean).join(' ').trim() : null) || extInventoryAssignment?.spool?.slicer_filament_name || extCloudInfo?.name || extTray.tray_sub_brands || extTray.tray_type || 'Unknown',
                                 colorName: getColorName(extTray.tray_color || ''),
                                 colorHex: extTray.tray_color || null,

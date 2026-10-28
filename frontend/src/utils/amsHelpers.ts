@@ -321,6 +321,16 @@ export function isBambuLabSpool(tray: {
   return false;
 }
 
+/** Bambu-specific spool identity; generic NFC tag UIDs are not brand evidence. */
+export function hasBambuLabTrayUuid(tray: {
+  tray_uuid?: string | null;
+} | null | undefined): boolean {
+  return Boolean(
+    tray?.tray_uuid &&
+    tray.tray_uuid !== '00000000000000000000000000000000',
+  );
+}
+
 export interface SpoolmanSlotAssignmentLike {
   printer_id: number;
   printer_name?: string | null;

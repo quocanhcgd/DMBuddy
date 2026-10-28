@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { isBambuLabSpool } from '../../utils/amsHelpers';
+import { hasBambuLabTrayUuid, isBambuLabSpool } from '../../utils/amsHelpers';
 
 describe('isBambuLabSpool', () => {
   it('returns false for null', () => {
@@ -61,5 +61,19 @@ describe('isBambuLabSpool', () => {
         tag_uid: null,
       }),
     ).toBe(true);
+  });
+});
+
+describe('hasBambuLabTrayUuid', () => {
+  it('recognizes a non-empty Bambu tray UUID', () => {
+    expect(hasBambuLabTrayUuid({ tray_uuid: '11223344556677880011223344556677' })).toBe(true);
+  });
+
+  it('does not mistake a third-party NFC tag UID for a Bambu spool', () => {
+    expect(hasBambuLabTrayUuid({ tray_uuid: null })).toBe(false);
+  });
+
+  it('ignores the all-zero placeholder UUID', () => {
+    expect(hasBambuLabTrayUuid({ tray_uuid: '00000000000000000000000000000000' })).toBe(false);
   });
 });
