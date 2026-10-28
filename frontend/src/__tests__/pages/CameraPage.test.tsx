@@ -136,6 +136,26 @@ describe('CameraPage', () => {
       });
       expect(screen.getByTitle('Diagnose')).toBeInTheDocument();
     });
+
+    it('disables K3 chamber light control when Klipper does not expose the LED pin', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id', () => HttpResponse.json({
+          ...mockPrinter,
+          provider: 'moonraker',
+          model: 'Creality K3',
+        })),
+        http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+          connected: true,
+          chamber_light: false,
+          chamber_light_available: false,
+        })),
+      );
+
+      renderCameraPage(1);
+
+      const lightButton = await screen.findByTitle('Chân đèn chưa được bật trong cấu hình máy in');
+      expect(lightButton).toBeDisabled();
+    });
   });
 
   describe('stream token handling (#979)', () => {

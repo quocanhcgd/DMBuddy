@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import quote, urljoin, urlparse, urlunparse
 
 import httpx
+from websockets.sync.client import connect as websocket_connect
 
 from backend.app.services.bambu_mqtt import FilaSwitchState, NozzleInfo, PrintOptions
 from backend.app.services.gcode_thumbnail import GcodeThumbnail, extract_gcode_thumbnail
@@ -1136,10 +1137,11 @@ class MoonrakerPrinterClient:
             return
 
         light = status.get("output_pin LED")
-        self.state.chamber_light_available = isinstance(light, dict) and "value" in light
-        self.state.chamber_light = (
-            bool(_safe_float(light.get("value"))) if self.state.chamber_light_available else False
-        )
+        # The K3's enclosure light is controlled through its dedicated WebSocket
+        # service, independently of Klipper's optional output_pin LED config.
+        self.state.chamber_light_available = True
+        if isinstance(light, dict) and "value" in light:
+            self.state.chamber_light = bool(_safe_float(light.get("value")))
 
         extruder_names = ["extruder", "extruder1", "extruder2", "extruder3"]
         nozzle_info: list[NozzleInfo] = []
@@ -1434,9 +1436,43 @@ class MoonrakerPrinterClient:
     def set_chamber_light(self, on: bool) -> bool:
         """Control a supported printer light using its provider-specific command."""
         if self._is_creality_k3():
-            if not self.state.chamber_light_available:
-                raise ValueError("Creality K3 light pin is not enabled in its Klipper configuration")
-            return self.send_gcode(f"SET_PIN PIN=LED VALUE={1 if on else 0}")
+            parsed = urlparse(self.base_url)
+            if not parsed.hostname:
+                raise ValueError("Creality K3 printer address is invalid")
+            host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+            light_url = f"ws://{host}:9999/"
+            desired = 1 if on else 0
+            payload = json.dumps({"method": "set", "params": {"lightSw": desired}})
+            with websocket_connect(light_url, open_timeout=self.timeout, close_timeout=1) as websocket:
+                # K3 broadcasts an initial telemetry frame as soon as the
+                # socket opens. Drain it before sending the command so it can't
+                # be mistaken for an acknowledgement of the new light state.
+                try:
+                    initial = json.loads(websocket.recv(timeout=min(1.0, self.timeout)))
+                    if isinstance(initial, dict) and "lightSw" in initial:
+                        self.state.chamber_light = bool(initial["lightSw"])
+                except TimeoutError:
+                    pass
+                websocket.send(payload)
+                deadline = time.monotonic() + min(2.0, self.timeout)
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    try:
+                        frame = json.loads(websocket.recv(timeout=remaining))
+                    except TimeoutError:
+                        # The K3 firmware applies the switch but does not
+                        # reliably broadcast a correlated acknowledgement.
+                        # A timeout after send is not a command failure.
+                        break
+                    if isinstance(frame, dict) and "lightSw" in frame:
+                        self.state.chamber_light = bool(frame["lightSw"])
+                        if int(bool(frame["lightSw"])) == desired:
+                            break
+            self.state.chamber_light = bool(on)
+            self.state.chamber_light_available = True
+            return True
         return self.send_gcode(f"SET_LED LED=cavity_led WHITE={1 if on else 0}")
 
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:

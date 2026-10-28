@@ -35,6 +35,21 @@ class TestUpdatesAPI:
         assert response.json()["source_ref"] == "2b593e7b9440ce692cf7eddb8006d8f45add755f"
 
     @pytest.mark.asyncio
+    async def test_empty_new_ref_falls_back_to_legacy_ref(self, async_client: AsyncClient):
+        with patch.dict(
+            "os.environ",
+            {
+                "DMBUDDY_REF": "",
+                "PRINTBUDDY_REF": "3c593e7b9440ce692cf7eddb8006d8f45add755f",
+            },
+            clear=False,
+        ):
+            response = await async_client.get("/api/v1/updates/version")
+        assert response.status_code == 200
+        assert response.json()["source_ref"] == "3c593e7b9440ce692cf7eddb8006d8f45add755f"
+        assert response.json()["source_ref_short"] == "3c593e7"
+
+    @pytest.mark.asyncio
     async def test_apply_update_docker_rejection(self, async_client: AsyncClient):
         with (
             patch("backend.app.api.routes.updates._is_ha_addon", return_value=False),

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from backend.app.services.gcode_thumbnail import extract_gcode_thumbnail
@@ -538,19 +540,50 @@ def test_moonraker_controls_snapmaker_u1_case_light_with_fixed_led_command(monke
     ]
 
 
-def test_moonraker_controls_creality_k3_chamber_light_only_when_pin_is_available(monkeypatch):
+def test_moonraker_controls_creality_k3_chamber_light_over_websocket(monkeypatch):
     client = MoonrakerPrinterClient("http://k3.local:7125", printer_model="Creality K3")
-    sent: list[str] = []
-    monkeypatch.setattr(client, "send_gcode", lambda script: sent.append(script) or True)
+    sent: list[tuple[str, str]] = []
+    timeouts: list[tuple[float, float]] = []
 
-    with pytest.raises(ValueError, match="light pin is not enabled"):
-        client.set_chamber_light(True)
-    assert sent == []
+    class FakeWebSocket:
+        def __init__(self):
+            self.received_initial = False
 
-    client.state.chamber_light_available = True
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def send(self, payload: str):
+            sent.append((url, payload))
+
+        def recv(self, *, timeout: float):
+            assert timeout > 0
+            if not self.received_initial:
+                self.received_initial = True
+                return '{"lightSw": 0}'
+            desired = json.loads(sent[-1][1])["params"]["lightSw"]
+            return json.dumps({"lightSw": desired})
+
+    def fake_connect(url_value: str, *, open_timeout: float, close_timeout: float):
+        nonlocal url
+        url = url_value
+        timeouts.append((open_timeout, close_timeout))
+        return FakeWebSocket()
+
+    url = ""
+    monkeypatch.setattr("backend.app.services.printer_providers.moonraker.websocket_connect", fake_connect)
+
     assert client.set_chamber_light(True) is True
+    assert client.state.chamber_light is True
     assert client.set_chamber_light(False) is True
-    assert sent == ["SET_PIN PIN=LED VALUE=1", "SET_PIN PIN=LED VALUE=0"]
+    assert client.state.chamber_light is False
+    assert sent == [
+        ("ws://k3.local:9999/", '{"method": "set", "params": {"lightSw": 1}}'),
+        ("ws://k3.local:9999/", '{"method": "set", "params": {"lightSw": 0}}'),
+    ]
+    assert timeouts == [(5.0, 1), (5.0, 1)]
 
 
 def test_moonraker_reads_creality_k3_chamber_light_state():
@@ -560,6 +593,15 @@ def test_moonraker_reads_creality_k3_chamber_light_state():
 
     assert client.state.chamber_light_available is True
     assert client.state.chamber_light is True
+
+
+def test_moonraker_k3_light_available_without_klipper_led_pin():
+    client = MoonrakerPrinterClient("http://k3.local:7125", printer_model="Creality K3")
+
+    client._apply_creality_k3_status({})
+
+    assert client.state.chamber_light_available is True
+    assert client.state.chamber_light is False
 
 
 def test_moonraker_prefers_live_u1_feeder_color_over_print_task_config():

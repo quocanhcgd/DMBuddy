@@ -45,6 +45,7 @@ export function CameraPage() {
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
   const [showDiagnoseModal, setShowDiagnoseModal] = useState(false);
   const [streamError, setStreamError] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [streamLoading, setStreamLoading] = useState(true);
   const [imageKey, setImageKey] = useState(Date.now());
   const [transitioning, setTransitioning] = useState(false);
@@ -70,6 +71,9 @@ export function CameraPage() {
     queryFn: () => api.getPrinter(id),
     enabled: id > 0,
   });
+  const isCrealityK3Moonraker =
+    ['klipper', 'fluidd', 'mainsail', 'moonraker'].includes(String(printer?.provider || '').toLowerCase()) &&
+    /^(?:creality\s+)?k3\b/i.test((printer?.model || '').trim());
   const isWebRtcCamera = printer?.external_camera_enabled === true && printer.external_camera_type === 'webrtc';
   const webRtcUrl = isWebRtcCamera ? printer.external_camera_url : null;
   const isK3WebRtc = Boolean(webRtcUrl?.includes('/call/webrtc_local'));
@@ -317,8 +321,9 @@ export function CameraPage() {
     };
   }, [isWebRtcCamera, streamMode, streamLoading, streamError, isReconnecting, transitioning, id, attemptReconnect]);
 
-  const handleStreamError = () => {
+  const handleStreamError = (reason?: unknown) => {
     setStreamLoading(false);
+    if (typeof reason === 'string') setCameraError(reason);
 
     // Only auto-reconnect for live stream mode
     if (streamMode === 'stream' && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
@@ -331,6 +336,7 @@ export function CameraPage() {
   const handleStreamLoad = () => {
     setStreamLoading(false);
     setStreamError(false);
+    setCameraError(null);
     // Reset reconnect attempts on successful connection
     setReconnectAttempts(0);
     setIsReconnecting(false);
@@ -661,9 +667,13 @@ export function CameraPage() {
           </div>
           <button
             onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
-            disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
+            disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control') || (isCrealityK3Moonraker && !status?.chamber_light_available)}
             className={`p-1.5 rounded disabled:opacity-50 ${status?.chamber_light ? 'bg-yellow-500/20 hover:bg-yellow-500/30' : 'hover:bg-bambu-dark-tertiary'}`}
-            title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('camera.chamberLight')}
+            title={!hasPermission('printers:control')
+              ? t('printers.permission.noControl')
+              : isCrealityK3Moonraker && !status?.chamber_light_available
+                ? t('printers.chamberLightUnavailable', 'Chân đèn chưa được bật trong cấu hình máy in')
+                : t('camera.chamberLight')}
           >
             <ChamberLight on={status?.chamber_light ?? false} className="w-4 h-4" />
           </button>
@@ -758,6 +768,7 @@ export function CameraPage() {
                 <p className="text-xs text-bambu-gray mb-4 max-w-md">
                   {t('camera.cameraUnavailableDesc')}
                 </p>
+                {cameraError && <p className="text-xs text-orange-200 mb-4 max-w-md break-words">{cameraError}</p>}
                 <div className="flex gap-2 justify-center">
                   <button
                     onClick={refresh}

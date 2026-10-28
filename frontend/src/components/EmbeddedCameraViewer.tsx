@@ -115,6 +115,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
 
   // Stream state
   const [streamError, setStreamError] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [streamLoading, setStreamLoading] = useState(true);
   const [imageKey, setImageKey] = useState(Date.now());
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
@@ -483,8 +484,9 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     setPanOffset({ x: 0, y: 0 });
   };
 
-  const handleStreamError = () => {
+  const handleStreamError = (reason?: unknown) => {
     setStreamLoading(false);
+    if (typeof reason === 'string') setCameraError(reason);
     if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
       attemptReconnect();
     } else {
@@ -495,6 +497,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   const handleStreamLoad = () => {
     setStreamLoading(false);
     setStreamError(false);
+    setCameraError(null);
     setReconnectAttempts(0);
     setIsReconnecting(false);
     if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
@@ -764,6 +767,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
               <div className="text-center p-2">
                 <AlertTriangle className="w-6 h-6 text-orange-400 mx-auto mb-2" />
                 <p className="text-xs text-bambu-gray mb-2">{t('camera.unavailable')}</p>
+                {cameraError && <p className="text-[10px] text-orange-200 mb-2 max-w-xs break-words">{cameraError}</p>}
                 <div className="flex gap-2 justify-center">
                   <button
                     onClick={refresh}

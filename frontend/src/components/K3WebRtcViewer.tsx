@@ -5,7 +5,7 @@ interface K3WebRtcViewerProps {
   printerId: number;
   className?: string;
   onReady?: () => void;
-  onError?: () => void;
+  onError?: (reason?: string) => void;
 }
 
 function decodeAnswer(encoded: string): RTCSessionDescriptionInit {
@@ -40,11 +40,12 @@ export function K3WebRtcViewer({ printerId, className, onReady, onError }: K3Web
     let peer: RTCPeerConnection | null = null;
     let attempt = 0;
     let fallbackTimeout: number | undefined;
+    let failureReason = 'K3 camera did not provide video within 20 seconds';
     const playTimeout = window.setTimeout(() => {
-      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) fail();
+      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) fail(failureReason);
     }, 20000);
-    const fail = () => {
-      if (!disposed) onErrorRef.current?.();
+    const fail = (reason: string) => {
+      if (!disposed) onErrorRef.current?.(reason);
     };
     const handlePlaying = () => {
       window.clearTimeout(playTimeout);
@@ -68,9 +69,13 @@ export function K3WebRtcViewer({ printerId, className, onReady, onError }: K3Web
         void video.play().catch(() => undefined);
       };
       const handleConnectionState = () => {
-        if (currentPeer.connectionState !== 'failed' || disposed || currentAttempt !== attempt) return;
+        if (disposed || currentAttempt !== attempt) return;
+        if (currentPeer.connectionState === 'failed') {
+          failureReason = 'K3 WebRTC ICE connection failed; check that this browser can reach the printer on the LAN';
+        }
+        if (currentPeer.connectionState !== 'failed') return;
         if (direction === 'recvonly') void connect('sendrecv');
-        else fail();
+        else fail(failureReason);
       };
       currentPeer.addEventListener('track', handleTrack);
       currentPeer.addEventListener('connectionstatechange', handleConnectionState);
@@ -95,16 +100,18 @@ export function K3WebRtcViewer({ printerId, className, onReady, onError }: K3Web
         if (disposed || currentAttempt !== attempt || !currentPeer.localDescription) return;
         const response = await api.postK3WebRtcOffer(printerId, encodeOffer(currentPeer.localDescription));
         await currentPeer.setRemoteDescription(decodeAnswer(response.answer));
+        failureReason = 'K3 signaling answered, but WebRTC media did not arrive; check LAN routing and ICE connectivity';
         fallbackTimeout = window.setTimeout(() => {
           if (disposed || currentAttempt !== attempt || video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return;
           if (direction === 'recvonly') void connect('sendrecv');
-          else fail();
+          else fail(failureReason);
         }, 8000);
       } catch (error) {
         if (!disposed && currentAttempt === attempt) {
           console.warn('K3 WebRTC connection failed', error);
+          failureReason = error instanceof Error ? `K3 signaling failed: ${error.message}` : 'K3 signaling failed';
           if (direction === 'recvonly') void connect('sendrecv');
-          else fail();
+          else fail(failureReason);
         }
       }
     };
