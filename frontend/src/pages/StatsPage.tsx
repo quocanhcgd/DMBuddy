@@ -38,7 +38,7 @@ import { api, type ArchiveSlim } from '../api/client';
 import { PrintCalendar } from '../components/PrintCalendar';
 import { FilamentTrends } from '../components/FilamentTrends';
 import { Dashboard, type DashboardWidget } from '../components/Dashboard';
-import { getCurrencySymbol } from '../utils/currency';
+import { formatCurrency } from '../utils/currency';
 import { formatWeight } from '../utils/weight';
 import { parseUTCDate, formatDuration } from '../utils/date';
 import { MetricToggle, type Metric } from '../components/MetricToggle';
@@ -143,7 +143,7 @@ function QuickStatsWidget({
     { icon: Package, color: 'text-bambu-green', label: t('stats.totalPrints'), value: `${stats?.total_prints || 0}` },
     { icon: Clock, color: 'text-blue-400', label: t('stats.printTime'), value: `${stats?.total_print_time_hours?.toFixed(1) ?? '0'}h` },
     { icon: Package, color: 'text-orange-400', label: t('stats.filamentUsed'), value: formatWeight(stats?.total_filament_grams || 0) },
-    { icon: DollarSign, color: 'text-green-400', label: t('stats.filamentCost'), value: `${currency} ${stats?.total_cost?.toFixed(2) ?? '0.00'}` },
+    { icon: DollarSign, color: 'text-green-400', label: t('stats.filamentCost'), value: formatCurrency(stats?.total_cost, currency) },
     {
       icon: Zap,
       color: 'text-yellow-400',
@@ -156,7 +156,7 @@ function QuickStatsWidget({
       icon: DollarSign,
       color: 'text-yellow-500',
       label: t('stats.energyCost'),
-      value: `${currency} ${stats?.total_energy_cost?.toFixed(2) ?? '0.00'}`,
+      value: formatCurrency(stats?.total_energy_cost, currency),
       warning: warmingUp,
       tooltip: warmingUpTooltip,
     },
@@ -872,7 +872,7 @@ function RecordsWidget({ archives, currency }: { archives: ArchiveSlim[]; curren
     if (costliest.archive) {
       result.push({
         icon: DollarSign, iconColor: 'text-green-400', label: t('stats.mostExpensivePrint'),
-        value: `${currency}${costliest.value.toFixed(2)}`,
+        value: formatCurrency(costliest.value, currency),
         detail: costliest.archive.print_name || null,
       });
     }
@@ -1083,7 +1083,7 @@ export function StatsPage() {
 
   const isRefetching = (isStatsFetching || isArchivesFetching) && !isLoading;
 
-  const currency = getCurrencySymbol(settings?.currency || 'USD');
+  const currency = settings?.currency || 'USD';
   const printerMap = new Map(printers?.map((p) => [String(p.id), p.name]) || []);
   const printDates = useMemo(() => archives?.map((a) => a.created_at) || [], [archives]);
 

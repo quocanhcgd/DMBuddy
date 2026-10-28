@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../../utils/currency';
+import { formatCurrency, getCurrencySymbol, SUPPORTED_CURRENCIES } from '../../utils/currency';
 
 describe('getCurrencySymbol', () => {
   it('returns $ for USD', () => {
@@ -70,5 +70,16 @@ describe('SUPPORTED_CURRENCIES', () => {
 
   it('has 31 entries', () => {
     expect(SUPPORTED_CURRENCIES).toHaveLength(31);
+  });
+});
+
+describe('formatCurrency', () => {
+  it('formats VND with Vietnamese separators, no decimal places, and the symbol after the amount', () => {
+    expect(formatCurrency(1234567.89, 'VND', 'vi')).toBe('1.234.568 ₫');
+  });
+
+  it('formats USD according to the active locale', () => {
+    expect(formatCurrency(1234567.89, 'USD', 'en')).toBe('$1,234,567.89');
+    expect(formatCurrency(1234567.89, 'USD', 'de')).toBe('1.234.567,89 $');
   });
 });

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { api } from '../api/client';
+import { formatCurrency } from '../utils/currency';
 
 interface PrintLogTableProps {
   archiveId: number;
@@ -26,6 +27,10 @@ export function PrintLogTable({ archiveId }: PrintLogTableProps) {
   const { data, isLoading } = useQuery({
     queryKey: ['archive-runs', archiveId],
     queryFn: () => api.getArchiveRuns(archiveId),
+  });
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
   });
 
   if (isLoading) {
@@ -90,7 +95,7 @@ export function PrintLogTable({ archiveId }: PrintLogTableProps) {
                     : '—'}
                 </td>
                 <td className="py-1.5 text-right text-bambu-gray-light">
-                  {run.cost != null ? run.cost.toFixed(2) : '—'}
+                  {run.cost != null ? formatCurrency(run.cost, settings?.currency || 'USD') : '—'}
                 </td>
               </tr>
             );

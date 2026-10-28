@@ -21,7 +21,7 @@ import { LabelTemplatePickerModal } from '../components/LabelTemplatePickerModal
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { resolveSpoolColorName } from '../utils/colors';
-import { getCurrencySymbol } from '../utils/currency';
+import { formatCurrency, getCurrencySymbol } from '../utils/currency';
 import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
 import { formatSlotLabel } from '../utils/amsHelpers';
 import { filterSpoolsByQuery } from '../utils/inventorySearch';
@@ -151,6 +151,7 @@ type CellCtx = {
   assignmentMap: Record<number, LocationDisplay>;
   catalogMap: Record<number, SpoolCatalogEntry>;
   currencySymbol: string;
+  currencyCode: string;
   dateFormat: DateFormat;
   t: TFn;
   onSyncWeight?: (spool: InventorySpool) => void;
@@ -325,9 +326,9 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
     const entry = spool.core_weight_catalog_id != null ? catalogMap[spool.core_weight_catalog_id] : undefined;
     return <span className="text-sm text-bambu-gray">{entry?.name || '-'}</span>;
   },
-  cost_per_kg: ({ spool, currencySymbol }) => (
+  cost_per_kg: ({ spool, currencyCode }) => (
     <span className="text-sm text-bambu-gray">
-      {spool.cost_per_kg != null ? `${currencySymbol}${spool.cost_per_kg.toFixed(2)}` : '-'}
+      {spool.cost_per_kg != null ? formatCurrency(spool.cost_per_kg, currencyCode) : '-'}
     </span>
   ),
   weight_check: ({ spool, onSyncWeight }) => {
@@ -829,6 +830,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     (assignments?.length ?? 0) + (spoolmanMode ? spoolmanSlotAssignments.length : 0);
 
   const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
+  const currencyCode = settings?.currency || 'USD';
 
   // Map spool_id -> location display data for the LOCATION column.
   // Local SpoolAssignment entries first, then Spoolman SlotAssignment fills in
@@ -1786,6 +1788,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                           assignmentMap={assignmentMap}
                           catalogMap={catalogMap}
                           currencySymbol={currencySymbol}
+                          currencyCode={currencyCode}
                           dateFormat={dateFormat}
                           t={t}
                           onSyncWeight={handleSyncWeight}
@@ -1816,6 +1819,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                         assignmentMap={assignmentMap}
                         catalogMap={catalogMap}
                         currencySymbol={currencySymbol}
+                        currencyCode={currencyCode}
                         dateFormat={dateFormat}
                         t={t}
                         onSyncWeight={handleSyncWeight}
@@ -2230,7 +2234,7 @@ function SpoolCard({
 /* Single spool row for table view */
 function SpoolTableRow({
   spool, remaining, pct, onEdit, onCopy, onRestore, onArchive, onDelete, onPrintLabel, onAssignToPrinter, onResetUsage,
-  visibleColumns, assignmentMap, catalogMap, currencySymbol, dateFormat, t, onSyncWeight,
+  visibleColumns, assignmentMap, catalogMap, currencySymbol, currencyCode, dateFormat, t, onSyncWeight,
 }: {
   spool: InventorySpool;
   remaining: number;
@@ -2247,6 +2251,7 @@ function SpoolTableRow({
   assignmentMap: Record<number, LocationDisplay>;
   catalogMap: Record<number, SpoolCatalogEntry>;
   currencySymbol: string;
+  currencyCode: string;
   dateFormat: DateFormat;
   t: TFn;
   onSyncWeight?: (spool: InventorySpool) => void;
@@ -2260,7 +2265,7 @@ function SpoolTableRow({
     >
       {visibleColumns.map((colId) => (
         <td key={colId} className="py-3 px-4">
-          {columnCells[colId]?.({ spool, remaining, pct, assignmentMap, catalogMap, currencySymbol, dateFormat, t, onSyncWeight })}
+          {columnCells[colId]?.({ spool, remaining, pct, assignmentMap, catalogMap, currencySymbol, currencyCode, dateFormat, t, onSyncWeight })}
         </td>
       ))}
       <td className="py-3 px-4">
@@ -2314,7 +2319,7 @@ function SpoolTableRow({
 function SpoolTableGroup({
   spools, headerSpool, remaining, pct, isExpanded, onToggle,
   onEdit, onCopy, onArchive, onDelete, onPrintLabel, onAssignToPrinter, onResetUsage,
-  visibleColumns, assignmentMap, catalogMap, currencySymbol, dateFormat, t, onSyncWeight,
+  visibleColumns, assignmentMap, catalogMap, currencySymbol, currencyCode, dateFormat, t, onSyncWeight,
 }: {
   spools: InventorySpool[];
   // Aggregate of all members (summed quantities, shared identity) — rendered
@@ -2335,6 +2340,7 @@ function SpoolTableGroup({
   assignmentMap: Record<number, LocationDisplay>;
   catalogMap: Record<number, SpoolCatalogEntry>;
   currencySymbol: string;
+  currencyCode: string;
   dateFormat: DateFormat;
   t: TFn;
   onSyncWeight?: (spool: InventorySpool) => void;
@@ -2351,14 +2357,14 @@ function SpoolTableGroup({
             {idx === 0 ? (
               <div className="flex items-center gap-2">
                 <ChevronDown className={`w-4 h-4 text-bambu-gray transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
-                {columnCells[colId]?.({ spool: headerSpool, remaining, pct, assignmentMap, catalogMap, currencySymbol, dateFormat, t, onSyncWeight })}
+            {columnCells[colId]?.({ spool: headerSpool, remaining, pct, assignmentMap, catalogMap, currencySymbol, currencyCode, dateFormat, t, onSyncWeight })}
               </div>
             ) : colId === 'id' ? (
               <span className="text-xs font-medium bg-bambu-green/20 text-bambu-green px-2 py-0.5 rounded-full">
                 {t('inventory.groupedSpools', { count: spools.length })}
               </span>
             ) : (
-              columnCells[colId]?.({ spool: headerSpool, remaining, pct, assignmentMap, catalogMap, currencySymbol, dateFormat, t, onSyncWeight })
+              columnCells[colId]?.({ spool: headerSpool, remaining, pct, assignmentMap, catalogMap, currencySymbol, currencyCode, dateFormat, t, onSyncWeight })
             )}
           </td>
         ))}
@@ -2390,6 +2396,7 @@ function SpoolTableGroup({
             assignmentMap={assignmentMap}
             catalogMap={catalogMap}
             currencySymbol={currencySymbol}
+            currencyCode={currencyCode}
             dateFormat={dateFormat}
             t={t}
             onSyncWeight={onSyncWeight}

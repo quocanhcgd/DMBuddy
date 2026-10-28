@@ -9,6 +9,8 @@ import { ChamberLight } from './icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from './SkipObjectsModal';
 import { CameraDiagnoseModal } from './CameraDiagnoseModal';
 import { K3WebRtcViewer } from './K3WebRtcViewer';
+import { classifyPrinterStatus } from '../utils/printerStatus';
+import { filterKnownHMSErrors } from './HMSErrorModal';
 
 interface EmbeddedCameraViewerProps {
   printerId: number;
@@ -16,6 +18,7 @@ interface EmbeddedCameraViewerProps {
   viewerIndex?: number;  // Used to offset multiple viewers
   onClose: () => void;
   mode?: 'floating' | 'inline';
+  monitorMode?: boolean;
 }
 
 const STORAGE_KEY_PREFIX = 'embeddedCameraState_';
@@ -43,7 +46,7 @@ const DEFAULT_STATE: CameraState = {
   height: 300,
 };
 
-export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, onClose, mode = 'floating' }: EmbeddedCameraViewerProps) {
+export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, onClose, mode = 'floating', monitorMode = false }: EmbeddedCameraViewerProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -149,6 +152,22 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     refetchInterval: 30000,
     enabled: printerId > 0,
   });
+  const printerUiState = classifyPrinterStatus(status, filterKnownHMSErrors(status?.hms_errors ?? []).length > 0);
+  const cameraStatus = printerUiState === 'error' ? 'alert' : printerUiState === 'finished' ? 'idle' : printerUiState;
+  const cameraStatusDotClass = {
+    printing: 'bg-blue-500',
+    paused: 'bg-emerald-500',
+    idle: 'bg-slate-400',
+    alert: 'bg-red-500',
+    offline: 'bg-slate-700',
+  }[cameraStatus];
+  const cameraStatusLabel = {
+    printing: t('farmCommandCenter.printing'),
+    paused: t('farmCommandCenter.paused'),
+    idle: t('farmCommandCenter.idle'),
+    alert: t('farmCommandCenter.alert'),
+    offline: t('farmCommandCenter.offline'),
+  }[cameraStatus];
 
   // Chamber light mutation with optimistic update
   const chamberLightMutation = useMutation({
@@ -598,11 +617,13 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       ? `/api/v1/printers/${printerId}/camera/stream?fps=15&t=${imageKey}&token=${encodeURIComponent(streamTokenValue)}`
       : withStreamToken(`/api/v1/printers/${printerId}/camera/stream?fps=15&t=${imageKey}`);
 
-  const containerClassName = isInline
+  const containerClassName = monitorMode
+    ? 'relative flex h-full w-full flex-col overflow-hidden bg-bambu-dark-secondary'
+    : isInline
     ? `${isFullscreen ? 'fixed inset-0 z-[100]' : 'relative w-full rounded-lg border border-bambu-dark-tertiary'} bg-bambu-dark-secondary overflow-hidden`
     : `${isFullscreen ? 'fixed inset-0 z-[100]' : 'fixed z-40 rounded-lg shadow-2xl border border-bambu-dark-tertiary'} bg-bambu-dark-secondary overflow-hidden`;
 
-  const containerStyle: CSSProperties | undefined = isFullscreen ? undefined : isInline ? {
+  const containerStyle: CSSProperties | undefined = monitorMode || isFullscreen ? undefined : isInline ? {
     width: hasCustomInlineSize ? state.width : '100%',
     height: isMinimized ? 40 : state.height,
     minWidth,
@@ -624,7 +645,6 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       className={containerClassName}
       style={containerStyle}
     >
-      {/* Header */}
       <div
         className={`flex items-center justify-between px-3 py-2 bg-bambu-dark border-b border-bambu-dark-tertiary ${isInline ? '' : 'cursor-grab active:cursor-grabbing'}`}
         onMouseDown={isInline ? undefined : handleMouseDown}
@@ -632,6 +652,11 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       >
         <div className="flex items-center gap-2 text-sm text-white truncate">
           {!isInline && <GripVertical className="w-4 h-4 text-bambu-gray flex-shrink-0" />}
+          <span
+            aria-label={cameraStatusLabel}
+            title={cameraStatusLabel}
+            className={`h-2 w-2 flex-shrink-0 rounded-full ${cameraStatusDotClass}`}
+          />
           <span className="truncate">{printer?.name || printerName}</span>
         </div>
         <div className="flex items-center gap-1 no-drag">
@@ -709,7 +734,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       {/* Video area */}
       {!isMinimized && (
         <div
-          className={`relative w-full bg-black flex items-center justify-center overflow-hidden ${isFullscreen ? 'h-[calc(100%-40px)]' : 'h-[calc(100%-40px)]'}`}
+          className={`relative w-full bg-black flex items-center justify-center overflow-hidden ${monitorMode ? 'min-h-0 flex-1' : 'h-[calc(100%-40px)]'}`}
           onWheel={handleWheel}
           onMouseMove={handleImageMouseMove}
           onMouseUp={handleImageMouseUp}
@@ -761,7 +786,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
               <K3WebRtcViewer
                 key={imageKey}
                 printerId={printerId}
-                className="w-full h-full min-h-[220px] object-contain bg-black"
+                className={`w-full h-full ${monitorMode ? 'object-cover' : 'min-h-[220px] object-contain'} bg-black`}
                 onReady={handleStreamLoad}
                 onError={handleStreamError}
               />
@@ -772,7 +797,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
                 title={t('camera.cameraStream')}
                 allow="autoplay; camera; microphone; fullscreen"
                 referrerPolicy="no-referrer"
-                className="w-full h-full min-h-[220px] border-0 bg-black"
+                className={`w-full h-full ${monitorMode ? '' : 'min-h-[220px]'} border-0 bg-black`}
                 onLoad={handleStreamLoad}
                 onError={handleStreamError}
               />
@@ -783,7 +808,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
               key={imageKey}
               src={streamUrl}
               alt="Camera stream"
-              className="max-w-full max-h-full object-contain select-none"
+              className={monitorMode ? 'h-full w-full object-cover select-none' : 'max-w-full max-h-full object-contain select-none'}
               style={{
                 transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px) rotate(${printer?.camera_rotation || 0}deg)`,
                 ...(printer?.camera_rotation === 90 || printer?.camera_rotation === 270 ? { maxWidth: '100%', maxHeight: '100%' } : {}),
@@ -824,7 +849,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           </div>
 
           {/* Resize handle - hide in fullscreen */}
-          {!isFullscreen && (
+          {!monitorMode && !isFullscreen && (
             <div
               className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize no-drag hover:bg-white/10 rounded-tl transition-colors"
               onMouseDown={handleResizeMouseDown}

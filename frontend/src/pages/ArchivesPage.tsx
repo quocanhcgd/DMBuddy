@@ -60,7 +60,7 @@ import { api } from '../api/client';
 import { SliceModal } from '../components/SliceModal';
 import { openInSlicer, type SlicerType } from '../utils/slicer';
 import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDuration } from '../utils/date';
-import { getCurrencySymbol } from '../utils/currency';
+import { formatCurrency } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
 import { useIsMobile } from '../hooks/useIsMobile';
 import type { Archive, ProjectListItem } from '../api/client';
@@ -1029,13 +1029,13 @@ function ArchiveCard({
               {archive.cost != null && (
                 <div className="flex items-center gap-1.5">
                   <Coins className="w-3 h-3" />
-                  {currency}{archive.cost.toFixed(2)}
+                  {formatCurrency(archive.cost, currency)}
                 </div>
               )}
                 {archive.energy_cost != null && (
                   <div className="flex items-center gap-1.5" title={`${t('stats.energyUsed')}: ${archive.energy_kwh?.toFixed(3) || 'N/A'} kWh`}>
                     <Zap className="w-3 h-3" />
-                    {currency}{archive.energy_cost.toFixed(2)}
+                    {formatCurrency(archive.energy_cost, currency)}
                   </div>
                 )}
             </div>
@@ -2679,7 +2679,7 @@ export function ArchivesPage() {
   const timeFormat: TimeFormat = settings?.time_format || 'system';
   const preferredSlicer: SlicerType = settings?.preferred_slicer || 'bambu_studio';
   const useSlicerApi = settings?.use_slicer_api ?? false;
-  const currency = getCurrencySymbol(settings?.currency || 'USD');
+  const currency = settings?.currency || 'USD';
 
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: number[]) => {

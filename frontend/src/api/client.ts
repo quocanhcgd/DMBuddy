@@ -5929,13 +5929,13 @@ export const api = {
   getCameraStreamToken: () =>
     request<{ token: string }>('/printers/camera/stream-token', { method: 'POST' }),
   postCrealityWebRtcOffer: (printerId: number, offer: string) =>
-    request<{ answer: string }>(`/printers/${printerId}/camera/creality-webrtc-offer`, {
+    request<{ answer: string }>(`/printers/${printerId}/camera/k3-webrtc-offer`, {
       method: 'POST',
       body: JSON.stringify({ offer }),
     }),
   // Backwards-compatible alias used by the existing K3 viewer.
   postK3WebRtcOffer: (printerId: number, offer: string) =>
-    request<{ answer: string }>(`/printers/${printerId}/camera/creality-webrtc-offer`, {
+    request<{ answer: string }>(`/printers/${printerId}/camera/k3-webrtc-offer`, {
       method: 'POST',
       body: JSON.stringify({ offer }),
     }),

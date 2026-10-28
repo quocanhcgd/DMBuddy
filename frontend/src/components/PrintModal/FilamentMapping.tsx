@@ -6,6 +6,7 @@ import { api } from '../../api/client';
 import { useFilamentMapping } from '../../hooks/useFilamentMapping';
 import { getGlobalTrayId } from '../../utils/amsHelpers';
 import { getColorName } from '../../utils/colors';
+import { formatCurrency } from '../../utils/currency';
 import type { FilamentMappingProps } from './types';
 
 /**
@@ -17,7 +18,7 @@ export function FilamentMapping({
   filamentReqs,
   manualMappings,
   onManualMappingChange,
-  currencySymbol,
+  currencyCode = 'USD',
   defaultCostPerKg,
   defaultExpanded = false,
 }: FilamentMappingProps & { defaultExpanded?: boolean }) {
@@ -273,7 +274,7 @@ export function FilamentMapping({
           <div className="text-xs text-bambu-gray">
             {t('printModal.totalCost')}{' '}
             <span className="text-white">
-              {totalCost > 0 || hasAnyCost ? `${currencySymbol}${totalCost.toFixed(2)}` : 'N/A'}
+              {totalCost > 0 || hasAnyCost ? formatCurrency(totalCost, currencyCode) : 'N/A'}
             </span>
           </div>
           {hasTypeMismatch && (

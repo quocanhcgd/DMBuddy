@@ -8,14 +8,18 @@ from backend.app.core.config import settings
 
 
 def get_thumbnail_cache_dir() -> Path:
-    """Return the persistent thumbnail directory shared by file views."""
+    """Return the single thumbnail directory for all stored files."""
     path = settings.archive_dir / "thumbnails"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def media_extension(media_type: str) -> str:
-    return {"image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}.get(media_type, ".png")
+    return {
+        "image/jpeg": ".jpg",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+    }.get(media_type, ".png")
 
 
 def cache_thumbnail(key: str, data: bytes, media_type: str) -> Path:

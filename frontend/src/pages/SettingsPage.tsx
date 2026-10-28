@@ -5,7 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
-import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
+import { formatCurrency, getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
 import { checkPasswordComplexity } from '../utils/password';
 import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse, SelfUpdateJob } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
@@ -3616,7 +3616,7 @@ export function SettingsPage() {
                       </div>
                       {(localSettings?.energy_cost_per_kwh ?? 0) > 0 && (
                         <div className="text-xs text-bambu-gray mt-1">
-                          ~{(plugEnergySummary.totalToday * (localSettings?.energy_cost_per_kwh ?? 0)).toFixed(2)} {getCurrencySymbol(localSettings?.currency || 'USD')}
+                          ~{formatCurrency(plugEnergySummary.totalToday * (localSettings?.energy_cost_per_kwh ?? 0), localSettings?.currency || 'USD')}
                         </div>
                       )}
                     </div>
@@ -3633,7 +3633,7 @@ export function SettingsPage() {
                       </div>
                       {(localSettings?.energy_cost_per_kwh ?? 0) > 0 && (
                         <div className="text-xs text-bambu-gray mt-1">
-                          ~{(plugEnergySummary.totalYesterday * (localSettings?.energy_cost_per_kwh ?? 0)).toFixed(2)} {getCurrencySymbol(localSettings?.currency || 'USD')}
+                          ~{formatCurrency(plugEnergySummary.totalYesterday * (localSettings?.energy_cost_per_kwh ?? 0), localSettings?.currency || 'USD')}
                         </div>
                       )}
                     </div>
@@ -3650,7 +3650,7 @@ export function SettingsPage() {
                       </div>
                       {(localSettings?.energy_cost_per_kwh ?? 0) > 0 && (
                         <div className="text-xs text-bambu-gray mt-1">
-                          ~{(plugEnergySummary.totalLifetime * (localSettings?.energy_cost_per_kwh ?? 0)).toFixed(2)} {getCurrencySymbol(localSettings?.currency || 'USD')}
+                          ~{formatCurrency(plugEnergySummary.totalLifetime * (localSettings?.energy_cost_per_kwh ?? 0), localSettings?.currency || 'USD')}
                         </div>
                       )}
                     </div>

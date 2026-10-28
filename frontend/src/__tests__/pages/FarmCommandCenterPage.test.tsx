@@ -6,6 +6,14 @@ import { render } from '../utils';
 import { server } from '../mocks/server';
 import { FarmCommandCenterPage } from '../../pages/FarmCommandCenterPage';
 
+vi.mock('../../components/EmbeddedCameraViewer', () => ({
+  EmbeddedCameraViewer: ({ printerId, printerName, monitorMode }: { printerId: number; printerName: string; monitorMode?: boolean }) => (
+    <div data-testid={`monitor-viewer-${printerId}`} data-monitor-mode={monitorMode ? 'true' : 'false'}>
+      <span>{printerName}</span>
+    </div>
+  ),
+}));
+
 const printers = [
   {
     id: 1,
@@ -210,6 +218,26 @@ describe('FarmCommandCenterPage', () => {
     expect(screen.getByText('PRA-01 - Gridfinity Tray - 68%')).toBeInTheDocument();
     expect(screen.getByText('Queued')).toBeInTheDocument();
     expect(screen.getByText('gridfinity-bin-plate-03.gcode.3mf')).toBeInTheDocument();
+  });
+
+  it('shows camera-only tiles with the print percentage overlaid in video mode', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([
+        { ...printers[0], external_camera_url: 'http://10.0.0.11/webcam', external_camera_type: 'mjpeg', external_camera_enabled: true },
+        printers[1],
+      ])),
+    );
+
+    render(<FarmCommandCenterPage />);
+    await user.click(await screen.findByRole('button', { name: /video monitoring|giám sát video/i }));
+
+    const tile = await screen.findByTestId('monitor-camera-tile-1');
+    expect(within(tile).getByTestId('monitor-viewer-1')).toHaveAttribute('data-monitor-mode', 'true');
+    expect(within(tile).getByText('PRA-01')).toBeInTheDocument();
+    expect(within(tile).getByText('68%')).toBeInTheDocument();
+    expect(within(tile).queryByAltText('P1S')).not.toBeInTheDocument();
+    expect(within(tile).queryByText('Printing')).not.toBeInTheDocument();
   });
 
   it('opens an alerts pop-up from the alerts stat card', async () => {

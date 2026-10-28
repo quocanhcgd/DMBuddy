@@ -12,7 +12,6 @@ import { useToast } from '../../contexts/ToastContext';
 import { buildLoadedFilaments, useFilamentMapping } from '../../hooks/useFilamentMapping';
 import { useMultiPrinterFilamentMapping, type PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
 import { getColorName } from '../../utils/colors';
-import { getCurrencySymbol } from '../../utils/currency';
 import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
 import { getGlobalTrayId, isPlaceholderDate } from '../../utils/amsHelpers';
 import { FilamentMapping } from './FilamentMapping';
@@ -268,7 +267,7 @@ export function PrintModal({
     }));
   }, [settings, mode]);
 
-  const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
+  const currencyCode = settings?.currency || 'USD';
   const defaultCostPerKg = settings?.default_filament_cost ?? 0;
 
   const { data: printers, isLoading: loadingPrinters } = useQuery({
@@ -1167,7 +1166,7 @@ export function PrintModal({
                 manualMappings={manualMappings}
                 onManualMappingChange={setManualMappings}
                 defaultExpanded={!!initialSelectedPrinterIds?.length || (settings?.per_printer_mapping_expanded ?? false)}
-                currencySymbol={currencySymbol}
+                currencyCode={currencyCode}
                 defaultCostPerKg={defaultCostPerKg}
               />
             )}

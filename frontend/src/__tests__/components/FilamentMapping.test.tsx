@@ -85,7 +85,7 @@ describe('FilamentMapping — FTS routing', () => {
         filamentReqs={mockFilamentReqs}
         manualMappings={{}}
         onManualMappingChange={() => {}}
-        currencySymbol="$"
+        currencyCode="USD"
         defaultCostPerKg={0}
         defaultExpanded
       />,
@@ -131,7 +131,7 @@ describe('FilamentMapping — FTS routing', () => {
         filamentReqs={mockFilamentReqs}
         manualMappings={{}}
         onManualMappingChange={() => {}}
-        currencySymbol="$"
+        currencyCode="USD"
         defaultCostPerKg={0}
         defaultExpanded
       />,

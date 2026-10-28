@@ -16,6 +16,7 @@ import type { ArchiveSlim } from '../api/client';
 import { MetricToggle, type Metric } from './MetricToggle';
 import { parseUTCDate } from '../utils/date';
 import { formatWeight } from '../utils/weight';
+import { formatCurrency } from '../utils/currency';
 
 interface FilamentTrendsProps {
   archives: ArchiveSlim[];
@@ -254,7 +255,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
         <div className="bg-bambu-dark rounded-lg p-4">
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm text-bambu-gray leading-none">{t('stats.periodCost')}</p>
-            <p className="text-2xl font-bold text-white leading-none">{currency}{totalCost.toFixed(2)}</p>
+            <p className="text-2xl font-bold text-white leading-none">{formatCurrency(totalCost, currency)}</p>
           </div>
           <p className="text-xs text-bambu-gray">{totalPrints} {t('common.prints')}</p>
         </div>
@@ -268,7 +269,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
             </p>
           </div>
           <p className="text-xs text-bambu-gray">
-            {currency}{totalPrints > 0 ? (totalCost / totalPrints).toFixed(2) : '0.00'} avg
+            {formatCurrency(totalPrints > 0 ? totalCost / totalPrints : 0, currency)} avg
           </p>
         </div>
       </div>

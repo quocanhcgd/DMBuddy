@@ -269,6 +269,34 @@ function FleetTile({ item, showCamera, canViewCamera, viewerIndex, layout }: { i
     offline: 'border-slate-700 bg-bambu-dark-secondary/70 text-bambu-gray',
   };
   const label = state === 'printing' ? t('farmCommandCenter.printing') : state === 'paused' ? t('farmCommandCenter.paused') : state === 'alert' ? t('farmCommandCenter.alert') : state === 'offline' ? t('farmCommandCenter.offline') : t('farmCommandCenter.idle');
+
+  if (layout === 'video') {
+    return (
+      <div data-testid={`monitor-camera-tile-${item.printer.id}`} className={`rounded-lg border p-3 ${classes[state]}`}>
+        <div className="relative aspect-video overflow-hidden rounded-md border border-white/10 bg-black">
+          {cameraSupported && cameraOpen ? (
+            <EmbeddedCameraViewer
+              printerId={item.printer.id}
+              printerName={item.printer.name}
+              viewerIndex={viewerIndex}
+              mode="inline"
+              monitorMode
+              onClose={() => setCameraOpen(false)}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center px-3 text-center text-xs text-bambu-gray-light">
+              {cameraOpen ? (canViewCamera ? t('farmCommandCenter.cameraUnavailable') : t('farmCommandCenter.cameraPermissionRequired')) : t('farmCommandCenter.reopenCamera')}
+            </div>
+          )}
+          {!cameraOpen && <button type="button" onClick={() => setCameraOpen(true)} className="absolute inset-0" aria-label={t('farmCommandCenter.reopenCamera')} />}
+          <span className="pointer-events-none absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1 text-xs font-semibold tabular-nums text-white">
+            {progress !== null ? `${progress}%` : '—'}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-20 rounded-lg border p-3 ${classes[state]}`}>
       <div className="flex items-start gap-3">
@@ -310,9 +338,6 @@ function FleetTile({ item, showCamera, canViewCamera, viewerIndex, layout }: { i
         <button type="button" onClick={() => setCameraOpen(true)} className="mt-3 flex aspect-video w-full items-center justify-center gap-2 rounded-md border border-white/10 bg-black/30 text-xs text-bambu-gray-light transition hover:bg-white/5 hover:text-white">
           <Video className="h-4 w-4" /> {t('farmCommandCenter.reopenCamera')}
         </button>
-      )}
-      {layout === 'video' && !cameraSupported && (
-        <div className="mt-3 flex aspect-video items-center justify-center rounded-md border border-white/10 bg-black/30 text-xs text-bambu-gray-light">{canViewCamera ? t('farmCommandCenter.cameraUnavailable') : t('farmCommandCenter.cameraPermissionRequired')}</div>
       )}
     </div>
   );
@@ -654,8 +679,8 @@ export function FarmCommandCenterPage() {
 
           <div className="space-y-3">
             {visibleGroups.map((group) => (
-              <div key={group.name} className="grid gap-3 xl:grid-cols-[220px_1fr]">
-                <div className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary/70 p-4">
+              <div key={group.name} className={fleetLayout === 'video' ? '' : 'grid gap-3 xl:grid-cols-[220px_1fr]'}>
+                {fleetLayout !== 'video' && <div className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary/70 p-4">
                   <div className="flex items-center justify-between">
                     <div className="font-bold text-white">{group.name}</div>
                     <span className="rounded-full bg-bambu-dark-tertiary px-2 py-0.5 text-xs font-bold text-bambu-gray-light">{group.items.length}</span>
@@ -663,8 +688,8 @@ export function FarmCommandCenterPage() {
                   <div className="mt-2 flex items-center gap-2 text-sm text-bambu-gray-light">
                     <span className="h-2 w-2 rounded-full bg-emerald-400" /> {group.items.filter((item) => normalizeState(item.status) !== 'offline').length} {t('farmCommandCenter.online')}
                   </div>
-                </div>
-                <div className={`grid gap-3 ${fleetLayout === 'list' ? 'grid-cols-1' : fleetLayout === 'video' ? 'sm:grid-cols-2 xl:grid-cols-3' : 'sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8'}`}>
+                </div>}
+                <div className={`grid gap-3 ${fleetLayout === 'list' ? 'grid-cols-1' : fleetLayout === 'video' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4' : 'sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8'}`}>
                   {group.items.map((item, index) => <FleetTile key={item.printer.id} item={item} layout={fleetLayout} canViewCamera={canViewCamera} showCamera={fleetLayout === 'video'} viewerIndex={index} />)}
                   {fleetLayout === 'grid' && group.items.length > 8 && (
                     <div className="flex min-h-20 items-center justify-center rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary/70 text-sm text-bambu-gray-light">{t('farmCommandCenter.more', { count: group.items.length - 8 })}</div>

@@ -198,7 +198,7 @@ export interface FilamentMappingProps {
   filamentReqs: FilamentReqsData | undefined;
   manualMappings: Record<number, number>;
   onManualMappingChange: (mappings: Record<number, number>) => void;
-  currencySymbol: string;
+  currencyCode?: string;
   defaultCostPerKg: number;
 }
 

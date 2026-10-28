@@ -315,6 +315,23 @@ describe('Printer control endpoints', () => {
     expect(result).toEqual({ status: 'ok' });
   });
 
+  it('posts K3 WebRTC offers to the backend signaling route', async () => {
+    let capturedPath = '';
+    let capturedOffer = '';
+    server.use(
+      http.post('/api/v1/printers/:id/camera/k3-webrtc-offer', async ({ request, params }) => {
+        capturedPath = `/printers/${params.id}/camera/k3-webrtc-offer`;
+        capturedOffer = ((await request.json()) as { offer: string }).offer;
+        return HttpResponse.json({ answer: 'encoded-answer' });
+      }),
+    );
+
+    const response = await api.postK3WebRtcOffer(42, 'encoded-offer');
+    expect(capturedPath).toBe('/printers/42/camera/k3-webrtc-offer');
+    expect(capturedOffer).toBe('encoded-offer');
+    expect(response).toEqual({ answer: 'encoded-answer' });
+  });
+
   it('setAirductMode passes mode in query string', async () => {
     let capturedUrl = '';
     server.use(
