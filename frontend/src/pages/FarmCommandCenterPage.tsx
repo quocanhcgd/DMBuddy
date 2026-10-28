@@ -9,13 +9,14 @@ import {
   ChevronRight,
   Grid3X3,
   Layers,
+  List,
   Monitor,
   Pause,
   PackageOpen,
   Plus,
   Printer as PrinterIcon,
   Search,
-  Server,
+  Video,
   Wrench,
   X,
 } from 'lucide-react';
@@ -33,6 +34,9 @@ import {
 import { classifyPrinterStatus } from '../utils/printerStatus';
 import { getPrinterImage } from '../utils/printer';
 import { filterKnownHMSErrors } from '../components/HMSErrorModal';
+import { EmbeddedCameraViewer } from '../components/EmbeddedCameraViewer';
+import { canOpenPrinterCamera } from '../utils/printerCamera';
+import { useAuth } from '../contexts/AuthContext';
 
 interface FleetPrinter {
   printer: Printer;
@@ -250,9 +254,12 @@ function StatCard({ icon: Icon, value, label, sub, tone, to, onClick }: { icon: 
   );
 }
 
-function FleetTile({ item }: { item: FleetPrinter }) {
+function FleetTile({ item, showCamera, canViewCamera, viewerIndex, layout }: { item: FleetPrinter; showCamera: boolean; canViewCamera: boolean; viewerIndex: number; layout: 'grid' | 'list' | 'video' }) {
   const { t } = useTranslation();
+  const [cameraOpen, setCameraOpen] = useState(showCamera);
   const state = normalizeState(item.status);
+  const cameraSupported = canOpenPrinterCamera(item.printer, item.status?.connected, canViewCamera);
+  useEffect(() => setCameraOpen(showCamera), [showCamera]);
   const progress = item.status?.progress === null || item.status?.progress === undefined ? null : Math.min(100, Math.max(0, Math.round(item.status.progress)));
   const classes = {
     printing: 'border-blue-500/70 bg-blue-500/15 text-blue-200',
@@ -287,6 +294,25 @@ function FleetTile({ item }: { item: FleetPrinter }) {
         <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bambu-dark-tertiary">
           <div className="h-full rounded-full bg-blue-400" style={{ width: `${progress ?? 0}%` }} />
         </div>
+      )}
+      {showCamera && cameraSupported && cameraOpen && (
+        <div className="mt-3 overflow-hidden rounded-md border border-white/10 bg-black">
+          <EmbeddedCameraViewer
+            printerId={item.printer.id}
+            printerName={item.printer.name}
+            viewerIndex={viewerIndex}
+            mode="inline"
+            onClose={() => setCameraOpen(false)}
+          />
+        </div>
+      )}
+      {showCamera && cameraSupported && !cameraOpen && (
+        <button type="button" onClick={() => setCameraOpen(true)} className="mt-3 flex aspect-video w-full items-center justify-center gap-2 rounded-md border border-white/10 bg-black/30 text-xs text-bambu-gray-light transition hover:bg-white/5 hover:text-white">
+          <Video className="h-4 w-4" /> {t('farmCommandCenter.reopenCamera')}
+        </button>
+      )}
+      {layout === 'video' && !cameraSupported && (
+        <div className="mt-3 flex aspect-video items-center justify-center rounded-md border border-white/10 bg-black/30 text-xs text-bambu-gray-light">{canViewCamera ? t('farmCommandCenter.cameraUnavailable') : t('farmCommandCenter.cameraPermissionRequired')}</div>
       )}
     </div>
   );
@@ -480,7 +506,10 @@ export function FarmCommandCenterPage() {
   const [groupFilter, setGroupFilter] = useState('all');
   const [showAlerts, setShowAlerts] = useState(false);
   const [showGroups, setShowGroups] = useState(false);
+  const [fleetLayout, setFleetLayout] = useState<'grid' | 'list' | 'video'>('grid');
   const queryClient = useQueryClient();
+  const { hasPermission } = useAuth();
+  const canViewCamera = hasPermission('camera:view');
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -609,9 +638,16 @@ export function FarmCommandCenterPage() {
               <button type="button" onClick={() => setShowGroups(true)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-500/60 bg-blue-500/10 px-3 py-2 text-sm font-semibold text-blue-300 transition hover:bg-blue-500/20 hover:text-white">
                 <Plus className="h-4 w-4" /> {t('farmCommandCenter.createGroup')}
               </button>
-              <div className="flex rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-1 text-bambu-gray-light">
-                <span className="rounded bg-blue-500 px-3 py-1 text-white"><Grid3X3 className="h-4 w-4" /></span>
-                <span className="px-3 py-1"><Server className="h-4 w-4" /></span>
+              <div className="flex rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-1 text-bambu-gray-light" role="group" aria-label={t('farmCommandCenter.displayMode')}>
+                {([
+                  { mode: 'grid', Icon: Grid3X3, label: t('farmCommandCenter.gridView') },
+                  { mode: 'list', Icon: List, label: t('farmCommandCenter.listView') },
+                  { mode: 'video', Icon: Video, label: t('farmCommandCenter.videoView') },
+                ] as const).map(({ mode, Icon, label }) => (
+                  <button key={mode} type="button" onClick={() => setFleetLayout(mode)} aria-label={label} aria-pressed={fleetLayout === mode} title={label} className={`rounded px-3 py-1 transition-colors ${fleetLayout === mode ? 'bg-blue-500 text-white' : 'text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white'}`}>
+                    <Icon className="h-4 w-4" />
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -628,9 +664,9 @@ export function FarmCommandCenterPage() {
                     <span className="h-2 w-2 rounded-full bg-emerald-400" /> {group.items.filter((item) => normalizeState(item.status) !== 'offline').length} {t('farmCommandCenter.online')}
                   </div>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
-                  {group.items.slice(0, 8).map((item) => <FleetTile key={item.printer.id} item={item} />)}
-                  {group.items.length > 8 && (
+                <div className={`grid gap-3 ${fleetLayout === 'list' ? 'grid-cols-1' : fleetLayout === 'video' ? 'sm:grid-cols-2 xl:grid-cols-3' : 'sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8'}`}>
+                  {group.items.map((item, index) => <FleetTile key={item.printer.id} item={item} layout={fleetLayout} canViewCamera={canViewCamera} showCamera={fleetLayout === 'video'} viewerIndex={index} />)}
+                  {fleetLayout === 'grid' && group.items.length > 8 && (
                     <div className="flex min-h-20 items-center justify-center rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary/70 text-sm text-bambu-gray-light">{t('farmCommandCenter.more', { count: group.items.length - 8 })}</div>
                   )}
                 </div>
