@@ -9,7 +9,8 @@ export interface PrinterStatusLike {
  * Classify printer status using the same buckets as the main Printers page.
  * Only the firmware/app canonical RUNNING state is considered actively printing;
  * stale job metadata or legacy display strings such as PRINTING do not imply an
- * active print by themselves.
+ * active print by themselves. Callers should pass only actionable, recognized HMS
+ * errors so dashboards agree with the printer cards.
  */
 export function classifyPrinterStatus(status: PrinterStatusLike | undefined, hasKnownHmsErrors = false): PrinterUiState {
   if (!status?.connected) return 'offline';

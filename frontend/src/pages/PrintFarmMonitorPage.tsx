@@ -32,6 +32,7 @@ import {
 } from '../api/client';
 import { getPrinterImage } from '../utils/printer';
 import { classifyPrinterStatus } from '../utils/printerStatus';
+import { filterKnownHMSErrors } from '../components/HMSErrorModal';
 import { appAssetPath } from '../utils/assetPaths';
 import { resolveLoadedFilamentInfo, type ResolvedLoadedFilamentInfo, type SpoolmanSlotAssignmentLike } from '../utils/amsHelpers';
 import { useTheme } from '../contexts/ThemeContext';
@@ -97,7 +98,7 @@ function normalizeRefreshSeconds(value: number | null | undefined): number {
 }
 
 function normalizeState(status?: PrinterStatus): NormalizedState {
-  const classified = classifyPrinterStatus(status, (status?.hms_errors?.length ?? 0) > 0);
+  const classified = classifyPrinterStatus(status, filterKnownHMSErrors(status?.hms_errors ?? []).length > 0);
   return classified === 'finished' ? 'idle' : classified;
 }
 

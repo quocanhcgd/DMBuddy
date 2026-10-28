@@ -32,6 +32,7 @@ import {
 } from '../api/client';
 import { classifyPrinterStatus } from '../utils/printerStatus';
 import { getPrinterImage } from '../utils/printer';
+import { filterKnownHMSErrors } from '../components/HMSErrorModal';
 
 interface FleetPrinter {
   printer: Printer;
@@ -65,7 +66,7 @@ function buildPrinterGroupMap(groups: PrinterFleetGroup[]): Map<number, string> 
 }
 
 function normalizeState(status?: PrinterStatus): FleetState {
-  const classified = classifyPrinterStatus(status, (status?.hms_errors?.length ?? 0) > 0);
+  const classified = classifyPrinterStatus(status, filterKnownHMSErrors(status?.hms_errors ?? []).length > 0);
   if (classified === 'error') return 'alert';
   if (classified === 'finished') return 'idle';
   return classified;
