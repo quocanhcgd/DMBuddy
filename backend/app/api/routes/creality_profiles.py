@@ -37,9 +37,16 @@ def _catalog() -> dict[str, list[dict]]:
 
 
 def _printer_name(name: str, setting: dict) -> str | None:
+    printer_model = str(setting.get("printer_model") or "").strip()
+    if printer_model:
+        return re.sub(r"^Creality\s+", "", printer_model, flags=re.IGNORECASE)
+
     for value in (name, str(setting.get("inherits") or "")):
         if "@Creality " in value:
             printer = value.split("@Creality ", 1)[1].strip()
+            return re.sub(r"\s+\d+(?:\.\d+)?(?:\s*mm)?(?:\s+nozzle)?$", "", printer, flags=re.IGNORECASE)
+        if "@SPARKX " in value:
+            printer = "SPARKX " + value.split("@SPARKX ", 1)[1].strip()
             return re.sub(r"\s+\d+(?:\.\d+)?(?:\s*mm)?(?:\s+nozzle)?$", "", printer, flags=re.IGNORECASE)
         if value.startswith("Creality "):
             printer = value.removeprefix("Creality ").removesuffix(" model").strip()

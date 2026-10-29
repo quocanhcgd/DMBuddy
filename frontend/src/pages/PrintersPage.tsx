@@ -2691,6 +2691,7 @@ function PrinterCard({
     },
     onSuccess: (_, on) => {
       showToast(`Chamber light ${on ? 'on' : 'off'}`);
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
     onError: (error: Error, _, context) => {
       // Rollback on error
@@ -4300,11 +4301,11 @@ function PrinterCard({
                         <button
                           type="button"
                           onClick={() => chamberLightMutation.mutate(!status.chamber_light)}
-                          disabled={chamberLightMutation.isPending || !hasPermission('printers:control') || (isCrealityK3Moonraker && !status.chamber_light_available)}
+                          disabled={chamberLightMutation.isPending || !hasPermission('printers:control')}
                           className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors ${
                             status.chamber_light ? 'bg-yellow-500/10 hover:bg-yellow-500/20' : 'bg-bambu-dark hover:bg-bambu-dark-tertiary'
                           } disabled:opacity-50 disabled:cursor-not-allowed`}
-                          title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (isCrealityK3Moonraker && !status.chamber_light_available ? t('printers.chamberLightUnavailable', 'Light pin is disabled in printer configuration') : status.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn'))}
+                          title={!hasPermission('printers:control') ? t('printers.permission.noControl') : status.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn')}
                         >
                           <ChamberLight on={status.chamber_light} className={`w-3.5 h-3.5 ${status.chamber_light ? 'text-yellow-400' : 'text-bambu-gray/50'}`} />
                           <span className={`text-[10px] ${status.chamber_light ? 'text-yellow-400' : 'text-bambu-gray/50'}`}>
@@ -5945,8 +5946,8 @@ function PrinterCard({
                     variant="secondary"
                     size="sm"
                     onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
-                    disabled={(!status?.connected && !isSnapmakerU1) || chamberLightMutation.isPending || !hasPermission('printers:control') || (isCrealityK3Moonraker && !status?.chamber_light_available)}
-                    title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (isCrealityK3Moonraker && !status?.chamber_light_available ? t('printers.chamberLightUnavailable', 'Light pin is disabled in printer configuration') : status?.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn'))}
+                    disabled={(!status?.connected && !isSnapmakerU1) || chamberLightMutation.isPending || !hasPermission('printers:control')}
+                    title={!hasPermission('printers:control') ? t('printers.permission.noControl') : status?.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn')}
                     className={status?.chamber_light ? '!border-yellow-500 !text-yellow-400 hover:!bg-yellow-500/20' : ''}
                   >
                     <ChamberLight on={status?.chamber_light ?? false} className={`w-4 h-4 ${status?.chamber_light ? 'text-yellow-400' : ''}`} />

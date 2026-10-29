@@ -23,3 +23,18 @@ def test_bundled_profile_source_license_and_creality_base_profiles_exist():
     assert (PROFILE_ROOT / "machine" / "fdm_creality_common.json").is_file()
     assert (PROFILE_ROOT / "process" / "fdm_process_creality_common.json").is_file()
     assert (PROFILE_ROOT / "filament" / "fdm_filament_pla.json").is_file()
+
+
+def test_sparkx_i7_machine_process_and_filament_profiles_are_filterable():
+    catalog = _catalog()
+
+    sparkx = [
+        profile
+        for entries in catalog.values()
+        for profile in entries
+        if profile["printer"] == "SPARKX i7"
+    ]
+
+    assert any(profile["id"].startswith("printer:SPARKX i7 ") for profile in sparkx)
+    assert any(profile["id"].startswith("process:") for profile in sparkx)
+    assert any(profile["id"].startswith("filament:") for profile in sparkx)

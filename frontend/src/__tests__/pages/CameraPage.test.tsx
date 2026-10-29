@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor, render as rtlRender } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { CameraPage } from '../../pages/CameraPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -137,7 +138,9 @@ describe('CameraPage', () => {
       expect(screen.getByTitle('Diagnose')).toBeInTheDocument();
     });
 
-    it('disables K3 chamber light control when Klipper does not expose the LED pin', async () => {
+    it('sends the chamber light command for K3 when status omits the LED pin', async () => {
+      const user = userEvent.setup();
+      let requestedUrl = '';
       server.use(
         http.get('/api/v1/printers/:id', () => HttpResponse.json({
           ...mockPrinter,
@@ -149,12 +152,18 @@ describe('CameraPage', () => {
           chamber_light: false,
           chamber_light_available: false,
         })),
+        http.post('/api/v1/printers/:id/chamber-light', ({ request }) => {
+          requestedUrl = request.url;
+          return HttpResponse.json({ success: true, message: 'Chamber light on' });
+        }),
       );
 
       renderCameraPage(1);
 
-      const lightButton = await screen.findByTitle('Chân đèn chưa được bật trong cấu hình máy in');
-      expect(lightButton).toBeDisabled();
+      const lightButton = await screen.findByTitle('camera.chamberLight');
+      expect(lightButton).not.toBeDisabled();
+      await user.click(lightButton);
+      await waitFor(() => expect(requestedUrl).toContain('on=true'));
     });
   });
 

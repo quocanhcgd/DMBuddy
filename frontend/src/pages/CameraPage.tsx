@@ -71,9 +71,6 @@ export function CameraPage() {
     queryFn: () => api.getPrinter(id),
     enabled: id > 0,
   });
-  const isCrealityK3Moonraker =
-    ['klipper', 'fluidd', 'mainsail', 'moonraker'].includes(String(printer?.provider || '').toLowerCase()) &&
-    /^(?:creality\s+)?k3\b/i.test((printer?.model || '').trim());
   const isWebRtcCamera = printer?.external_camera_enabled === true && printer.external_camera_type === 'webrtc';
   const webRtcUrl = isWebRtcCamera ? printer.external_camera_url : null;
   const isK3WebRtc = Boolean(webRtcUrl?.includes('/call/webrtc_local'));
@@ -100,6 +97,7 @@ export function CameraPage() {
     },
     onSuccess: (_, on) => {
       showToast(`Chamber light ${on ? 'on' : 'off'}`);
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', id] });
     },
     onError: (error: Error, _, context) => {
       if (context?.previousStatus) {
@@ -667,13 +665,11 @@ export function CameraPage() {
           </div>
           <button
             onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
-            disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control') || (isCrealityK3Moonraker && !status?.chamber_light_available)}
+            disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
             className={`p-1.5 rounded disabled:opacity-50 ${status?.chamber_light ? 'bg-yellow-500/20 hover:bg-yellow-500/30' : 'hover:bg-bambu-dark-tertiary'}`}
             title={!hasPermission('printers:control')
               ? t('printers.permission.noControl')
-              : isCrealityK3Moonraker && !status?.chamber_light_available
-                ? t('printers.chamberLightUnavailable', 'Chân đèn chưa được bật trong cấu hình máy in')
-                : t('camera.chamberLight')}
+              : t('camera.chamberLight')}
           >
             <ChamberLight on={status?.chamber_light ?? false} className="w-4 h-4" />
           </button>

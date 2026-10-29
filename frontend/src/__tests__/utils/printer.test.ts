@@ -140,6 +140,10 @@ describe('getPrinterImage', () => {
       expect(getPrinterImage('Creality K10')).toBe('/img/printers/default.png');
       expect(getPrinterImage('Snapmaker U1')).toBe('/img/printers/snapmaker-u1.png');
       expect(getPrinterImage('Snapmaker U2')).toBe('/img/printers/default.png');
+      expect(getPrinterImage('Adventurer 5M')).toBe('/img/printers/flashforge-adventurer-5m.png');
+      expect(getPrinterImage('Adventurer 5M Pro')).toBe('/img/printers/flashforge-adventurer-5m-pro.png');
+      expect(getPrinterImage('Creator 5')).toBe('/img/printers/flashforge-creator-5.png');
+      expect(getPrinterImage('Creator 5 Pro')).toBe('/img/printers/flashforge-creator-5-pro.png');
     });
 
     it('uses the Home Assistant ingress base for static printer images', () => {
