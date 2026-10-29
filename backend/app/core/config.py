@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings
 
 # Application version - single source of truth
-APP_VERSION = "0.2.5.17"
+APP_VERSION = "0.2.5.18"
 GITHUB_REPO = "quocanhcgd/DMBuddy"
 UPSTREAM_GITHUB_REPO = "vmhomelab/Printbuddy"
 

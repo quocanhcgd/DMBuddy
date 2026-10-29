@@ -540,67 +540,34 @@ def test_moonraker_controls_snapmaker_u1_case_light_with_fixed_led_command(monke
     ]
 
 
-def test_moonraker_controls_creality_k3_chamber_light_over_websocket(monkeypatch):
+def test_moonraker_controls_creality_k3_chamber_light_with_macros(monkeypatch):
     client = MoonrakerPrinterClient("http://k3.local:7125", printer_model="Creality K3")
-    sent: list[tuple[str, str]] = []
-    timeouts: list[tuple[float, float]] = []
-
-    class FakeWebSocket:
-        def __init__(self):
-            self.received_initial = False
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return None
-
-        def send(self, payload: str):
-            sent.append((url, payload))
-
-        def recv(self, *, timeout: float):
-            assert timeout > 0
-            if not self.received_initial:
-                self.received_initial = True
-                return '{"lightSw": 0}'
-            desired = json.loads(sent[-1][1])["params"]["lightSw"]
-            return json.dumps({"lightSw": desired})
-
-    def fake_connect(url_value: str, *, open_timeout: float, close_timeout: float):
-        nonlocal url
-        url = url_value
-        timeouts.append((open_timeout, close_timeout))
-        return FakeWebSocket()
-
-    url = ""
-    monkeypatch.setattr("backend.app.services.printer_providers.moonraker.websocket_connect", fake_connect)
+    sent: list[str] = []
+    monkeypatch.setattr(client, "send_gcode", lambda script: sent.append(script) or True)
 
     assert client.set_chamber_light(True) is True
-    assert client.state.chamber_light is True
     assert client.set_chamber_light(False) is True
-    assert client.state.chamber_light is False
     assert sent == [
-        ("ws://k3.local:9999/", '{"method": "set", "params": {"lightSw": 1}}'),
-        ("ws://k3.local:9999/", '{"method": "set", "params": {"lightSw": 0}}'),
+        "CHAMBER_LED_ON",
+        "CHAMBER_LED_OFF",
     ]
-    assert timeouts == [(5.0, 1), (5.0, 1)]
 
 
 def test_moonraker_reads_creality_k3_chamber_light_state():
     client = MoonrakerPrinterClient("http://k3.local:7125", printer_model="Creality K3")
 
-    client._apply_creality_k3_status({"output_pin LED": {"value": 1.0}})
+    client._apply_creality_k3_status({"output_pin chamber_led": {"value": 1.0}})
 
     assert client.state.chamber_light_available is True
     assert client.state.chamber_light is True
 
 
-def test_moonraker_k3_light_available_without_klipper_led_pin():
+def test_moonraker_k3_light_unavailable_without_chamber_led_pin():
     client = MoonrakerPrinterClient("http://k3.local:7125", printer_model="Creality K3")
 
     client._apply_creality_k3_status({})
 
-    assert client.state.chamber_light_available is True
+    assert client.state.chamber_light_available is False
     assert client.state.chamber_light is False
 
 
@@ -634,13 +601,16 @@ def test_moonraker_controls_creality_k3_part_and_aux_fans(monkeypatch):
     assert sent == ["M106 S128", "M106 P2 S255"]
 
 
-def test_moonraker_k3_queries_only_available_manual_fan_pins():
+def test_moonraker_k3_queries_available_light_and_manual_fan_pins():
     client = MoonrakerPrinterClient("http://k3.local:7125", printer_model="Creality K3")
 
-    assert client._available_creality_k3_objects(["extruder", "output_pin fan0", "output_pin fan2"]) == [
+    assert client._available_creality_k3_objects(
+        ["extruder", "output_pin fan0", "output_pin fan2", "output_pin chamber_led"]
+    ) == [
         "extruder",
         "output_pin fan0",
         "output_pin fan2",
+        "output_pin chamber_led",
     ]
 
 

@@ -219,6 +219,67 @@ describe('PrintersPage', () => {
       expect(within(cfsSection).getByText('Unknown')).toBeInTheDocument();
     });
 
+    it('assigns a Spoolman spool to the corresponding Creality CFS-Nano slot', async () => {
+      const user = userEvent.setup();
+      let postedBody: Record<string, unknown> | null = null;
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json([{
+          ...mockPrinters[0],
+          id: 8,
+          name: 'Creality K3',
+          provider: 'fluidd',
+          model: 'Creality K3',
+        }])),
+        http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+          ...mockPrinterStatus,
+          cfs_nano: {
+            station_type: 'CFS-Nano',
+            state: 'connect',
+            online: true,
+            slots: [
+              { slot: 'T1A', material_name: 'PLA', material_code: null, color: '#0A2989' },
+              { slot: 'T1B', material_name: 'PETG', material_code: null, color: '#00AA00' },
+            ],
+          },
+        })),
+        http.get('/api/v1/spoolman/status', () => HttpResponse.json({
+          enabled: true,
+          connected: true,
+          url: 'http://spoolman.local',
+        })),
+        http.get('/api/v1/spoolman/inventory/spools', () => HttpResponse.json([{
+          id: 321,
+          brand: 'Polymaker',
+          material: 'PETG',
+          subtype: null,
+          color_name: 'Green',
+          rgba: '00AA00FF',
+          label_weight: 1000,
+          weight_used: 100,
+          archived_at: null,
+        }])),
+        http.get('/api/v1/spoolman/inventory/slot-assignments/all', () => HttpResponse.json([])),
+        http.post('/api/v1/spoolman/inventory/slot-assignments', async ({ request }) => {
+          postedBody = await request.json() as Record<string, unknown>;
+          return HttpResponse.json({ id: 321, data_origin: 'spoolman' });
+        }),
+        http.post('/api/v1/printers/:id/refresh-status', () => HttpResponse.json({ success: true })),
+      );
+
+      render(<PrintersPage />);
+
+      await user.click(await screen.findByRole('button', { name: 'Link to Spoolman T1B' }));
+      await user.click(await screen.findByRole('button', { name: /Polymaker PETG/i }));
+      await user.click(screen.getByRole('button', { name: 'Assign Spool' }));
+
+      await waitFor(() => expect(postedBody).toEqual({
+        spoolman_spool_id: 321,
+        printer_id: 8,
+        ams_id: 0,
+        tray_id: 1,
+      }));
+    });
+
     it('closes a printer card menu when clicking elsewhere in the UI', async () => {
       const user = userEvent.setup();
       render(<PrintersPage />);

@@ -5,6 +5,14 @@ The historical upstream changelog is preserved after that section for fork/upstr
 
 ## Printbuddy
 
+### 0.2.5.18 - 2026-10-29
+
+#### Added
+- Added manual Spoolman spool assignment to Creality CFS-Nano slots, using stable station/slot addresses and the existing slot-assignment workflow.
+
+#### Fixed
+- Controlled the Creality K3 chamber light through the configured `CHAMBER_LED_ON` and `CHAMBER_LED_OFF` Klipper macros.
+
 ### 0.2.5.14 - 2026-10-25
 
 #### Fixed

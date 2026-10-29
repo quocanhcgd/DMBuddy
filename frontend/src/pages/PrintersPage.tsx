@@ -497,6 +497,12 @@ function isPrusaPrinter(printer: Pick<Printer, 'provider' | 'model'>): boolean {
   return provider === 'prusalink' || provider === 'prusaconnect' || model.startsWith('prusa ');
 }
 
+function getCrealityCfsSlotAddress(slot: string): { amsId: number; trayId: number } | null {
+  const match = /^T([1-4])([A-D])$/i.exec(slot.trim());
+  if (!match) return null;
+  return { amsId: Number(match[1]) - 1, trayId: match[2].toUpperCase().charCodeAt(0) - 65 };
+}
+
 function PrinterModelSelect({
   id,
   label,
@@ -4498,22 +4504,76 @@ function PrinterCard({
                           </span>
                         </div>
                         <div className="grid grid-cols-4 gap-1.5">
-                          {cfsNanoStatus.slots.map((slot, index) => (
-                            <div key={slot.slot} className="min-w-0 rounded border border-bambu-dark-tertiary/50 bg-bambu-dark-secondary/40 p-1 text-center">
-                              <FilamentSlotCircle
-                                trayColor={slot.color}
-                                trayType={slot.material_name}
-                                isEmpty={false}
-                                slotNumber={index + 1}
-                              />
-                              <div className="text-[9px] text-white font-bold truncate" title={slot.material_name || 'Unknown'}>
-                                {slot.material_name || 'Unknown'}
+                          {cfsNanoStatus.slots.map((slot, index) => {
+                            const address = getCrealityCfsSlotAddress(slot.slot);
+                            const assignment = address && spoolmanEnabled
+                              ? spoolmanSlotAssignments?.find(item => item.printer_id === printer.id && item.ams_id === address.amsId && item.tray_id === address.trayId)
+                              : undefined;
+                            const assignedSpool = assignment
+                              ? spoolmanSpools?.find(item => item.id === assignment.spoolman_spool_id)
+                              : undefined;
+                            return (
+                              <div key={slot.slot} className="min-w-0 rounded border border-bambu-dark-tertiary/50 bg-bambu-dark-secondary/40 p-1 text-center">
+                                <FilamentSlotCircle
+                                  trayColor={assignedSpool?.rgba || slot.color}
+                                  trayType={assignedSpool?.material || slot.material_name}
+                                  isEmpty={false}
+                                  slotNumber={index + 1}
+                                />
+                                <div className="text-[9px] text-white font-bold truncate" title={assignedSpool ? `${assignedSpool.brand ? `${assignedSpool.brand} ` : ''}${assignedSpool.material}${assignedSpool.color_name ? ` - ${assignedSpool.color_name}` : ''}` : slot.material_name || 'Unknown'}>
+                                  {assignedSpool?.material || slot.material_name || 'Unknown'}
+                                </div>
+                                <div className="mt-1 px-1 py-0.5 rounded border border-bambu-dark-tertiary text-[8px] font-semibold leading-none text-bambu-gray truncate">
+                                  {slot.slot}
+                                </div>
+                                {spoolmanEnabled && address && (
+                                  <div className="mt-1 flex items-center justify-center gap-1 min-h-5">
+                                    {assignedSpool ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="text-[8px] text-bambu-green truncate max-w-full hover:underline"
+                                          title={`${assignedSpool.brand ? `${assignedSpool.brand} ` : ''}${assignedSpool.material}${assignedSpool.color_name ? ` - ${assignedSpool.color_name}` : ''} (#${assignedSpool.id})`}
+                                          onClick={() => navigate(`/inventory?spool=${assignedSpool.id}`)}
+                                        >
+                                          #{assignedSpool.id}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          aria-label={`${t('spoolman.unlinkSpool')} ${slot.slot}`}
+                                          title={t('spoolman.unlinkSpool')}
+                                          className="p-0.5 text-bambu-gray hover:text-red-400"
+                                          onClick={() => onUnassignSpoolmanSpool?.(assignedSpool.id)}
+                                        >
+                                          <Unlink className="w-2.5 h-2.5" />
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        aria-label={`${t('spoolman.linkToSpoolman')} ${slot.slot}`}
+                                        title={t('spoolman.linkToSpoolman')}
+                                        className="p-0.5 text-bambu-gray hover:text-bambu-green"
+                                        onClick={() => setAssignSpoolModal({
+                                          printerId: printer.id,
+                                          amsId: address.amsId,
+                                          trayId: address.trayId,
+                                          trayInfo: {
+                                            type: slot.material_name || '',
+                                            material: slot.material_name || undefined,
+                                            color: slot.color || '',
+                                            location: `${slot.slot} - CFS-Nano`,
+                                          },
+                                        })}
+                                      >
+                                        <Link className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
-                              <div className="mt-1 px-1 py-0.5 rounded border border-bambu-dark-tertiary text-[8px] font-semibold leading-none text-bambu-gray truncate">
-                                {slot.slot}
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                       </div>
