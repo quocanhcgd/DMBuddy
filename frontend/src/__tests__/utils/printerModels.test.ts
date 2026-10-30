@@ -6,5 +6,7 @@ describe('printer model catalog', () => {
     const group = PRINTER_MODEL_GROUPS.find((entry) => entry.label === 'Creality Klipper');
 
     expect(group?.options).toContainEqual({ value: 'Creality K3', label: 'K3' });
+    expect(group?.options).toContainEqual({ value: 'Creality SPARKX i7', label: 'SPARKX i7' });
+    expect(group?.options).toContainEqual({ value: 'Creality SPARKX i8', label: 'SPARKX i8' });
   });
 });

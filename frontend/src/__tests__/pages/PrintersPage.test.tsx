@@ -1168,6 +1168,7 @@ describe('PrintersPage', () => {
     });
 
     it('shows loaded-spool assignment controls for Elegoo SDCP printers', async () => {
+      const user = userEvent.setup();
       server.use(
         http.get('/api/v1/printers/', () => HttpResponse.json([{
           ...mockPrinters[0],
@@ -1187,7 +1188,22 @@ describe('PrintersPage', () => {
       await waitFor(() => expect(screen.getByText('Centauri Carbon')).toBeInTheDocument());
 
       expect(await screen.findByText('Loaded spool')).toBeInTheDocument();
+      const filamentsSection = screen.getByTestId('printer-card-section-filaments');
+      const divider = within(filamentsSection).getByTestId('filaments-section-divider');
+      const loadedSpoolPanel = within(filamentsSection).getByTestId('filaments-loaded-spool');
+      expect(divider.nextElementSibling).toBe(loadedSpoolPanel);
+      expect(loadedSpoolPanel.querySelector('[data-testid="loaded-spool-slot"]')).not.toBeNull();
       expect(screen.getByRole('button', { name: /^Assign$/i })).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'S' }));
+      expect(screen.queryByTestId('loaded-spool-slot')).not.toBeInTheDocument();
+      const compactCard = screen.getByTestId('printer-card-8');
+      expect(within(compactCard).getByText('AI')).toBeInTheDocument();
+      expect(within(compactCard).queryByText('AI unavailable')).not.toBeInTheDocument();
+      expect(within(compactCard).getByRole('heading', { name: 'Centauri Carbon' })).toHaveAttribute('title', 'Centauri Carbon');
+
+      await user.click(screen.getByRole('button', { name: 'M' }));
+      expect(await screen.findByTestId('loaded-spool-slot')).toBeInTheDocument();
     });
 
     it('groups add-printer model choices by vendor and includes common Klipper machines', async () => {
@@ -1224,6 +1240,8 @@ describe('PrintersPage', () => {
       expect(optionValues).toContain('Creality K2');
       expect(optionValues).toContain('Creality K2 Plus');
       expect(optionValues).toContain('Creality K3');
+      expect(optionValues).toContain('Creality SPARKX i7');
+      expect(optionValues).toContain('Creality SPARKX i8');
       expect(optionValues).toContain('Snapmaker U1');
       expect(optionValues).toContain('Prusa MK4S');
       expect(optionValues).toContain('Generic Klipper Printer');
@@ -1507,7 +1525,7 @@ describe('PrintersPage', () => {
       render(<PrintersPage />);
 
       await screen.findByText('Boženka');
-      expect(screen.queryByRole('button', { name: /manual controls/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Controls$/i })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'X+' })).not.toBeInTheDocument();
     });
 
@@ -1547,8 +1565,10 @@ describe('PrintersPage', () => {
       render(<PrintersPage />);
 
       await screen.findByText('K2 Plus');
-      const controlsToggle = await screen.findByRole('button', { name: /manual controls/i });
+      const controlsToggle = await screen.findByRole('button', { name: /^Controls$/i });
       expect(controlsToggle).toBeInTheDocument();
+      expect(controlsToggle).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByLabelText('Nozzle temperature target')).not.toBeInTheDocument();
     });
 
     it('sends XYZ jog requests from the printer card controls', async () => {
@@ -1566,10 +1586,11 @@ describe('PrintersPage', () => {
       render(<PrintersPage />);
 
       await screen.findByText('X1 Carbon');
-      const controlsToggle = await screen.findByRole('button', { name: /manual controls/i });
+      const controlsToggle = await screen.findByRole('button', { name: /^Controls$/i });
       expect(controlsToggle).toHaveAttribute('aria-expanded', 'false');
       expect(screen.queryByRole('button', { name: 'X+' })).not.toBeInTheDocument();
       await user.click(controlsToggle);
+      expect(controlsToggle).toHaveAttribute('aria-expanded', 'true');
       const klipperXPlusButton = await screen.findByRole('button', { name: 'X+' });
       expect(klipperXPlusButton).toHaveClass('bg-[var(--accent)]');
       expect(klipperXPlusButton).not.toHaveClass('bg-red-700');
@@ -1578,6 +1599,9 @@ describe('PrintersPage', () => {
       await waitFor(() => {
         expect(jogRequests).toContain('?axis=x&distance=10');
       });
+      await user.click(controlsToggle);
+      expect(controlsToggle).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByRole('button', { name: 'X+' })).not.toBeInTheDocument();
     });
 
     it('sets nozzle and bed temperatures from the printer card controls', async () => {
@@ -1599,7 +1623,7 @@ describe('PrintersPage', () => {
       render(<PrintersPage />);
 
       await screen.findByText('X1 Carbon');
-      await user.click(await screen.findByRole('button', { name: /manual controls/i }));
+      await user.click(await screen.findByRole('button', { name: /^Controls$/i }));
       await user.type(await screen.findByLabelText('Nozzle temperature target'), '210');
       await user.click(screen.getByRole('button', { name: 'Nozzle' }));
       await user.type(await screen.findByLabelText('Bed temperature target'), '60');

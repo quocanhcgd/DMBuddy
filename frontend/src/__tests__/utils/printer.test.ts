@@ -144,6 +144,10 @@ describe('getPrinterImage', () => {
       expect(getPrinterImage('Adventurer 5M Pro')).toBe('/img/printers/flashforge-adventurer-5m-pro.png');
       expect(getPrinterImage('Creator 5')).toBe('/img/printers/flashforge-creator-5.png');
       expect(getPrinterImage('Creator 5 Pro')).toBe('/img/printers/flashforge-creator-5-pro.png');
+      expect(getPrinterImage('Creality SPARKX i7')).toBe('/img/printers/creality-sparkx-i7.png');
+      expect(getPrinterImage('Creality SPARKX i8')).toBe('/img/printers/creality-sparkx-i8.png');
+      expect(getPrinterImage('FlashForge Adventurer 5M')).toBe('/img/printers/flashforge-adventurer-5m.png');
+      expect(getPrinterImage('FlashForge Creator 5 Pro')).toBe('/img/printers/flashforge-creator-5-pro.png');
     });
 
     it('uses the Home Assistant ingress base for static printer images', () => {

@@ -221,7 +221,7 @@ function SortablePrinterCardSection({
         opacity: isDragging ? 0.18 : 1,
         order,
       }}
-      className={`group relative rounded-lg ${isDragging ? 'pointer-events-none border border-dashed border-bambu-green/50 bg-bambu-green/5' : ''}`}
+      className={`group relative rounded-lg ${id === 'actions' ? 'mt-auto' : ''} ${isDragging ? 'pointer-events-none border border-dashed border-bambu-green/50 bg-bambu-green/5' : ''}`}
     >
       {layoutEditing && (
         <button
@@ -343,7 +343,7 @@ function SortablePrinterCard({
         transition: isDragging ? 'none' : (transition || 'transform 180ms ease-out'),
         opacity: isDragging ? 0.2 : 1,
       }}
-      className={`group/card relative rounded-xl ${isDragging ? 'pointer-events-none border border-dashed border-bambu-green/50 bg-bambu-green/5' : ''}`}
+      className={`group/card relative h-full rounded-xl ${isDragging ? 'pointer-events-none border border-dashed border-bambu-green/50 bg-bambu-green/5' : ''}`}
     >
       {layoutEditing && (
         <button
@@ -1996,6 +1996,7 @@ function PrinterCard({
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [showPauseConfirm, setShowPauseConfirm] = useState(false);
   const [showSpeedMenu, setShowSpeedMenu] = useState<number | null>(null);
+  const [manualControlsOpen, setManualControlsOpen] = useState(false);
   const [showFanMenu, setShowFanMenu] = useState<string | null>(null);
   const [showAirductMenu, setShowAirductMenu] = useState<number | null>(null);
   const [showResumeConfirm, setShowResumeConfirm] = useState(false);
@@ -2377,61 +2378,62 @@ function PrinterCard({
 
   const showLoadedSpoolPicker = supportsSpoolAssignment && !isCrealityK3Moonraker && !spoolmanLoading && (amsData.length === 0) && (vtTrayData.length === 0);
   const loadedSpoolPicker = showLoadedSpoolPicker ? (
-    <div className="flex items-center justify-between gap-3 rounded-lg bg-bambu-dark/70 border border-bambu-dark-tertiary px-3 py-2">
-      <div className="min-w-0">
-        <p className="text-[10px] uppercase tracking-wide text-bambu-gray">Loaded spool</p>
-        {loadedSpool ? (
-          <div className="flex items-center gap-1.5 min-w-0">
-            {loadedSpoolColor && (
-              <span
-                aria-label="Loaded spool color"
-                className="w-2.5 h-2.5 rounded-full border border-black/30 flex-shrink-0"
-                style={{ backgroundColor: loadedSpoolColor }}
-              />
-            )}
-            <p className="text-xs text-white truncate">
-              {loadedSpool.brand ? `${loadedSpool.brand} ` : ''}
-              {loadedSpool.material}
-              {loadedSpool.subtype ? ` ${loadedSpool.subtype}` : ''}
-              {loadedSpool.color_name ? ` · ${loadedSpool.color_name}` : ''}
-            </p>
-          </div>
-        ) : (
-          <p className="text-xs text-bambu-gray">No inventory spool selected</p>
-        )}
-      </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
-        {hasLoadedSpoolAssignment && (
+    <div data-testid="loaded-spool-slot" className="min-h-28 p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="text-[10px] text-white font-medium">Loaded spool</span>
+        <div className="flex items-center gap-1">
+          {hasLoadedSpoolAssignment && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => spoolmanEnabled && loadedSpoolmanSlotAssignment
+                ? onUnassignSpoolmanSpool?.(loadedSpoolmanSlotAssignment.spoolman_spool_id)
+                : onUnassignSpool?.(printer.id, -1, 0)
+              }
+            >
+              Clear
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => spoolmanEnabled && loadedSpoolmanSlotAssignment
-              ? onUnassignSpoolmanSpool?.(loadedSpoolmanSlotAssignment.spoolman_spool_id)
-              : onUnassignSpool?.(printer.id, -1, 0)
-            }
+            onClick={() => setAssignSpoolModal({
+              printerId: printer.id,
+              amsId: spoolmanEnabled ? 255 : -1,
+              trayId: 0,
+              trayInfo: {
+                type: loadedSpool?.material || '',
+                material: loadedSpool?.material || undefined,
+                profile: loadedSpool?.slicer_filament_name || loadedSpool?.slicer_filament || '',
+                color: loadedSpool?.rgba?.slice(0, 6) || '',
+                location: 'Loaded spool',
+              },
+            })}
           >
-            Clear
+            <AssignSpoolIcon className="w-4 h-4" />
+            {hasLoadedSpoolAssignment ? 'Change' : 'Assign'}
           </Button>
-        )}
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => setAssignSpoolModal({
-            printerId: printer.id,
-            amsId: spoolmanEnabled ? 255 : -1,
-            trayId: 0,
-            trayInfo: {
-              type: loadedSpool?.material || '',
-              material: loadedSpool?.material || undefined,
-              profile: loadedSpool?.slicer_filament_name || loadedSpool?.slicer_filament || '',
-              color: loadedSpool?.rgba?.slice(0, 6) || '',
-              location: 'Loaded spool',
-            },
-          })}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 rounded bg-bambu-dark-tertiary p-1.5">
+        <div
+          aria-label="Loaded spool color"
+          className={`w-8 h-8 rounded-full border border-black/30 flex-shrink-0 flex items-center justify-center text-[10px] font-bold ${loadedSpoolColor ? '' : 'bg-bambu-dark-secondary text-bambu-gray'}`}
+          style={loadedSpoolColor ? { backgroundColor: loadedSpoolColor } : undefined}
         >
-          <AssignSpoolIcon className="w-4 h-4" />
-          {hasLoadedSpoolAssignment ? 'Change' : 'Assign'}
-        </Button>
+          1
+        </div>
+        <div className="min-w-0">
+          {loadedSpool ? (
+            <p className="text-[10px] text-white font-bold truncate">
+              {[loadedSpool.brand, loadedSpool.material, loadedSpool.subtype].filter(Boolean).join(' ')}
+              {loadedSpool.color_name ? ` · ${loadedSpool.color_name}` : ''}
+            </p>
+          ) : (
+            <p className="text-[10px] text-bambu-gray">No inventory spool selected</p>
+          )}
+          <p className="text-[9px] text-bambu-gray">Slot 1</p>
+        </div>
       </div>
     </div>
   ) : null;
@@ -3107,10 +3109,10 @@ function PrinterCard({
     status?.connected && viewMode === 'expanded' && (status.temperatures || pandaBreathState) ? 'temperatures' : null,
     status?.connected && viewMode === 'expanded' && pandaBreathState ? 'panda-breath' : null,
     status?.connected && viewMode === 'expanded' ? 'indicators' : null,
-    status?.connected && viewMode === 'expanded' && ((amsData?.length ?? 0) > 0 || vtTrayData.length > 0 || cfsNanoStatus) ? 'filaments' : null,
+    status?.connected && viewMode === 'expanded' && ((amsData?.length ?? 0) > 0 || vtTrayData.length > 0 || cfsNanoStatus || loadedSpoolPicker) ? 'filaments' : null,
     smartPlug && viewMode === 'expanded' ? 'smart-plug' : null,
     viewMode === 'expanded' ? 'actions' : null,
-    (printer.provider === 'klipper' || printer.provider === 'mainsail' || printer.provider === 'fluidd') && !isPrusaModelPrinter && viewMode === 'expanded' ? 'manual-controls' : null,
+    (printer.provider === 'klipper' || printer.provider === 'mainsail' || printer.provider === 'fluidd') && !isPrusaModelPrinter && viewMode === 'expanded' && manualControlsOpen ? 'manual-controls' : null,
   ].filter((sectionId): sectionId is PrinterCardSectionId => sectionId !== null);
 
   if (shouldHide) {
@@ -3129,7 +3131,7 @@ function PrinterCard({
   };
   const getTitleSize = () => {
     switch (cardSize) {
-      case 1: return 'text-base truncate';
+      case 1: return 'min-w-0 flex-1 text-base truncate';
       case 2: return 'text-lg';
       case 3: return 'text-xl';
       case 4: return 'text-2xl';
@@ -3255,7 +3257,7 @@ function PrinterCard({
   return (
     <Card
       data-testid={`printer-card-${printer.id}`}
-      className={`relative ${isSelected ? 'ring-2 ring-bambu-green' : ''} ${selectionMode ? 'cursor-pointer' : ''}`}
+      className={`relative h-full ${isSelected ? 'ring-2 ring-bambu-green' : ''} ${selectionMode ? 'cursor-pointer' : ''}`}
       onDragEnter={handleCardDragEnter}
       onDragOver={handleCardDragOver}
       onDragLeave={handleCardDragLeave}
@@ -3332,7 +3334,7 @@ function PrinterCard({
           </div>
         </div>
       )}
-      <CardContent className={`${cardSize >= 3 ? 'p-5' : ''} flex flex-col`}>
+      <CardContent className={`${cardSize >= 3 ? 'p-5' : ''} flex h-full flex-col`}>
         {/* Header */}
         <div className={getSpacing()}>
           {/* Top row: Image, Name, Menu */}
@@ -3352,7 +3354,7 @@ function PrinterCard({
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className={`font-semibold text-white ${getTitleSize()}`}>{printer.name}</h3>
+                  <h3 className={`font-semibold text-white ${getTitleSize()}`} title={printer.name}>{printer.name}</h3>
                   {/* Connection indicator dot for compact mode */}
                   {viewMode === 'compact' && (() => {
                     const hmsErrors = status?.connected && status.hms_errors ? filterKnownHMSErrors(status.hms_errors) : [];
@@ -3421,7 +3423,7 @@ function PrinterCard({
                         ) : (
                           <ScanEye className="h-3 w-3" />
                         )}
-                        <span className="hidden sm:inline">{label}</span>
+                        <span className="hidden sm:inline">{viewMode === 'compact' ? 'AI' : label}</span>
                         <span className="sm:hidden">AI</span>
                       </button>
                     );
@@ -3828,7 +3830,7 @@ function PrinterCard({
           </div>
         )}
 
-        {loadedSpoolPicker && (
+        {loadedSpoolPicker && viewMode === 'expanded' && !status?.connected && (
           <SortablePrinterCardSection layoutEditing={layoutEditing} id="loaded-spool" title="Loaded spool" order={getCardSectionOrder('loaded-spool')}>
             <div className="mt-2">
               {loadedSpoolPicker}
@@ -4027,12 +4029,12 @@ function PrinterCard({
                 <div className="flex items-stretch gap-1.5 flex-wrap">
                   {/* Nozzle temps - show every reported Klipper/Moonraker nozzle and mark active tool */}
                   {isMultiToolheadNozzle ? (
-                    <div className="px-2 py-1.5 bg-bambu-dark rounded-lg flex-[2] min-w-[180px]">
+                    <div className="px-2 py-1.5 bg-bambu-dark rounded-lg flex-[2] min-w-[180px] min-h-[72px]">
                       <div className="flex items-center justify-center gap-1 mb-1">
                         <HeaterThermometer className="w-3.5 h-3.5" color="text-orange-400" isHeating={nozzleHeating} />
                         <p className="text-[9px] text-bambu-gray">{t('printers.temperatures.nozzle')}</p>
                       </div>
-                      <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                      <div className={`grid ${nozzleTemperatures.length >= 4 ? 'grid-cols-4 gap-1' : 'grid-cols-2 gap-x-2 gap-y-1'}`}>
                         {nozzleTemperatures.map((nozzle) => {
                           const isActive = nozzle.index === status.active_extruder;
                           const activeLabel = isActive ? ' · Active' : '';
@@ -4054,7 +4056,7 @@ function PrinterCard({
                       </div>
                     </div>
                   ) : (
-                  <div className="text-center px-2 py-1.5 bg-bambu-dark rounded-lg flex-1 flex flex-col justify-center items-center">
+                  <div className="text-center px-1.5 py-1 bg-bambu-dark rounded-lg flex-[0.7] min-w-[72px] min-h-[72px] flex flex-col justify-center items-center">
                     <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-orange-400" isHeating={nozzleHeating} />
                     {status.temperatures.nozzle_2 !== undefined ? (
                       <>
@@ -4473,6 +4475,19 @@ function PrinterCard({
 
             {/* AMS Units - 2-Column Grid Layout */}
             <SortablePrinterCardSection layoutEditing={layoutEditing} id="filaments" title={t('printers.filaments')} order={getCardSectionOrder('filaments')}>
+            {viewMode === 'expanded' && (loadedSpoolPicker || (amsData?.length ?? 0) > 0 || vtTrayData.length > 0 || cfsNanoStatus) && (
+              <div data-testid="filaments-section-divider" className="mt-3 flex items-center gap-2 mb-2">
+                <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
+                  {t('printers.filaments')}
+                </span>
+                <div className="flex-1 h-px bg-bambu-dark-tertiary/30" />
+              </div>
+            )}
+            {loadedSpoolPicker && viewMode === 'expanded' && (
+              <div data-testid="filaments-loaded-spool" className="grid grid-cols-2 gap-3">
+                {loadedSpoolPicker}
+              </div>
+            )}
             {(amsData?.length > 0 || vtTrayData.length > 0 || cfsNanoStatus) && viewMode === 'expanded' && (() => {
               // Separate regular AMS (4-tray) from HT AMS (1-tray)
               const regularAms = amsData.filter(ams => ams.tray.length > 1);
@@ -4480,20 +4495,12 @@ function PrinterCard({
               const isDualNozzle = printer.nozzle_count === 2 || status?.temperatures?.nozzle_2 !== undefined;
 
               return (
-                <div className="mt-3">
-                  {/* Section Header */}
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
-                      {t('printers.filaments')}
-                    </span>
-                    <div className="flex-1 h-px bg-bambu-dark-tertiary/30" />
-                  </div>
-
+                <div className={loadedSpoolPicker ? 'mt-3' : ''}>
                   {/* AMS Content */}
                   <div className="space-y-3">
                     {cfsNanoStatus && (
                       <div className="grid grid-cols-2 gap-3">
-                      <div data-testid="cfs-nano-module" className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
+                      <div data-testid="cfs-nano-module" className="min-w-0 min-h-28 p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-[10px] text-white font-medium">{cfsNanoStatus.station_type}</span>
                           <span className={`text-[9px] ${cfsNanoStatus.online === true || cfsNanoStatus.state?.toLowerCase() === 'connect' ? 'text-emerald-400' : cfsNanoStatus.online === false ? 'text-red-400' : 'text-bambu-gray'}`}>
@@ -4514,11 +4521,11 @@ function PrinterCard({
                               ? spoolmanSpools?.find(item => item.id === assignment.spoolman_spool_id)
                               : undefined;
                             return (
-                              <div key={slot.slot} className="min-w-0 rounded border border-bambu-dark-tertiary/50 bg-bambu-dark-secondary/40 p-1 text-center">
+                              <div key={slot.slot} className="min-w-0 rounded border border-bambu-dark-tertiary/50 bg-bambu-dark-secondary/40 p-1 text-center group">
                                 <FilamentSlotCircle
                                   trayColor={assignedSpool?.rgba || slot.color}
                                   trayType={assignedSpool?.material || slot.material_name}
-                                  isEmpty={false}
+                                  isEmpty={!slot.material_name}
                                   slotNumber={index + 1}
                                 />
                                 <div className="text-[9px] text-white font-bold truncate" title={assignedSpool ? `${assignedSpool.brand ? `${assignedSpool.brand} ` : ''}${assignedSpool.material}${assignedSpool.color_name ? ` - ${assignedSpool.color_name}` : ''}` : slot.material_name || 'Unknown'}>
@@ -4567,7 +4574,7 @@ function PrinterCard({
                                           },
                                         })}
                                       >
-                                        <Link className="w-3 h-3" />
+                                          <AssignSpoolIcon className="w-3 h-3" />
                                       </button>
                                     )}
                                   </div>
@@ -4593,7 +4600,7 @@ function PrinterCard({
                         const amsDisplayLabel = isSnapmakerU1Unit ? 'Spools' : (isK2CfsLikeUnit ? `CFS T${ams.id + 1}` : (ams.name || getAmsLabel(ams.id, ams.tray.length)));
 
                         return (
-                          <div key={ams.id} className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
+                          <div key={ams.id} className="min-h-28 p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
                             {/* Header: Label + Stats (no icon) */}
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-1.5">
@@ -5193,7 +5200,7 @@ function PrinterCard({
                         );
 
                         return (
-                          <div key={ams.id} className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
+                          <div key={ams.id} className="min-h-28 p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
                             {/* Row 1: Label + Nozzle + Drying */}
                             <div className="flex items-center gap-1 mb-2">
                               {/* AMS name — hover to see serial, firmware, and edit friendly name */}
@@ -5517,7 +5524,7 @@ function PrinterCard({
                       })}
                       {/* External spool(s) - grouped in one card like regular AMS */}
                       {vtTrayData.length > 0 && (
-                        <div className={`p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30 ${vtTrayData.length === 1 ? 'max-w-[50%]' : ''}`}>
+                        <div className={`min-h-28 p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30 ${vtTrayData.length === 1 ? 'max-w-[50%]' : ''}`}>
                           <div className="flex items-center gap-1 mb-2">
                             <span className="text-[10px] text-white font-medium">{t('printers.external')}</span>
                           </div>
@@ -5954,6 +5961,20 @@ function PrinterCard({
                   </Button>
                 </>
               )}
+              {isMoonrakerProvider && !isPrusaModelPrinter && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setManualControlsOpen((open) => !open)}
+                  aria-expanded={manualControlsOpen}
+                  aria-controls={`manual-controls-${printer.id}`}
+                  title={t('printers.klipper.manualControls', 'Manual controls')}
+                  className={manualControlsOpen ? '!border-bambu-green !text-bambu-green hover:!bg-bambu-green/20' : ''}
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                  {t('printers.controls', 'Controls')}
+                </Button>
+              )}
               {/* Camera Button */}
               <Button
                 variant="secondary"
@@ -6044,35 +6065,19 @@ function PrinterCard({
         )}
 
         {/* Moonraker toolhead control panels */}
-        {(isMoonrakerProvider) && !isPrusaModelPrinter && viewMode === 'expanded' && (
+        {isMoonrakerProvider && !isPrusaModelPrinter && viewMode === 'expanded' && manualControlsOpen && (
           <SortablePrinterCardSection layoutEditing={layoutEditing} id="manual-controls" title={t('printers.klipper.manualControls', 'Manual controls')} order={getCardSectionOrder('manual-controls')}>
-          <Collapsible
-            defaultOpen={false}
-            className="mt-4 pt-3 border-t border-bambu-dark-tertiary"
-            summaryClassName="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark/50 px-3 py-2 hover:bg-bambu-dark transition-colors"
-            summary={
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <SlidersHorizontal className="w-4 h-4 text-bambu-green flex-shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-white truncate">{t('printers.klipper.manualControls', 'Manual controls')}</p>
-                    <p className="text-[10px] text-bambu-gray truncate">
-                      {t('printers.klipper.manualControlsDescription', 'Klipper movement, extrusion, and temperatures')}
-                    </p>
-                  </div>
-                </div>
-                <span className="hidden sm:inline text-[10px] uppercase tracking-wide text-bambu-gray bg-bambu-dark-secondary rounded px-2 py-1">
-                  {t('printers.klipper.collapsed', 'collapsed')}
-                </span>
-              </div>
-            }
-          >
+          <div id={`manual-controls-${printer.id}`} className="mt-4 pt-3 border-t border-bambu-dark-tertiary">
+            <div className="flex items-center gap-2 mb-3 text-sm font-medium text-white">
+              <SlidersHorizontal className="w-4 h-4 text-bambu-green" />
+              <span>{t('printers.klipper.manualControls', 'Manual controls')}</span>
+            </div>
             <KlipperControlPanel
               printer={printer}
               status={status}
               showToast={showToast}
             />
-          </Collapsible>
+          </div>
           </SortablePrinterCardSection>
         )}
           </SortableContext>
@@ -9743,7 +9748,7 @@ export function PrintersPage() {
                   onDragCancel={() => setActivePrinterCardId(null)}
                 >
                   <SortableContext items={orderedGroupPrinters.map(printer => printer.id)} strategy={rectSortingStrategy}>
-                    <div className={`grid items-start gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
+                    <div className={`grid items-stretch gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
                       {orderedGroupPrinters.map(renderSortablePrinterCard)}
                     </div>
                   </SortableContext>
@@ -9765,7 +9770,7 @@ export function PrintersPage() {
           onDragCancel={() => setActivePrinterCardId(null)}
         >
           <SortableContext items={orderedSortedPrinters.map(printer => printer.id)} strategy={rectSortingStrategy}>
-            <div className={`grid items-start gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
+            <div className={`grid items-stretch gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
               {orderedSortedPrinters.map(renderSortablePrinterCard)}
             </div>
           </SortableContext>
