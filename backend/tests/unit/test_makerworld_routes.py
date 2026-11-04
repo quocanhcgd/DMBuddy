@@ -365,6 +365,33 @@ class TestImport:
         svc.get_profile_download.assert_awaited_once_with(298919107, "US2bb73b106683e5")
 
     @pytest.mark.asyncio
+    async def test_direct_download_accepts_nested_china_manifest(self, async_client, db_session):
+        manifest = {
+            "code": 0,
+            "message": "success",
+            "data": {
+                "downloadUrl": "https://makerworld.bblmw.com/makerworld/model/X/Y/f.3mf?exp=1&key=k",
+                "fileName": "china-model.3mf",
+            },
+        }
+        svc = _fake_service(
+            get_design=_default_design(),
+            get_profile_download=manifest,
+            download_3mf=(self._FAKE_3MF_BYTES, "signed-name.3mf"),
+        )
+
+        with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
+            resp = await async_client.post(
+                "/api/v1/makerworld/download",
+                json={"model_id": 1400373, "profile_id": 298919107, "region": "china"},
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.content == self._FAKE_3MF_BYTES
+        assert "filename*=UTF-8''china-model.3mf" in resp.headers["content-disposition"]
+        svc.download_3mf.assert_awaited_once_with(manifest["data"]["downloadUrl"])
+
+    @pytest.mark.asyncio
     async def test_public_china_download_forces_china_and_does_not_write_library(self, async_client, db_session):
         db_session.add(Settings(key="auth_enabled", value="true"))
         await db_session.commit()

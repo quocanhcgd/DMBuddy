@@ -387,11 +387,58 @@ def _canonical_url(model_id: int, profile_id: int | None = None) -> str:
     return f"https://makerworld.com/models/{model_id}"
 
 
+_MANIFEST_WRAPPER_KEYS = ("data", "result", "payload", "download")
+
+
+def _manifest_value(manifest: dict, keys: tuple[str, ...]) -> str | None:
+    """Read a string field from the common top-level or wrapped API envelopes."""
+    pending: list[tuple[dict, int]] = [(manifest, 0)]
+    seen: set[int] = set()
+    while pending:
+        current, depth = pending.pop(0)
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        for key in keys:
+            value = current.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        if depth < 3:
+            for key in _MANIFEST_WRAPPER_KEYS:
+                wrapped = current.get(key)
+                if isinstance(wrapped, dict):
+                    pending.append((wrapped, depth + 1))
+    return None
+
+
+def _manifest_field_names(manifest: dict) -> list[str]:
+    """Return field names only, for safe diagnostics without signed URL values."""
+    names: set[str] = set()
+    pending: list[tuple[dict, int]] = [(manifest, 0)]
+    seen: set[int] = set()
+    while pending:
+        current, depth = pending.pop(0)
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        names.update(str(key) for key in current)
+        if depth < 3:
+            for key in _MANIFEST_WRAPPER_KEYS:
+                wrapped = current.get(key)
+                if isinstance(wrapped, dict):
+                    pending.append((wrapped, depth + 1))
+    return sorted(names)
+
+
+def _manifest_download_url(manifest: dict) -> str | None:
+    return _manifest_value(manifest, ("url", "downloadUrl", "download_url", "downloadURL", "fileUrl", "file_url"))
+
+
 def _suggested_download_filename(manifest: dict, model_id: int, fallback: str) -> str:
     """Return a safe human-readable filename for a direct browser download."""
-    raw_name = manifest.get("name")
-    if isinstance(raw_name, str) and raw_name.strip():
-        name = os.path.basename(unquote(raw_name.strip()))
+    raw_name = _manifest_value(manifest, ("name", "filename", "fileName", "file_name"))
+    if raw_name:
+        name = os.path.basename(unquote(raw_name))
         if name:
             return name if name.lower().endswith(".3mf") else f"{name}.3mf"
     name = os.path.basename(unquote(fallback)) or f"makerworld-{model_id}.3mf"
@@ -736,23 +783,27 @@ async def import_instance(
         except MakerWorldError as exc:
             raise _map_service_error(exc) from exc
 
-        signed_url = manifest.get("url")
+        signed_url = _manifest_download_url(manifest)
         # Basename-strip any path components from the upstream filename so a
         # malicious response (``name: "../../evil.3mf"``) can't persist a suspect
         # string into the library row or the UI. On-disk storage uses a UUID
         # filename regardless (see library.py), so this is defence-in-depth.
-        raw_name = manifest.get("name")
-        if isinstance(raw_name, str) and raw_name.strip():
+        raw_name = _manifest_value(manifest, ("name", "filename", "fileName", "file_name"))
+        if raw_name:
             # MakerWorld emits percent-encoded names (`%20` for spaces, etc.)
             # because the same string round-trips through HTTP URLs in the
             # CDN download path. Decode before persisting so the library
             # row, the slice toast, and every later UI surface show the
             # human-readable form.
-            suggested_name = os.path.basename(unquote(raw_name.strip())) or f"makerworld-{body.model_id}.3mf"
+            suggested_name = os.path.basename(unquote(raw_name)) or f"makerworld-{body.model_id}.3mf"
         else:
             suggested_name = f"makerworld-{body.model_id}.3mf"
         if not signed_url or not isinstance(signed_url, str):
-            raise HTTPException(status_code=502, detail="MakerWorld did not return a download URL")
+            fields = ", ".join(_manifest_field_names(manifest)) or "none"
+            raise HTTPException(
+                status_code=502,
+                detail=f"MakerWorld did not return a download URL (manifest fields: {fields})",
+            )
 
         # Dedupe check upfront so we don't burn bandwidth re-downloading. An
         # explicitly requested source archive may still enrich an older row that
@@ -896,9 +947,13 @@ async def download_instance(
         except MakerWorldError as exc:
             raise _map_service_error(exc) from exc
 
-        signed_url = manifest.get("url")
+        signed_url = _manifest_download_url(manifest)
         if not isinstance(signed_url, str) or not signed_url:
-            raise HTTPException(status_code=502, detail="MakerWorld did not return a download URL")
+            fields = ", ".join(_manifest_field_names(manifest)) or "none"
+            raise HTTPException(
+                status_code=502,
+                detail=f"MakerWorld did not return a download URL (manifest fields: {fields})",
+            )
 
         try:
             file_bytes, download_filename = await service.download_3mf(signed_url)
