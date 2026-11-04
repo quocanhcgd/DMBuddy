@@ -387,7 +387,7 @@ def _canonical_url(model_id: int, profile_id: int | None = None) -> str:
     return f"https://makerworld.com/models/{model_id}"
 
 
-_MANIFEST_WRAPPER_KEYS = ("data", "result", "payload", "download")
+_MANIFEST_WRAPPER_KEYS = ("data", "result", "payload", "download", "content")
 
 
 def _manifest_value(manifest: dict, keys: tuple[str, ...]) -> str | None:
