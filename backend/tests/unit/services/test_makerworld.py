@@ -313,6 +313,43 @@ class TestGetProfileDownload:
             await svc.get_profile_download(1, "M1")
 
 
+class TestGetInstanceDownload:
+    def _make_service(self, *, region="global", auth_token="tok-abc"):
+        svc = MakerWorldService(
+            client=MagicMock(spec=httpx.AsyncClient),
+            auth_token=auth_token,
+            region=region,
+        )
+        svc._client.get = AsyncMock()
+        return svc
+
+    @pytest.mark.asyncio
+    async def test_uses_china_design_service_and_instance_id(self):
+        svc = self._make_service(region="china")
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "name": "FORGE-1.3mf",
+            "url": "https://model-file.bambulab.cn/makerworld/model/file.3mf?exp=1&key=k",
+        }
+        svc._client.get.return_value = resp
+
+        manifest = await svc.get_instance_download(3329049)
+
+        assert manifest["name"] == "FORGE-1.3mf"
+        call = svc._client.get.call_args
+        url = call.args[0] if call.args else call.kwargs.get("url")
+        assert url == "https://api.bambulab.cn/v1/design-service/instance/3329049/f3mf"
+        assert call.kwargs["headers"]["Authorization"] == "Bearer tok-abc"
+        assert call.kwargs["params"] == {"type": "download"}
+
+    @pytest.mark.asyncio
+    async def test_requires_auth_token(self):
+        svc = self._make_service(auth_token=None)
+        with pytest.raises(MakerWorldAuthError):
+            await svc.get_instance_download(3329049)
+
+
 class TestDownload3MF:
     """SSRF guard + size cap + streaming behaviour."""
 
@@ -381,6 +418,30 @@ class TestDownload3MF:
         assert "User-Agent" in headers
         # Redirects off — host allowlist is only meaningful on the initial URL.
         assert call.kwargs["follow_redirects"] is False
+
+    @pytest.mark.asyncio
+    async def test_cdn_httpx_disconnect_retries_verbatim_url_with_urllib(self):
+        svc = MakerWorldService(client=MagicMock(spec=httpx.AsyncClient))
+        resp = MagicMock()
+        resp.status_code = 200
+
+        async def _chunks():
+            raise httpx.RemoteProtocolError("Server disconnected")
+            yield b""
+
+        resp.aiter_bytes = lambda: _chunks()
+        svc._client.stream = MagicMock(return_value=self._stream_ctx(resp))
+        signed_url = "https://makerworld.bblmw.cn/model/plate.3mf?exp=1&key=raw%2Fsignature"
+
+        with patch(
+            "backend.app.services.makerworld._download_signed_url_urllib",
+            new=AsyncMock(return_value=(b"PK\x03\x04file", "plate.3mf")),
+        ) as fallback:
+            payload, filename = await svc.download_3mf(signed_url)
+
+        assert payload.startswith(b"PK\x03\x04")
+        assert filename == "plate.3mf"
+        fallback.assert_awaited_once_with(signed_url, "plate.3mf")
 
     @pytest.mark.asyncio
     async def test_china_model_file_host_is_allowed(self):

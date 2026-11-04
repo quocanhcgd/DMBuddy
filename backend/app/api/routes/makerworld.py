@@ -434,6 +434,45 @@ def _manifest_download_url(manifest: dict) -> str | None:
     return _manifest_value(manifest, ("url", "downloadUrl", "download_url", "downloadURL", "fileUrl", "file_url"))
 
 
+async def _get_profile_download_manifest(
+    service: MakerWorldService,
+    design: dict,
+    model_id: int,
+    profile_id: int,
+    alphanumeric_model_id: str,
+) -> dict:
+    """Prefer the current per-instance download endpoint, then fall back to iot-service."""
+    instance_id = None
+    for instance in design.get("instances") or []:
+        if not isinstance(instance, dict) or instance.get("profileId") != profile_id:
+            continue
+        candidate = instance.get("id")
+        if isinstance(candidate, int) and candidate > 0:
+            instance_id = candidate
+            break
+
+    if instance_id is None:
+        try:
+            envelope = await service.get_design_instances(model_id)
+        except MakerWorldError:
+            envelope = {}
+        hits = envelope.get("hits") or [] if isinstance(envelope, dict) else []
+        for hit in hits:
+            if not isinstance(hit, dict) or hit.get("profileId") != profile_id:
+                continue
+            candidate = hit.get("id")
+            if isinstance(candidate, int) and candidate > 0:
+                instance_id = candidate
+                break
+
+    if instance_id is not None:
+        manifest = await service.get_instance_download(instance_id)
+        if _manifest_download_url(manifest):
+            return manifest
+
+    return await service.get_profile_download(profile_id, alphanumeric_model_id)
+
+
 def _suggested_download_filename(manifest: dict, model_id: int, fallback: str) -> str:
     """Return a safe human-readable filename for a direct browser download."""
     raw_name = _manifest_value(manifest, ("name", "filename", "fileName", "file_name"))
@@ -779,7 +818,9 @@ async def import_instance(
         source_url = _canonical_url(body.model_id, profile_id)
 
         try:
-            manifest = await service.get_profile_download(profile_id, alphanumeric_model_id)
+            manifest = await _get_profile_download_manifest(
+                service, design, body.model_id, profile_id, alphanumeric_model_id
+            )
         except MakerWorldError as exc:
             raise _map_service_error(exc) from exc
 
@@ -943,7 +984,9 @@ async def download_instance(
             raise HTTPException(status_code=422, detail="Select a MakerWorld plate before downloading")
 
         try:
-            manifest = await service.get_profile_download(profile_id, alphanumeric_model_id)
+            manifest = await _get_profile_download_manifest(
+                service, design, body.model_id, profile_id, alphanumeric_model_id
+            )
         except MakerWorldError as exc:
             raise _map_service_error(exc) from exc
 

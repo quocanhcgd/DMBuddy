@@ -209,6 +209,47 @@ async def _download_s3_urllib(url: str, filename_fallback: str) -> tuple[bytes, 
     return data, filename_fallback
 
 
+async def _download_signed_url_urllib(url: str, filename_fallback: str) -> tuple[bytes, str]:
+    """Retry a validated MakerWorld CDN URL without httpx connection pooling."""
+    from urllib.error import HTTPError
+    from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+    class _NoRedirect(HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+
+    opener = build_opener(_NoRedirect)
+
+    def _blocking_fetch() -> bytes:
+        request = Request(url, headers={"User-Agent": _CLIENT_HEADERS["User-Agent"]})
+        try:
+            response = opener.open(request, timeout=60.0)
+        except HTTPError as exc:
+            raise MakerWorldUnavailableError(f"3MF download returned HTTP {exc.code}") from exc
+        with response:
+            if response.status != 200:
+                raise MakerWorldUnavailableError(f"3MF download returned HTTP {response.status}")
+            chunks: list[bytes] = []
+            total = 0
+            while True:
+                chunk = response.read(64 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _MAX_3MF_BYTES:
+                    raise MakerWorldUnavailableError(f"3MF exceeds {_MAX_3MF_BYTES // (1024 * 1024)} MB cap")
+                chunks.append(chunk)
+            return b"".join(chunks)
+
+    try:
+        data = await asyncio.to_thread(_blocking_fetch)
+    except MakerWorldUnavailableError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — urllib exposes transport-specific errors
+        raise MakerWorldUnavailableError(f"3MF download failed: {exc}") from exc
+    return data, filename_fallback
+
+
 def _extract_upstream_error(response: httpx.Response) -> str | None:
     """Pull MakerWorld's own error text out of a 4xx/5xx response body.
 
@@ -458,11 +499,43 @@ class MakerWorldService:
         endpoints on ``makerworld.com`` (cookie-gated) and the now-dead
         ``/instance/{id}/f3mf?type=download`` shape.
         """
+        api_host = "https://api.bambulab.cn" if self.region == "china" else "https://api.bambulab.com"
+        url = f"{api_host}/v1/iot-service/api/user/profile/{int(profile_id)}"
+        return await self._get_authenticated_json(
+            url,
+            {"model_id": str(model_id)},
+            resource_type="profile",
+            resource_id=profile_id,
+        )
+
+    async def get_instance_download(self, instance_id: int) -> dict[str, Any]:
+        """Fetch the signed 3MF URL for an instance behind a profile.
+
+        Bambu's iot-service profile endpoint began returning an empty ``url``
+        for otherwise successful downloads on 2026-11-03. The design-service
+        instance endpoint still mints the signed CDN URL and requires the
+        instance ``id`` (not its ``profileId``).
+        """
+        api_host = "https://api.bambulab.cn" if self.region == "china" else "https://api.bambulab.com"
+        url = f"{api_host}/v1/design-service/instance/{int(instance_id)}/f3mf"
+        return await self._get_authenticated_json(
+            url,
+            {"type": "download"},
+            resource_type="instance",
+            resource_id=instance_id,
+        )
+
+    async def _get_authenticated_json(
+        self,
+        url: str,
+        params: dict[str, str],
+        *,
+        resource_type: str,
+        resource_id: int,
+    ) -> dict[str, Any]:
         if not self._auth_token:
             raise MakerWorldAuthError("Downloading files from MakerWorld requires a Bambu Cloud login")
 
-        api_host = "https://api.bambulab.cn" if self.region == "china" else "https://api.bambulab.com"
-        url = f"{api_host}/v1/iot-service/api/user/profile/{int(profile_id)}"
         headers = dict(_CLIENT_HEADERS)
         headers["Authorization"] = f"Bearer {self._auth_token}"
 
@@ -470,7 +543,7 @@ class MakerWorldService:
             response = await self._client.get(
                 url,
                 headers=headers,
-                params={"model_id": str(model_id)},
+                params=params,
                 timeout=30.0,
             )
         except httpx.TimeoutException as exc:
@@ -485,20 +558,24 @@ class MakerWorldService:
             )
         if response.status_code == 403:
             upstream = _extract_upstream_error(response)
-            raise MakerWorldForbiddenError(upstream or f"Bambu Lab refused access to profile {profile_id}")
+            raise MakerWorldForbiddenError(upstream or f"Bambu Lab refused access to {resource_type} {resource_id}")
         if response.status_code == 404:
-            raise MakerWorldNotFoundError(f"MakerWorld profile not found: {profile_id}")
+            raise MakerWorldNotFoundError(f"MakerWorld {resource_type} not found: {resource_id}")
         if response.status_code != 200:
             raise MakerWorldUnavailableError(
-                f"Bambu Lab API unexpected status {response.status_code} for profile {profile_id}"
+                f"Bambu Lab API unexpected status {response.status_code} for {resource_type} {resource_id}"
             )
 
         try:
             data = response.json()
         except ValueError as exc:
-            raise MakerWorldUnavailableError(f"Bambu Lab API returned non-JSON for profile {profile_id}") from exc
+            raise MakerWorldUnavailableError(
+                f"Bambu Lab API returned non-JSON for {resource_type} {resource_id}"
+            ) from exc
         if not isinstance(data, dict):
-            raise MakerWorldUnavailableError(f"Bambu Lab API returned unexpected JSON shape for profile {profile_id}")
+            raise MakerWorldUnavailableError(
+                f"Bambu Lab API returned unexpected JSON shape for {resource_type} {resource_id}"
+            )
         return data
 
     async def download_3mf(self, signed_url: str) -> tuple[bytes, str]:
@@ -556,9 +633,17 @@ class MakerWorldService:
                     chunks.append(chunk)
                 return b"".join(chunks), path_tail
         except httpx.TimeoutException as exc:
-            raise MakerWorldUnavailableError(f"3MF download timed out: {exc}") from exc
+            logger.info("MakerWorld CDN download timed out via httpx; retrying with urllib")
+            try:
+                return await _download_signed_url_urllib(signed_url, path_tail)
+            except MakerWorldUnavailableError:
+                raise MakerWorldUnavailableError(f"3MF download timed out: {exc}") from exc
         except httpx.HTTPError as exc:
-            raise MakerWorldUnavailableError(f"3MF download failed: {exc}") from exc
+            logger.info("MakerWorld CDN download failed via httpx; retrying with urllib: %s", type(exc).__name__)
+            try:
+                return await _download_signed_url_urllib(signed_url, path_tail)
+            except MakerWorldUnavailableError:
+                raise MakerWorldUnavailableError(f"3MF download failed: {exc}") from exc
 
     async def fetch_thumbnail(self, url: str) -> tuple[bytes, str]:
         """Fetch a MakerWorld CDN image (thumbnail / cover / plate preview).

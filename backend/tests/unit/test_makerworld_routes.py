@@ -365,6 +365,31 @@ class TestImport:
         svc.get_profile_download.assert_awaited_once_with(298919107, "US2bb73b106683e5")
 
     @pytest.mark.asyncio
+    async def test_direct_download_uses_instance_id_not_profile_id(self, async_client, db_session):
+        design = {
+            **_default_design(),
+            "instances": [{"id": 3329049, "profileId": 298919107, "title": "9 cells"}],
+        }
+        manifest = _default_manifest("instance-file.3mf")
+        svc = _fake_service(
+            get_design=design,
+            get_instance_download=manifest,
+            get_profile_download=_default_manifest("old-endpoint.3mf"),
+            download_3mf=(self._FAKE_3MF_BYTES, "signed-name.3mf"),
+        )
+
+        with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
+            resp = await async_client.post(
+                "/api/v1/makerworld/download",
+                json={"model_id": 1400373, "profile_id": 298919107},
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert "filename*=UTF-8''instance-file.3mf" in resp.headers["content-disposition"]
+        svc.get_instance_download.assert_awaited_once_with(3329049)
+        svc.get_profile_download.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_direct_download_accepts_nested_china_manifest(self, async_client, db_session):
         manifest = {
             "code": 0,
@@ -438,6 +463,30 @@ class TestImport:
         assert build.await_args.kwargs == {"account_id": None, "region": "china"}
         assert (await db_session.execute(select(LibraryFile))).scalars().all() == []
         assert (await db_session.execute(select(LibraryFolder))).scalars().all() == []
+
+    @pytest.mark.asyncio
+    async def test_import_uses_instance_download_endpoint(self, async_client, db_session):
+        design = {
+            **_default_design(),
+            "instances": [{"id": 3329049, "profileId": 298919107, "title": "9 cells"}],
+        }
+        svc = _fake_service(
+            get_design=design,
+            get_instance_download=_default_manifest("instance-file.3mf"),
+            get_profile_download=_default_manifest("old-endpoint.3mf"),
+            download_3mf=(self._FAKE_3MF_BYTES, "signed-name.3mf"),
+        )
+
+        with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
+            resp = await async_client.post(
+                "/api/v1/makerworld/import",
+                json={"model_id": 1400373, "profile_id": 298919107},
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["filename"] == "instance-file.3mf"
+        svc.get_instance_download.assert_awaited_once_with(3329049)
+        svc.get_profile_download.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_source_archive_is_opt_in_and_disabled_by_default(
