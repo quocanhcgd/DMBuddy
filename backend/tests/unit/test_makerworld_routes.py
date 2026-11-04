@@ -179,7 +179,7 @@ class TestResolve:
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["model_id"] == 1400373
-        assert body["profile_id"] == 1452154
+        assert body["profile_id"] == 298919107
         assert body["design"] == design_payload
         assert len(body["instances"]) == 2
         assert body["already_imported_library_ids"] == []
@@ -188,19 +188,24 @@ class TestResolve:
     async def test_public_china_resolve_forces_china_and_hides_library_ids(self, async_client):
         svc = _fake_service(
             get_design={"id": 1400373, "title": "China model"},
-            get_design_instances={"total": 1, "hits": [{"profileId": 298919107, "title": "Plate"}]},
+            get_design_instances={"total": 1, "hits": [{"id": 2808583, "profileId": 150647584, "title": "Plate"}]},
         )
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)) as build:
             resp = await async_client.post(
                 "/api/v1/makerworld/public/china/resolve",
-                json={"url": "https://makerworld.cn/zh/models/1400373", "region": "global", "account_id": 999},
+                json={
+                    "url": "https://makerworld.cn/zh/models/1400373#profileId-2808583",
+                    "region": "global",
+                    "account_id": 999,
+                },
             )
 
         assert resp.status_code == 200, resp.text
         assert resp.json()["region"] == "china"
         assert resp.json()["account_id"] is None
         assert resp.json()["already_imported_library_ids"] == []
+        assert resp.json()["profile_id"] == 150647584
         assert build.await_args.kwargs == {"account_id": None, "region": "china"}
 
 

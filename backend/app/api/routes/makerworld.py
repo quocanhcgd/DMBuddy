@@ -542,6 +542,20 @@ async def resolve_url(
     if not isinstance(instances, list):
         instances = []
 
+    # MakerWorld URLs can put the instance ID (``hits[].id``) in the
+    # ``profileId`` fragment, while iot-service downloads require the distinct
+    # ``hits[].profileId`` value. Accept either form and always return the
+    # actual download profile ID to the caller.
+    if profile_id is not None:
+        for instance in instances:
+            if not isinstance(instance, dict):
+                continue
+            if profile_id in (instance.get("id"), instance.get("profileId")):
+                actual_profile_id = instance.get("profileId")
+                if isinstance(actual_profile_id, int) and actual_profile_id > 0:
+                    profile_id = actual_profile_id
+                break
+
     # /instances/hits omits the per-instance printer compatibility info that
     # /design.instances[].extention.modelInfo carries (compatibility +
     # otherCompatibility). Merge it in so the frontend can show "this
