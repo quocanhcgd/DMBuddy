@@ -6,9 +6,53 @@ import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { MakerworldChinaPublicPage } from '../../pages/MakerworldChinaPublicPage';
 
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  server.resetHandlers();
+  localStorage.removeItem('makerworld-cn-show-preview-images');
+});
 
 describe('MakerworldChinaPublicPage', () => {
+  it('skips preview media when disabled before resolving a model', async () => {
+    server.use(
+      http.post('*/makerworld/public/china/resolve', () => HttpResponse.json({
+        model_id: 123,
+        account_id: null,
+        region: 'china',
+        profile_id: 456,
+        design: {
+          title: 'Slow preview model',
+          coverUrl: 'https://makerworld.bblmw.com/cover.jpg',
+          summary: '<p>Model notes</p><video poster="https://makerworld.bblmw.com/video.jpg"><source src="https://makerworld.bblmw.com/demo.mp4"></video><img src="https://makerworld.bblmw.com/description.jpg">',
+          designExtension: {},
+        },
+        instances: [{ id: 1, profileId: 456, title: 'Plate', cover: 'https://makerworld.bblmw.com/plate.jpg' }],
+        already_imported_library_ids: [],
+      })),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <MakerworldChinaPublicPage />
+      </QueryClientProvider>,
+    );
+
+    const user = userEvent.setup();
+    const previewToggle = screen.getByRole('checkbox', { name: /Hiện ảnh xem trước/i });
+    expect(previewToggle).toBeChecked();
+    await user.click(previewToggle);
+    await user.type(screen.getByRole('textbox', { name: 'Liên kết MakerWorld China' }), 'https://makerworld.cn/zh/models/123');
+    await user.click(screen.getByRole('button', { name: /Xem mẫu/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Slow preview model' })).toBeInTheDocument();
+    expect(container.querySelector('img')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Mô tả, giới thiệu' }));
+    const description = screen.getByRole('tabpanel');
+    expect(within(description).getByText('Model notes')).toBeInTheDocument();
+    expect(description.querySelector('img, video, audio, iframe, source')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Các bàn in' }));
+    expect(screen.getByRole('button', { name: 'Tải 3MF' })).toBeEnabled();
+  });
+
   it('resolves a China model link and displays its downloadable plates', async () => {
     server.use(
       http.get('/api/v1/updates/version', () => HttpResponse.json({
@@ -109,5 +153,22 @@ describe('MakerworldChinaPublicPage', () => {
     expect(screen.getByText('PLA Basic')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Mở M3x8 screws' })).toHaveAttribute('href', 'https://store.bambulab.com/screws');
     expect(container.querySelector('img[src*="screw.png"]')).toBeInTheDocument();
+
+    const previewToggle = screen.getByRole('checkbox', { name: /Hiện ảnh xem trước/i });
+    expect(previewToggle).toBeChecked();
+    await userEvent.click(previewToggle);
+    expect(previewToggle).not.toBeChecked();
+    expect(localStorage.setItem).toHaveBeenCalledWith('makerworld-cn-show-preview-images', 'false');
+    expect(container.querySelectorAll('img[src*="/api/v1/makerworld/thumbnail"]')).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Mô tả, giới thiệu' }));
+    const descriptionWithoutMedia = screen.getByRole('tabpanel');
+    expect(within(descriptionWithoutMedia).getByText('Printable seed tray')).toBeInTheDocument();
+    expect(descriptionWithoutMedia.querySelector('img, video, iframe')).not.toBeInTheDocument();
+
+    await userEvent.click(previewToggle);
+    expect(previewToggle).toBeChecked();
+    expect(localStorage.setItem).toHaveBeenCalledWith('makerworld-cn-show-preview-images', 'true');
+    expect(descriptionWithoutMedia.querySelector('.makerworld-description img')).toBeInTheDocument();
   });
 });

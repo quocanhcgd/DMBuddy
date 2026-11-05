@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import DOMPurify from 'dompurify';
 import JSZip from 'jszip';
-import { AlertCircle, Clock3, Download, ExternalLink, Eye, FileText, Heart, LoaderCircle, PanelsTopLeft, Search, Star } from 'lucide-react';
+import { AlertCircle, Clock3, Download, ExternalLink, Eye, EyeOff, FileText, Heart, LoaderCircle, PanelsTopLeft, Search, Star } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api, type MakerworldResolvedModel } from '../api/client';
 import { Button } from '../components/Button';
@@ -15,12 +15,18 @@ function imageUrl(value: string): string {
   return `/api/v1/makerworld/thumbnail?url=${encodeURIComponent(value)}`;
 }
 
-function safeHtml(value: string): string {
+function safeHtml(value: string, showPreviewImages: boolean): string {
   const proxied = value.replace(
     /https?:\/\/(?:makerworld|public-cdn)\.bblmw\.(?:com|cn)\/[^\s"']+/gi,
     (url) => imageUrl(url),
   );
-  return DOMPurify.sanitize(proxied);
+  const sanitized = DOMPurify.sanitize(proxied);
+  if (showPreviewImages) return sanitized;
+
+  const template = document.createElement('template');
+  template.innerHTML = sanitized;
+  template.content.querySelectorAll('img, picture, video, audio, source, iframe, embed, object').forEach((media) => media.remove());
+  return template.innerHTML;
 }
 
 function numberField(value: unknown): number | null {
@@ -47,6 +53,9 @@ export function MakerworldChinaPublicPage() {
   const [resolved, setResolved] = useState<MakerworldResolvedModel | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<MakerworldTab>('plates');
+  const [showPreviewImages, setShowPreviewImages] = useState(
+    () => localStorage.getItem('makerworld-cn-show-preview-images') !== 'false',
+  );
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const versionQuery = useQuery({
     queryKey: ['version'],
@@ -96,6 +105,7 @@ export function MakerworldChinaPublicPage() {
   const title = textField(design?.title) || 'Mẫu MakerWorld';
   const cover = imageUrl(textField(design?.coverUrl));
   const summary = textField(design?.summary);
+  const descriptionHtml = safeHtml(summary, showPreviewImages);
   const downloads = numberField(design?.downloadCount);
   const license = textField(design?.license);
   const creator = design?.designCreator && typeof design.designCreator === 'object'
@@ -167,6 +177,23 @@ export function MakerworldChinaPublicPage() {
           </Button>
         </form>
 
+        <div className="mt-3 flex max-w-4xl justify-end">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-bambu-gray-light">
+            <input
+              type="checkbox"
+              checked={showPreviewImages}
+              onChange={(event) => {
+                const enabled = event.target.checked;
+                setShowPreviewImages(enabled);
+                localStorage.setItem('makerworld-cn-show-preview-images', String(enabled));
+              }}
+              className="h-4 w-4 accent-bambu-green"
+            />
+            {showPreviewImages ? <Eye className="h-4 w-4" aria-hidden="true" /> : <EyeOff className="h-4 w-4" aria-hidden="true" />}
+            Hiện ảnh xem trước
+          </label>
+        </div>
+
         {error && (
           <div role="alert" className="mt-5 flex max-w-4xl items-start gap-3 border-l-2 border-status-error bg-bambu-dark-secondary px-4 py-3 text-sm">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-status-error" />
@@ -177,7 +204,7 @@ export function MakerworldChinaPublicPage() {
         {resolved && (
           <section className="mt-8">
             <div className="flex flex-col gap-5 border-y border-bambu-gray-dark/30 py-5 sm:flex-row">
-              {cover && <img src={cover} alt={title} className="aspect-[4/3] w-full bg-bambu-dark-secondary object-cover sm:w-44" />}
+              {showPreviewImages && cover && <img src={cover} alt={title} className="aspect-[4/3] w-full bg-bambu-dark-secondary object-cover sm:w-44" />}
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -275,7 +302,7 @@ export function MakerworldChinaPublicPage() {
                       onClick={() => setSelectedProfile(profileId)}
                       className={`flex w-full items-center gap-4 py-4 text-left transition-colors hover:bg-bambu-dark-secondary/50 ${active ? 'text-white' : 'text-bambu-gray-light'} disabled:opacity-50`}
                     >
-                      {thumb ? (
+                      {showPreviewImages && thumb ? (
                         <img src={thumb} alt="" className="h-16 w-16 shrink-0 bg-bambu-dark-secondary object-cover" loading="lazy" />
                       ) : (
                         <span className="h-16 w-16 shrink-0 bg-bambu-dark-secondary" />
@@ -344,7 +371,7 @@ export function MakerworldChinaPublicPage() {
                 {summary ? (
                   <div
                     className="makerworld-summary makerworld-description prose prose-sm max-w-4xl text-bambu-gray-light dark:prose-invert"
-                    dangerouslySetInnerHTML={{ __html: safeHtml(summary) }}
+                    dangerouslySetInnerHTML={{ __html: descriptionHtml }}
                   />
                 ) : <p className="py-5 text-sm text-bambu-gray">Mẫu này chưa có mô tả.</p>}
               </div>
@@ -355,7 +382,7 @@ export function MakerworldChinaPublicPage() {
                 {materials.length > 0 ? (
                   <ul className="divide-y divide-bambu-gray-dark/30 rounded-md border border-bambu-gray-dark/40">
                     {materials.map((material, index) => {
-                      const image = imageUrl(textField(material.image));
+                      const image = showPreviewImages ? imageUrl(textField(material.image)) : '';
                       const title = textField(material.displayParentTitle) || textField(material.parentTitle) || textField(material.displayTitle) || textField(material.title) || `Vật tư ${index + 1}`;
                       const variant = textField(material.displayTitle) || textField(material.title);
                       const quantity = numberField(material.quantity);
