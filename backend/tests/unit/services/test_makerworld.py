@@ -294,6 +294,19 @@ class TestGetProfileDownload:
             await svc.get_profile_download(1, "M1")
 
     @pytest.mark.asyncio
+    async def test_maps_418_to_upstream_challenge_without_retrying(self):
+        svc = self._make_service()
+        resp = MagicMock()
+        resp.status_code = 418
+        resp.json.return_value = {"error": "We need to confirm you are not a robot"}
+        svc._client.get.return_value = resp
+
+        with pytest.raises(MakerWorldUnavailableError, match="challenge chống lạm dụng"):
+            await svc.get_profile_download(1, "M1")
+
+        svc._client.get.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_maps_timeout_to_unavailable(self):
         svc = self._make_service()
         svc._client.get.side_effect = httpx.TimeoutException("nope")

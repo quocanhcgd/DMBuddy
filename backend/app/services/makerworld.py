@@ -561,6 +561,15 @@ class MakerWorldService:
             raise MakerWorldForbiddenError(upstream or f"Bambu Lab refused access to {resource_type} {resource_id}")
         if response.status_code == 404:
             raise MakerWorldNotFoundError(f"MakerWorld {resource_type} not found: {resource_id}")
+        if response.status_code == 418:
+            upstream = _extract_upstream_error(response)
+            if upstream and any(word in upstream.lower() for word in ("captcha", "robot", "confirm")):
+                logger.warning("Bambu Lab challenged MakerWorld download request for %s %s", resource_type, resource_id)
+            raise MakerWorldUnavailableError(
+                "Bambu Lab đang tạm chặn lượt tải MakerWorld từ máy chủ DMbuddy (HTTP 418). "
+                "Đây là challenge chống lạm dụng từ upstream, không phải lỗi token. Hãy ngừng thử lại "
+                "và tải trực tiếp mẫu trên MakerWorld, sau đó thử lại từ DMbuddy khi chặn được gỡ."
+            )
         if response.status_code != 200:
             raise MakerWorldUnavailableError(
                 f"Bambu Lab API unexpected status {response.status_code} for {resource_type} {resource_id}"
