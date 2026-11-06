@@ -1335,6 +1335,15 @@ export interface CloudLoginResponse {
 // MakerWorld integration. Full metadata/instance shapes come back as
 // Record<string, unknown> — MakerWorld's API adds fields over time, so we
 // pass them through verbatim rather than maintaining a brittle mirror.
+export interface MakerworldPublicStats {
+  total_visits: number;
+  total_downloads: number;
+  downloads_today: number;
+  daily_limit: number;
+  remaining_downloads: number;
+  resets_at: string;
+}
+
 export interface MakerworldStatus {
   has_cloud_token: boolean;
   can_download: boolean;
@@ -5082,6 +5091,10 @@ export const api = {
   // MakerWorld URL-paste import flow.
   getMakerworldStatus: () =>
     request<MakerworldStatus>('/makerworld/status'),
+  getPublicChinaMakerworldStats: () =>
+    request<MakerworldPublicStats>('/makerworld/public/china/stats'),
+  recordPublicChinaMakerworldVisit: () =>
+    request<MakerworldPublicStats>('/makerworld/public/china/visit', { method: 'POST' }),
   resolvePublicChinaMakerworldUrl: (url: string) =>
     request<MakerworldResolvedModel>('/makerworld/public/china/resolve', {
       method: 'POST',

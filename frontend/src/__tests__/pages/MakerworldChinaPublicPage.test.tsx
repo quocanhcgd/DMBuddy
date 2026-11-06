@@ -1,17 +1,122 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { MakerworldChinaPublicPage } from '../../pages/MakerworldChinaPublicPage';
+import { api } from '../../api/client';
+
+const publicStats = {
+  total_visits: 1234,
+  total_downloads: 180,
+  downloads_today: 5,
+  daily_limit: 20,
+  remaining_downloads: 15,
+  resets_at: '2026-11-06T00:00:00+07:00',
+};
+
+beforeEach(() => {
+  server.use(
+    http.get('*/makerworld/public/china/stats', () => HttpResponse.json(publicStats)),
+    http.post('*/makerworld/public/china/visit', () => HttpResponse.json(publicStats)),
+  );
+});
 
 afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   server.resetHandlers();
   localStorage.removeItem('makerworld-cn-show-preview-images');
 });
 
 describe('MakerworldChinaPublicPage', () => {
+  it('counts one visit and shows the global daily quota', async () => {
+    const recordVisit = vi.spyOn(api, 'recordPublicChinaMakerworldVisit').mockResolvedValue(publicStats);
+    const { rerender } = render(
+      <QueryClientProvider client={new QueryClient()}><MakerworldChinaPublicPage /></QueryClientProvider>,
+    );
+    const stats = screen.getByRole('region', { name: 'Thống kê truy cập và tải xuống' });
+    expect(await within(stats).findByText('1.234')).toBeInTheDocument();
+    expect(within(stats).getByText('180')).toBeInTheDocument();
+    expect(within(stats).getByText('5')).toBeInTheDocument();
+    expect(within(stats).getByText('15')).toBeInTheDocument();
+    expect(within(stats).getByText(/Toàn trang được tải tối đa 20 file/)).toBeInTheDocument();
+    await userEvent.type(screen.getByRole('textbox'), 'test');
+    expect(recordVisit).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes statistics after the last available file and disables further downloads', async () => {
+    let downloadsToday = 19;
+    const currentStats = () => ({ ...publicStats, downloads_today: downloadsToday, remaining_downloads: 20 - downloadsToday });
+    server.use(
+      http.get('*/makerworld/public/china/stats', () => HttpResponse.json(currentStats())),
+      http.post('*/makerworld/public/china/visit', () => HttpResponse.json(currentStats())),
+      http.post('*/makerworld/public/china/resolve', () => HttpResponse.json({
+        model_id: 123, profile_id: 456, design: { title: 'Last file' },
+        instances: [{ profileId: 456, title: 'Plate' }],
+      })),
+    );
+    const downloadFile = vi.spyOn(api, 'downloadPublicChinaMakerworldInstance').mockImplementation(async () => { downloadsToday += 1; });
+    render(<QueryClientProvider client={new QueryClient()}><MakerworldChinaPublicPage /></QueryClientProvider>);
+    await userEvent.type(screen.getByRole('textbox'), 'https://makerworld.cn/zh/models/123');
+    await userEvent.click(screen.getByRole('button', { name: 'Xem mẫu' }));
+    await screen.findByRole('heading', { name: 'Last file' });
+    await userEvent.click(screen.getByRole('button', { name: 'Tải 3MF' }));
+    expect(await screen.findByRole('button', { name: 'Đã hết lượt tải hôm nay' })).toBeDisabled();
+    expect(screen.getByText(/Trang đã hết lượt tải hôm nay/)).toBeInTheDocument();
+    expect(downloadFile).toHaveBeenCalledTimes(1);
+    const stats = screen.getByRole('region', { name: 'Thống kê truy cập và tải xuống' });
+    expect(within(stats).getByText('20')).toBeInTheDocument();
+    expect(within(stats).getByText('0')).toBeInTheDocument();
+  });
+
+  it('downloads only the selected file and waits 20 seconds before allowing another download', async () => {
+    server.use(
+      http.post('*/makerworld/public/china/resolve', () => HttpResponse.json({
+        model_id: 123,
+        profile_id: 456,
+        design: { title: 'Test model' },
+        instances: [
+          { profileId: 456, title: 'First file' },
+          { profileId: 789, title: 'Second file' },
+        ],
+      })),
+    );
+    let completeDownload!: () => void;
+    const downloadFile = vi.spyOn(api, 'downloadPublicChinaMakerworldInstance')
+      .mockImplementationOnce(() => new Promise<void>((resolveDownload) => { completeDownload = resolveDownload; }))
+      .mockResolvedValue(undefined);
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false } } })}>
+        <MakerworldChinaPublicPage />
+      </QueryClientProvider>,
+    );
+    await userEvent.type(screen.getByRole('textbox'), 'https://makerworld.cn/zh/models/123');
+    await userEvent.click(screen.getByRole('button', { name: 'Xem mẫu' }));
+    await screen.findByRole('heading', { name: 'Test model' });
+    expect(screen.queryByRole('button', { name: /Tải tất cả|ZIP/i })).not.toBeInTheDocument();
+
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tải 3MF' })); });
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(downloadFile).toHaveBeenCalledExactlyOnceWith(123, 456);
+    expect(screen.getByRole('button', { name: 'Đang tải…' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /Second file/ }));
+    await act(async () => { completeDownload(); });
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(screen.getByRole('button', { name: 'Tải tiếp sau 20s' })).toBeDisabled();
+    await act(async () => { vi.advanceTimersByTime(19_000); });
+    const waitingButton = screen.getByRole('button', { name: 'Tải tiếp sau 1s' });
+    fireEvent.click(waitingButton);
+    expect(downloadFile).toHaveBeenCalledTimes(1);
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(screen.getByRole('button', { name: 'Tải 3MF' })).toBeEnabled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tải 3MF' })); });
+    expect(downloadFile).toHaveBeenLastCalledWith(123, 789);
+    expect(downloadFile).toHaveBeenCalledTimes(2);
+  });
+
   it('skips preview media when disabled before resolving a model', async () => {
     server.use(
       http.post('*/makerworld/public/china/resolve', () => HttpResponse.json({
@@ -136,7 +241,7 @@ describe('MakerworldChinaPublicPage', () => {
     expect(screen.getByText('Tương thích thêm: A1')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /12 cells/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Tải 3MF/i })).toBeEnabled();
-    expect(screen.getByRole('button', { name: /Tải tất cả/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /Tải tất cả|\.ZIP/i })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('tab', { name: 'Tài liệu và hướng dẫn' }));
     expect(screen.getByText('MiniVF2_BASIC.pdf')).toBeInTheDocument();

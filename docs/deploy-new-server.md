@@ -158,6 +158,18 @@ không đưa trực tiếp ra Internet. Có thể đổi các port trong `.env`,
 cập nhật firewall và reverse proxy. Caddy sidecar chỉ là ingress; Printbuddy
 vẫn là nơi phục vụ UI/API và dùng tài khoản MakerWorld China đã cấu hình.
 
+Trang công khai hiển thị tổng lượt truy cập, tổng lượt tải 3MF, lượt tải trong
+ngày và hạn mức còn lại. Mỗi lần mở hoặc tải lại trang được tính là một lượt
+truy cập. Thống kê bắt đầu từ khi triển khai tính năng và lưu trong cơ sở dữ
+liệu hiện có, không mất khi khởi động lại container.
+
+Toàn trang dùng chung giới hạn **20 lượt tải 3MF mỗi ngày**, đặt lại lúc 00:00
+giờ Việt Nam (UTC+7). Backend giữ chỗ cho các lượt đang tải để nhiều người
+tải đồng thời không vượt hạn mức; lượt tải lỗi được trả lại. Lượt thành công
+được tính khi máy chủ đã lấy được file và trả về phản hồi tải xuống, không
+phụ thuộc việc người dùng có lưu file trên thiết bị hay không. Tài liệu đính
+kèm mở trực tiếp trên MakerWorld không nằm trong bộ đếm 3MF này.
+
 ## 6. Sao lưu và cập nhật
 
 Trước khi đưa vào sử dụng, lập lịch sao lưu thư mục `/app/data` trong volume

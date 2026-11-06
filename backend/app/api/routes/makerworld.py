@@ -45,6 +45,7 @@ from backend.app.schemas.makerworld import (
     MakerWorldDownloadRequest,
     MakerWorldImportRequest,
     MakerWorldImportResponse,
+    MakerWorldPublicStats,
     MakerWorldRecentImport,
     MakerWorldResolvedModel,
     MakerWorldResolveRequest,
@@ -60,6 +61,7 @@ from backend.app.services.makerworld import (
     MakerWorldUnavailableError,
     MakerWorldUrlError,
 )
+from backend.app.services.makerworld_public import finish_download, public_stats, record_visit, reserve_download
 
 logger = logging.getLogger(__name__)
 
@@ -348,7 +350,9 @@ async def _build_service(
             token, account_region = account.access_token, account.region
         else:
             token, _email, account_region = await get_stored_token(db, user)
-    return MakerWorldService(auth_token=token, region=account_region if account is not None else (region or account_region))
+    return MakerWorldService(
+        auth_token=token, region=account_region if account is not None else (region or account_region)
+    )
 
 
 async def _makerworld_accounts(db: AsyncSession, user: User | None) -> list[BambuCloudAccount]:
@@ -484,9 +488,7 @@ def _suggested_download_filename(manifest: dict, model_id: int, fallback: str) -
     return name if name.lower().endswith(".3mf") else f"{name}.3mf"
 
 
-async def _get_or_create_library_folder(
-    db: AsyncSession, *, name: str, parent_id: int | None
-) -> LibraryFolder:
+async def _get_or_create_library_folder(db: AsyncSession, *, name: str, parent_id: int | None) -> LibraryFolder:
     result = await db.execute(
         select(LibraryFolder).where(
             LibraryFolder.name == name,
@@ -523,10 +525,7 @@ def _map_service_error(exc: MakerWorldError) -> HTTPException:
 async def proxy_thumbnail(
     url: str = Query(
         ...,
-        description=(
-            "MakerWorld CDN image URL (makerworld/public-cdn.bblmw.com or "
-            "makerworld/public-cdn.bblmw.cn)"
-        ),
+        description=("MakerWorld CDN image URL (makerworld/public-cdn.bblmw.com or makerworld/public-cdn.bblmw.cn)"),
     ),
 ):
     """Proxy a MakerWorld CDN thumbnail.
@@ -583,9 +582,14 @@ async def get_status(
         has_cloud_token=has_token,
         can_download=has_token,
         accounts=[
-            {"id": account.id, "label": account.label or account.email or "Bambu Cloud", "email": account.email,
-             "region": account.region, "is_default": account.is_default,
-             "makerworld_shared": bool(account.makerworld_shared)}
+            {
+                "id": account.id,
+                "label": account.label or account.email or "Bambu Cloud",
+                "email": account.email,
+                "region": account.region,
+                "is_default": account.is_default,
+                "makerworld_shared": bool(account.makerworld_shared),
+            }
             for account in accounts
         ],
     )
@@ -1037,7 +1041,6 @@ async def recent_imports(
         .limit(capped)
     )
 
-
     rows = result.scalars().all()
     return [
         MakerWorldRecentImport(
@@ -1064,4 +1067,24 @@ async def download_public_china_instance(
     personal/global account or change the upstream region.
     """
     china_body = body.model_copy(update={"account_id": None, "region": "china"})
-    return await download_instance(china_body, db, None)
+    reservation = await reserve_download(db)
+    try:
+        response = await download_instance(china_body, db, None)
+    except BaseException:
+        await db.rollback()
+        await finish_download(db, reservation, success=False)
+        raise
+    await finish_download(db, reservation, success=True)
+    return response
+
+
+@router.get("/public/china/stats", response_model=MakerWorldPublicStats)
+async def get_public_china_stats(response: Response, db: AsyncSession = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
+    return await public_stats(db)
+
+
+@router.post("/public/china/visit", response_model=MakerWorldPublicStats)
+async def register_public_china_visit(response: Response, db: AsyncSession = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
+    return await record_visit(db)

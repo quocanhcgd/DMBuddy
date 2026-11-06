@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
-import JSZip from 'jszip';
 import { AlertCircle, Clock3, Download, ExternalLink, Eye, EyeOff, FileText, Heart, LoaderCircle, PanelsTopLeft, Search, Star } from 'lucide-react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type MakerworldResolvedModel } from '../api/client';
 import { Button } from '../components/Button';
 
@@ -49,14 +48,46 @@ function arrayField(value: unknown): Array<Record<string, unknown>> {
 }
 
 export function MakerworldChinaPublicPage() {
+  const queryClient = useQueryClient();
+  const visitRecorded = useRef(false);
+  const statsQuery = useQuery({
+    queryKey: ['makerworld-cn-public-stats'],
+    queryFn: api.getPublicChinaMakerworldStats,
+    refetchInterval: 30_000,
+    staleTime: 0,
+  });
+  const visit = useMutation({
+    mutationFn: api.recordPublicChinaMakerworldVisit,
+    onSuccess: (stats) => {
+      queryClient.setQueryData(['makerworld-cn-public-stats'], stats);
+      void queryClient.invalidateQueries({ queryKey: ['makerworld-cn-public-stats'] });
+    },
+  });
+  useEffect(() => {
+    if (visitRecorded.current) return;
+    visitRecorded.current = true;
+    visit.mutate();
+  }, [visit.mutate]);
   const [url, setUrl] = useState('');
   const [resolved, setResolved] = useState<MakerworldResolvedModel | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<MakerworldTab>('plates');
+  const [downloadAvailableAt, setDownloadAvailableAt] = useState(0);
+  const [downloadWait, setDownloadWait] = useState(0);
+  useEffect(() => {
+    if (!downloadAvailableAt) return;
+    const updateWait = () => {
+      const remaining = Math.max(0, Math.ceil((downloadAvailableAt - Date.now()) / 1000));
+      setDownloadWait(remaining);
+      if (remaining === 0) window.clearInterval(interval);
+    };
+    const interval = window.setInterval(updateWait, 1000);
+    updateWait();
+    return () => window.clearInterval(interval);
+  }, [downloadAvailableAt]);
   const [showPreviewImages, setShowPreviewImages] = useState(
     () => localStorage.getItem('makerworld-cn-show-preview-images') !== 'false',
   );
-  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const versionQuery = useQuery({
     queryKey: ['version'],
     queryFn: api.getVersion,
@@ -72,35 +103,13 @@ export function MakerworldChinaPublicPage() {
   const download = useMutation({
     mutationFn: ({ modelId, profileId }: { modelId: number; profileId: number }) =>
       api.downloadPublicChinaMakerworldInstance(modelId, profileId),
-  });
-  const downloadAll = useMutation({
-    mutationFn: async ({ modelId, plates }: { modelId: number; plates: Array<Record<string, unknown>> }) => {
-      const zip = new JSZip();
-      for (const [index, plate] of plates.entries()) {
-        const profileId = numberField(plate.profileId);
-        if (profileId === null) continue;
-        setBatchProgress({ current: index + 1, total: plates.length });
-        const { blob } = await api.fetchPublicChinaMakerworldInstance(modelId, profileId);
-        const plateTitle = textField(plate.title) || `plate-${index + 1}`;
-        const safeTitle = plateTitle.replace(/[\\/:*?"<>|]/g, '-').trim();
-        zip.file(`${String(index + 1).padStart(2, '0')}-${safeTitle}-${profileId}.3mf`, blob);
-        setBatchProgress({ current: index + 1, total: plates.length });
-      }
-      return zip.generateAsync({ type: 'blob' });
+    onMutate: () => {
+      setDownloadWait(20);
+      setDownloadAvailableAt(Date.now() + 20_000);
     },
-    onSettled: () => setBatchProgress(null),
-    onSuccess: (blob) => {
-      const objectUrl = window.URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = objectUrl;
-      anchor.download = `makerworld-${resolved?.model_id ?? 'china'}-plates.zip`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      window.URL.revokeObjectURL(objectUrl);
-    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['makerworld-cn-public-stats'] }),
   });
-
+  const quotaExhausted = statsQuery.data?.remaining_downloads === 0;
   const design = resolved?.design;
   const title = textField(design?.title) || 'Mẫu MakerWorld';
   const cover = imageUrl(textField(design?.coverUrl));
@@ -121,7 +130,7 @@ export function MakerworldChinaPublicPage() {
     ...arrayField(designExtension.boms_of_other_parts),
   ];
   const selected = instances.find((item) => item.profileId === selectedProfile);
-  const error = resolve.error ?? download.error ?? downloadAll.error;
+  const error = resolve.error ?? download.error;
 
   return (
     <main className="min-h-screen bg-bambu-dark text-bambu-gray-light">
@@ -149,6 +158,25 @@ export function MakerworldChinaPublicPage() {
           <p className="mt-1 text-sm text-bambu-gray">Dán liên kết mẫu MakerWorld China để xem thông tin và tải file 3MF.</p>
         </div>
 
+        <section aria-label="Thống kê truy cập và tải xuống" className="mb-6 max-w-4xl border-y border-bambu-gray-dark/30 py-4">
+          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {[
+              ['Tổng lượt truy cập', statsQuery.data?.total_visits],
+              ['Tổng lượt tải', statsQuery.data?.total_downloads],
+              ['Lượt tải hôm nay', statsQuery.data?.downloads_today],
+              ['Lượt tải còn lại', statsQuery.data?.remaining_downloads],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <dt className="text-xs text-bambu-gray">{label}</dt>
+                <dd className="mt-1 text-xl font-semibold tabular-nums text-white">{typeof value === 'number' ? value.toLocaleString('vi-VN') : '—'}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-3 text-xs text-bambu-gray">Toàn trang được tải tối đa {statsQuery.data?.daily_limit ?? 20} file mỗi ngày, đặt lại lúc 00:00 giờ Việt Nam. Lượt tải lỗi không trừ hạn mức.</p>
+          {statsQuery.isError && <p role="status" className="mt-2 text-sm text-status-error">Không tải được thống kê. Vui lòng tải lại trang để kiểm tra hạn mức.</p>}
+          {quotaExhausted && <p role="status" className="mt-2 text-sm text-status-error">Trang đã hết lượt tải hôm nay. Vui lòng quay lại sau 00:00 giờ Việt Nam.</p>}
+        </section>
+
         <form
           className="flex max-w-4xl flex-col gap-3 sm:flex-row"
           onSubmit={(event) => {
@@ -162,7 +190,7 @@ export function MakerworldChinaPublicPage() {
           <input
             id="makerworld-cn-url"
             value={url}
-            disabled={download.isPending || downloadAll.isPending}
+            disabled={download.isPending}
             onChange={(event) => {
               setUrl(event.target.value);
               setResolved(null);
@@ -171,7 +199,7 @@ export function MakerworldChinaPublicPage() {
             placeholder="https://makerworld.cn/zh/models/..."
             className="min-w-0 flex-1 rounded-md border border-bambu-gray-dark/40 bg-bambu-dark-secondary px-4 py-3 text-white outline-none focus:border-bambu-green"
           />
-          <Button type="submit" disabled={!url.trim() || resolve.isPending || download.isPending || downloadAll.isPending}>
+          <Button type="submit" disabled={!url.trim() || resolve.isPending || download.isPending}>
             {resolve.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
             Xem mẫu
           </Button>
@@ -256,22 +284,10 @@ export function MakerworldChinaPublicPage() {
               <div className="mb-3 flex flex-wrap items-end justify-between gap-3 border-b border-bambu-gray-dark/30 pb-3">
                 <div>
                   <h2 className="text-lg font-semibold text-white">Các bàn in</h2>
-                  <p className="mt-1 text-xs text-bambu-gray">Chọn một bàn in để tải riêng hoặc tải tất cả.</p>
+                  <p className="mt-1 text-xs text-bambu-gray">Chọn một bàn in để tải file 3MF riêng. Mỗi lượt tải cách nhau ít nhất 20 giây.</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="text-sm text-bambu-gray">{instances.length} cấu hình</span>
-                  <Button
-                    disabled={!instances.some((plate) => numberField(plate.profileId) !== null) || downloadAll.isPending || download.isPending}
-                    onClick={() => downloadAll.mutate({
-                      modelId: resolved.model_id,
-                      plates: instances.filter((plate) => numberField(plate.profileId) !== null),
-                    })}
-                  >
-                    {downloadAll.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                    {batchProgress
-                      ? `Đang tải ${batchProgress.current}/${batchProgress.total}…`
-                      : downloadAll.isPending ? 'Đang tạo tệp ZIP…' : 'Tải tất cả (.ZIP)'}
-                  </Button>
                 </div>
               </div>
               <div className="divide-y divide-bambu-gray-dark/30">
@@ -334,11 +350,11 @@ export function MakerworldChinaPublicPage() {
               <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-bambu-gray-dark/30 pt-4">
                 <span className="text-sm text-bambu-gray">{selected ? textField(selected.title) || `Cấu hình ${selectedProfile}` : 'Chọn một bàn in để tiếp tục'}</span>
                 <Button
-                  disabled={!selected || selectedProfile === null || download.isPending || downloadAll.isPending}
+                  disabled={!selected || selectedProfile === null || download.isPending || downloadWait > 0 || quotaExhausted}
                   onClick={() => download.mutate({ modelId: resolved.model_id, profileId: selectedProfile! })}
                 >
                   {download.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                  {download.isPending ? 'Đang tải…' : 'Tải 3MF'}
+                  {download.isPending ? 'Đang tải…' : quotaExhausted ? 'Đã hết lượt tải hôm nay' : downloadWait > 0 ? `Tải tiếp sau ${downloadWait}s` : 'Tải 3MF'}
                 </Button>
               </div>
             </>}

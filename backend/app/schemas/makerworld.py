@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+
+class MakerWorldPublicStats(BaseModel):
+    total_visits: int
+    total_downloads: int
+    downloads_today: int
+    daily_limit: int
+    remaining_downloads: int
+    resets_at: datetime
 
 
 class MakerWorldResolveRequest(BaseModel):
@@ -12,7 +22,9 @@ class MakerWorldResolveRequest(BaseModel):
 
     url: str = Field(..., description="Any MakerWorld model URL (scheme optional)")
     account_id: int | None = Field(default=None, description="Connected Bambu account to use")
-    region: Literal["global", "china"] | None = Field(default=None, description="global, china, or omitted for URL auto-detection")
+    region: Literal["global", "china"] | None = Field(
+        default=None, description="global, china, or omitted for URL auto-detection"
+    )
 
 
 class MakerWorldResolvedModel(BaseModel):

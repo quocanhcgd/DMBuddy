@@ -14,6 +14,7 @@ from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.local_preset import LocalPreset
 from backend.app.models.long_lived_token import LongLivedToken
 from backend.app.models.maintenance import MaintenanceHistory, MaintenanceType, PrinterMaintenance
+from backend.app.models.makerworld_public import MakerWorldPublicCounter, MakerWorldPublicDownload
 from backend.app.models.notification import NotificationLog, NotificationProvider, notification_provider_printers
 from backend.app.models.notification_live_activity import NotificationLiveActivity
 from backend.app.models.notification_template import NotificationTemplate
@@ -49,6 +50,8 @@ __all__ = [
     "MaintenanceType",
     "PrinterMaintenance",
     "MaintenanceHistory",
+    "MakerWorldPublicCounter",
+    "MakerWorldPublicDownload",
     "KProfileNote",
     "NotificationTemplate",
     "NotificationLog",

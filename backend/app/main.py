@@ -6134,6 +6134,8 @@ PUBLIC_API_ROUTES = {
     # Public MakerWorld China download page uses the server's shared China account.
     "/api/v1/makerworld/public/china/resolve",
     "/api/v1/makerworld/public/china/download",
+    "/api/v1/makerworld/public/china/stats",
+    "/api/v1/makerworld/public/china/visit",
     # Version check for updates (no sensitive data)
     "/api/v1/updates/version",
     # Bundled public Creality slicer presets are read-only and contain no user data.

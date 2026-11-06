@@ -208,7 +208,6 @@ class TestResolve:
         assert resp.json()["profile_id"] == 150647584
         assert build.await_args.kwargs == {"account_id": None, "region": "china"}
 
-
     @pytest.mark.asyncio
     async def test_flags_already_imported_library_ids(self, async_client, db_session):
         # Seed a matching LibraryFile so resolve() reports it back
@@ -461,6 +460,10 @@ class TestImport:
         assert resp.status_code == 200, resp.text
         assert resp.content == self._FAKE_3MF_BYTES
         assert build.await_args.kwargs == {"account_id": None, "region": "china"}
+        stats = (await async_client.get("/api/v1/makerworld/public/china/stats")).json()
+        assert stats["total_downloads"] == 1
+        assert stats["downloads_today"] == 1
+        assert stats["remaining_downloads"] == 19
         assert (await db_session.execute(select(LibraryFile))).scalars().all() == []
         assert (await db_session.execute(select(LibraryFolder))).scalars().all() == []
 
